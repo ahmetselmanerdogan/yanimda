@@ -9,7 +9,14 @@ import {
   type OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { type EventState, type EventType, type KafkaEnvelope, type Signal, TOPICS } from '@yanimda/contracts';
+import {
+  type EventState,
+  type EventType,
+  type KafkaEnvelope,
+  type NotifyRequest,
+  type Signal,
+  TOPICS,
+} from '@yanimda/contracts';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus } from '../../common/bus';
@@ -17,22 +24,23 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
 import { DB, type Db, type Tx } from '../../db/client';
+import { BATTERY_DEAD_PCT, decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
-import { loadRulePack, type Rule, RULE_PACK, ruleFor, type RulePack } from './rules.loader';
+import { isInWindow } from './night';
+import {
+  loadRulePack,
+  type Rule,
+  ruleFor,
+  type RulePack,
+  RULES,
+  type RulesProvider,
+  staticRules,
+} from './rules.loader';
 
 export type { EventRecord } from './event.repository';
 
-const SIGNAL_TO_EVENT: Partial<Record<Signal['kind'], EventType>> = {
-  SOS: 'SOS',
-  FALL: 'FALL',
-  INACTIVITY: 'INACTIVITY',
-  OFF_BODY: 'WATCH_OFF',
-  CALLBACK_REQUEST: 'CALLBACK',
-  TEST: 'TEST',
-};
-
-/** Olay kaynağı: sinyal veya zamanlayıcı (follow-up). */
+/** Olay kaynağı: sinyal, zamanlayıcı (follow-up) veya cihaz taraması. */
 interface EventSource {
   protectedPersonId: string;
   sourceId: string;
@@ -44,29 +52,33 @@ interface Uow {
   tx: Tx;
   ev: EventRecord;
   isNew: boolean;
+  dirty: boolean;
   transitions: TransitionRecord[];
   publishes: { topic: string; payload: unknown }[];
   /** Commit'ten SONRA çalışacak işler (ör. zamanlayıcı iptali). */
   after: (() => Promise<void>)[];
 }
 
+/** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
+const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
+const WAIT_TIMERS: TimerKind[] = ['prompt-expire', 'silent-ask-expire', 'watch-off-remind', 'watch-off-operator'];
+
 const pgCode = (e: unknown) =>
   (e as { code?: string; cause?: { code?: string } })?.cause?.code ?? (e as { code?: string })?.code;
 
 /**
- * D-02 olay üretimi, D-03/D-04 kuyruk, D-09 zamanlayıcılar (Timers/BullMQ), D-10 geçiş kaydı (T-011b).
+ * D-02 olay üretimi (T-012: kural paketi + karar tablosu), D-03/D-04 kuyruk, D-09 zamanlayıcılar,
+ * D-10 geçiş kaydı (T-011b).
  *
- * Kalıcılık (T-011b): olay event.event'te, geçişler event.transition'da. Her işlem tek transaction'da:
+ * Kalıcılık: olay event.event'te, geçişler event.transition'da. Her işlem tek transaction'da:
  * olay satırı FOR UPDATE kilitlenir → durum değişir → geçiş + audit.log + outbox (event.*) yazılır → commit.
- * Bellekte durum tutulmaz; yeni süreç aynı olayları görür.
- *
- * Zamanlayıcılar commit'ten ÖNCE kurulur: commit başarısız olursa geride kalan iş olayı bulamaz ve no-op olur;
- * tersi (commit oldu, iş kurulamadı) olmaz. Ayrıca periyodik tarama süresi geçmiş cihaz sorularını yükseltir.
+ * Zamanlayıcılar commit'ten ÖNCE kurulur, iptaller commit'ten SONRA yapılır.
+ * Periyodik tarama: süresi geçmiş cihaz sorusu/bekleme → operatör; sessiz cihaz → BATTERY_DEAD / CONNECTION_LOST.
  */
 @Injectable()
 export class EventService implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
   private readonly log = new Logger('EventService');
-  private readonly pack: RulePack;
+  private readonly rules: RulesProvider;
   private readonly repo: EventRepository;
   private sweepTimer?: NodeJS.Timeout;
   private unsubscribe?: () => void;
@@ -75,23 +87,26 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     @Inject(DB) private readonly db: Db,
     @Inject(OutboxBus) private readonly outbox: OutboxBus,
     @Inject(TIMERS) private readonly timers: Timers,
-    @Optional() @Inject(RULE_PACK) pack?: RulePack,
+    @Optional() @Inject(RULES) rules?: RulesProvider | RulePack,
   ) {
-    this.pack = pack ?? loadRulePack();
+    this.rules = rules && 'current' in rules ? rules : staticRules((rules as RulePack | undefined) ?? loadRulePack());
     this.repo = new EventRepository(db);
+  }
+
+  private get pack(): RulePack {
+    return this.rules.current();
   }
 
   onModuleInit() {
     this.unsubscribe = bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e));
     this.registerTimerHandlers();
-    this.log.log(`Kural paketi ${this.pack.country} v${this.pack.version} (${this.pack.rules.length} kural)`);
   }
 
   onApplicationBootstrap() {
     const every = Number(process.env.EVENT_SWEEP_MS ?? 30_000);
     if (every > 0) {
       const tick = () =>
-        this.recoverOverdue()
+        Promise.all([this.recoverOverdue(), this.sweepDevices()])
           .catch((e) => this.log.error(`Tarama başarısız: ${safeError(e)}`))
           .finally(() => (this.sweepTimer = setTimeout(tick, every)));
       void tick();
@@ -118,14 +133,26 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu kilitli okur, beklenen durumda değilse no-op ----
   private registerTimerHandlers() {
-    const expirePrompt = async ({ eventId }: TimerJob) => {
-      const found = await this.withEvent(eventId, async (u) => {
-        if (u.ev.state === 'DEVICE_PROMPT') this.escalate(u, 'cevap yok');
+    const expire =
+      (note: string) =>
+      async ({ eventId }: TimerJob) => {
+        const found = await this.withEvent(eventId, async (u) => {
+          if (u.ev.state === 'DEVICE_PROMPT') this.escalate(u, note);
+        });
+        if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
+      };
+    this.timers.on('prompt-expire', expire('cevap yok'));
+    this.timers.on('silent-ask-expire', expire('cevap yok'));
+    this.timers.on('watch-off-operator', expire('saat takılmadı'));
+    this.timers.on('watch-off-remind', async ({ eventId }) => {
+      await this.withEvent(eventId, async (u) => {
+        if (u.ev.state !== 'DEVICE_PROMPT') return;
+        await this.notify(u.tx, u.ev.protectedPersonId, [{ code: 'P-WATCH-OFF-2H', audience: 'ELDER' }], {
+          dedupeBase: `watch-off-remind:${u.ev.id}`,
+          eventId: u.ev.id,
+        });
       });
-      if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
-    };
-    this.timers.on('prompt-expire', expirePrompt);
-    this.timers.on('silent-ask-expire', expirePrompt);
+    });
     this.timers.on('follow-up', async ({ eventId }) => {
       const src = await this.repo.get(eventId);
       if (!src) return void this.log.warn(`Takip: kaynak olay bulunamadı ${eventId}`);
@@ -137,17 +164,50 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     });
   }
 
-  /** Süresi (+ pay) geçmiş DEVICE_PROMPT olaylarını yükseltir. Yükseltilen olay sayısını döner. */
+  // ---- Taramalar ----
+
+  /** Süresi (+ pay) geçmiş DEVICE_PROMPT olaylarını (cihaz sorusu, saat bekleme) yükseltir. */
   async recoverOverdue(graceMs = Number(process.env.EVENT_SWEEP_GRACE_MS ?? 20_000)): Promise<number> {
     let n = 0;
     for (const id of await this.repo.overduePromptIds(new Date(Date.now() - graceMs))) {
       await this.withEvent(id, async (u) => {
         if (u.ev.state !== 'DEVICE_PROMPT') return;
-        this.escalate(u, 'cevap yok (tarama)');
+        this.escalate(u, 'süre doldu (tarama)');
         n++;
       });
     }
-    if (n) this.log.warn(`Tarama: ${n} gecikmiş cihaz sorusu yükseltildi`);
+    if (n) this.log.warn(`Tarama: ${n} gecikmiş soru/bekleme yükseltildi`);
+    return n;
+  }
+
+  /**
+   * Sessiz cihazlar (D-02): son pil ≤5 ve BATTERY_DEAD.operatorAfterMin (120 dk) sessizlik → BATTERY_DEAD;
+   * pil bilinmiyor/yeterli ve CONNECTION_LOST.afterHours (6 saat) sessizlik → CONNECTION_LOST (gece bastırılır).
+   * Aynı sessizlik (cihaz + son görülme) için bir kez olay açılır. Oluşan olay sayısını döner.
+   */
+  async sweepDevices(at = new Date()): Promise<number> {
+    const pack = this.pack;
+    const dead = ruleFor(pack, 'BATTERY_DEAD');
+    const lost = ruleFor(pack, 'CONNECTION_LOST');
+    const deadMin = dead?.operatorAfterMin ?? 120;
+    const lostMin = (lost?.afterHours ?? 6) * 60;
+    let n = 0;
+    for (const d of await this.repo.silentDevices(new Date(at.getTime() - Math.min(deadMin, lostMin) * 60_000))) {
+      const silentMin = (at.getTime() - d.lastSeenAt.getTime()) / 60_000;
+      const src = { protectedPersonId: d.protectedPersonId, location: undefined };
+      const key = `${d.deviceId}:${d.lastSeenAt.toISOString()}`;
+      if (d.batteryPct !== null && d.batteryPct <= BATTERY_DEAD_PCT) {
+        if (
+          dead &&
+          silentMin >= deadMin &&
+          (await this.create('BATTERY_DEAD', { ...src, sourceId: `battery-dead:${key}` }))
+        )
+          n++;
+      } else if (lost && silentMin >= lostMin) {
+        if (lost.suppressIn?.includes('NIGHT') && isInWindow(at, d.timezone)) continue; // sabah tekrar bakılır
+        if (await this.create('CONNECTION_LOST', { ...src, sourceId: `connection-lost:${key}` })) n++;
+      }
+    }
     return n;
   }
 
@@ -158,60 +218,54 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   // ---- Sinyal işleme (outbox → bus) ----
   private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
-    const src: EventSource = {
-      protectedPersonId: s.protectedPersonId,
-      sourceId: s.idempotencyKey,
-      location: s.location,
-    };
-    if (s.kind === 'CANCEL' || s.kind === 'OK') return this.onUserAnswer(s);
-    if (s.kind === 'ON_BODY') return this.autoCloseWatchOff(s.protectedPersonId);
-    if (s.kind === 'BATTERY' && typeof s.value === 'number') {
-      if (s.value <= 10) return this.create('BATTERY_LOW', src); // T-012: 20/10 ayrımı ve BATTERY_DEAD zamanlayıcısı
-      return;
+    const night =
+      s.kind === 'OFF_BODY' && isInWindow(new Date(s.occurredAt), await this.repo.timezoneOf(s.protectedPersonId));
+    const d = decide(s, { pack: this.pack, night });
+    switch (d.action) {
+      case 'answer':
+        return this.onUserAnswer(s);
+      case 'on-body':
+        return this.autoCloseWatchOff(s.protectedPersonId);
+      case 'notify':
+        await this.db.transaction((tx) =>
+          this.notify(tx, s.protectedPersonId, d.notices, { dedupeBase: `signal:${s.idempotencyKey}` }),
+        );
+        return;
+      case 'create':
+        await this.create(d.type, {
+          protectedPersonId: s.protectedPersonId,
+          sourceId: s.idempotencyKey,
+          location: s.location,
+        });
+        return;
+      case 'none':
+        return;
     }
-    const type = SIGNAL_TO_EVENT[s.kind];
-    if (!type) return; // HEARTBEAT, HEART_RATE, STEPS, LOCATION: yalnız signal.signal
-    return this.create(type, src);
   }
 
-  private async create(type: EventType, s: EventSource, retry = true): Promise<void> {
+  /** Olay açar veya kişinin açık olayına ekler. Yeni olay açıldıysa true. */
+  private async create(type: EventType, s: EventSource, retry = true): Promise<boolean> {
     const rule = ruleFor(this.pack, type);
-    if (!rule) return void this.log.warn(`Kural yok: ${type}`);
+    if (!rule) {
+      this.log.warn(`Kural yok: ${type}`);
+      return false;
+    }
+    const after: Uow['after'] = [];
+    let created = false;
     try {
       await this.db.transaction(async (tx) => {
         // Outbox en az bir kez teslim eder: aynı kaynak ikinci kez olay açmasın.
         if (await this.repo.hasSource(tx, s.sourceId)) return;
         const open = await this.repo.findOpenForUpdate(tx, s.protectedPersonId);
-        if (open) {
-          this.log.log(`Açık olay var, ${type} kaynağı olaya eklendi`); // T-012: SOS önceliği yükseltir
-          await this.repo.appendSource(tx, open.id, s.sourceId);
-          return;
-        }
-        const now = new Date().toISOString();
-        const u: Uow = {
-          tx,
-          isNew: true,
-          transitions: [],
-          publishes: [],
-          after: [],
-          ev: {
-            id: uuidv7(),
-            protectedPersonId: s.protectedPersonId,
-            type,
-            priority: rule.priority,
-            state: 'CREATED',
-            createdAt: now,
-            location: s.location ?? undefined,
-            sourceSignalIds: [s.sourceId],
-            isTest: type === 'TEST',
-            transitions: [],
-          },
-        };
+        if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId);
+
+        const now = new Date();
+        const u = this.uow(tx, this.newRecord(type, rule, s, now), after, true);
         u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
         this.transition(u, 'CREATED', 'SYSTEM');
         if (rule.devicePrompt?.enabled) {
           const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
-          u.ev.devicePromptUntil = new Date(Date.now() + win).toISOString();
+          u.ev.devicePromptUntil = new Date(now.getTime() + win).toISOString();
           this.transition(
             u,
             'DEVICE_PROMPT',
@@ -221,16 +275,54 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           );
           await this.flush(u);
           await this.timers.schedule(u.ev.id, this.promptKind(rule), win); // commit'ten önce (bkz. sınıf notu)
+        } else if (WAITING_TYPES.has(type) && rule.operatorAfterMin) {
+          const wait = rule.operatorAfterMin * 60_000;
+          u.ev.devicePromptUntil = new Date(now.getTime() + wait).toISOString();
+          this.transition(u, 'DEVICE_PROMPT', 'SYSTEM', undefined, `bekleniyor ${rule.operatorAfterMin} dk`);
+          await this.flush(u);
+          await this.timers.schedule(u.ev.id, 'watch-off-operator', wait);
+          if (rule.remindAfterMin)
+            await this.timers.schedule(u.ev.id, 'watch-off-remind', rule.remindAfterMin * 60_000);
         } else {
           this.escalate(u, 'cihaz sorusu yok');
           await this.flush(u);
         }
+        created = true;
       });
     } catch (e) {
       // Eş zamanlı ikinci açık olay tekil indekse takıldı → bir kez daha dene (bu kez açık olaya eklenir).
       if (retry && pgCode(e) === '23505') return this.create(type, s, false);
       throw e;
     }
+    await this.runAfter(after);
+    return created;
+  }
+
+  /** D-02 adım 3: açık olay varken yeni kaynak eklenir; SOS ise öncelik 1'e çekilir ve bekleme varsa hemen yükseltilir. */
+  private async attachToOpen(u: Uow, type: EventType, sourceId: string) {
+    u.ev.sourceSignalIds.push(sourceId);
+    u.dirty = true;
+    if (type === 'SOS') {
+      if (u.ev.priority > 1) {
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'SYSTEM',
+          action: 'event.priority_raised',
+          entityId: u.ev.id,
+          data: { from: u.ev.priority, to: 1, reason: 'SOS', sourceId },
+        });
+        u.publishes.push({
+          topic: TOPICS.eventUpdated,
+          payload: { eventId: u.ev.id, priority: 1, previousPriority: u.ev.priority, reason: 'SOS' },
+        });
+        u.ev.priority = 1;
+      }
+      if (u.ev.state === 'DEVICE_PROMPT') {
+        this.escalate(u, 'SOS geldi');
+        u.after.push(() => this.cancelWaitTimers(u.ev.id));
+      }
+    }
+    this.log.log(`Açık olaya ${type} kaynağı eklendi (olay=${u.ev.id})`);
+    await this.flush(u);
   }
 
   private escalate(u: Uow, note: string) {
@@ -243,11 +335,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   private async onUserAnswer(s: Signal) {
     await this.withOpenEvent(s.protectedPersonId, async (u) => {
-      if (u.ev.state !== 'DEVICE_PROMPT') return; // ESCALATED sonrası kullanıcı cevabı operatöre not olarak gider
+      // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY) kapanır.
+      if (u.ev.state !== 'DEVICE_PROMPT' || WAITING_TYPES.has(u.ev.type)) return;
       this.transition(u, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
       this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM');
-      const rule = ruleFor(this.pack, u.ev.type);
-      if (rule) u.after.push(() => this.timers.cancel(u.ev.id, this.promptKind(rule)));
+      u.after.push(() => this.cancelWaitTimers(u.ev.id));
     });
   }
 
@@ -261,11 +353,12 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         this.transition(u, 'CONFIRMED_OK', 'SYSTEM', undefined, 'saat takıldı');
       }
       this.close(u, 'OK', 'saat takıldı', 'SYSTEM');
-      u.after.push(async () => {
-        await this.timers.cancel(u.ev.id, 'watch-off-remind');
-        await this.timers.cancel(u.ev.id, 'watch-off-operator');
-      });
+      u.after.push(() => this.cancelWaitTimers(u.ev.id));
     });
+  }
+
+  private async cancelWaitTimers(eventId: string) {
+    for (const k of WAIT_TIMERS) await this.timers.cancel(eventId, k);
   }
 
   // ---- Konsol tarafı (E-02, E-07) ----
@@ -300,7 +393,49 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     return ev;
   }
 
+  // ---- Bildirim isteği (T-053 tüketir) ----
+  private async notify(
+    tx: Tx,
+    protectedPersonId: string,
+    notices: Notice[],
+    opts: { dedupeBase: string; eventId?: string },
+  ) {
+    for (const n of notices) {
+      const payload: NotifyRequest = {
+        code: n.code,
+        audience: n.audience,
+        protectedPersonId,
+        dedupeKey: `${opts.dedupeBase}:${n.code}`,
+        ...(opts.eventId ? { eventId: opts.eventId } : {}),
+      };
+      await this.outbox.publish(
+        TOPICS.notifyRequested,
+        this.envelope(TOPICS.notifyRequested, protectedPersonId, payload),
+        tx,
+      );
+    }
+  }
+
   // ---- Birim iş (unit of work) ----
+
+  private uow(tx: Tx, ev: EventRecord, after: Uow['after'], isNew = false): Uow {
+    return { tx, ev, isNew, dirty: false, transitions: [], publishes: [], after };
+  }
+
+  private newRecord(type: EventType, rule: Rule, s: EventSource, now: Date): EventRecord {
+    return {
+      id: uuidv7(),
+      protectedPersonId: s.protectedPersonId,
+      type,
+      priority: rule.priority,
+      state: 'CREATED',
+      createdAt: now.toISOString(),
+      location: s.location ?? undefined,
+      sourceSignalIds: [s.sourceId],
+      isTest: type === 'TEST',
+      transitions: [],
+    };
+  }
 
   /** Olayı kilitleyip fn'i çalıştırır, değişiklikleri tek transaction'da yazar. Olay yoksa null. */
   private async withEvent<T>(id: string, fn: (u: Uow) => Promise<T>): Promise<T | null | undefined> {
@@ -319,13 +454,17 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const result = await this.db.transaction(async (tx) => {
       const ev = await load(tx);
       if (!ev) return null;
-      const u: Uow = { tx, ev, isNew: false, transitions: [], publishes: [], after };
+      const u = this.uow(tx, ev, after);
       const r = await fn(u);
       await this.flush(u);
       return r;
     });
-    for (const a of after) await a().catch((e) => this.log.warn(`Commit sonrası iş başarısız: ${safeError(e)}`));
+    await this.runAfter(after);
     return result;
+  }
+
+  private async runAfter(after: Uow['after']) {
+    for (const a of after) await a().catch((e) => this.log.warn(`Commit sonrası iş başarısız: ${safeError(e)}`));
   }
 
   private close(u: Uow, outcome: string, reason: string, actorKind: 'SYSTEM' | 'OPERATOR', actorId?: string) {
@@ -346,29 +485,30 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     u.publishes.push({ topic: TOPICS.eventTransitioned, payload: { eventId: u.ev.id, from, to, note } });
   }
 
+  private envelope<T>(topic: string, subject: string, payload: T): KafkaEnvelope<T> {
+    return {
+      eventId: uuidv7(),
+      type: topic,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      countryCode: this.pack.country,
+      subjectUserId: subject,
+      payload,
+    };
+  }
+
   /** Olay satırı + geçişler + audit + outbox — çağıranın transaction'ında. */
   private async flush(u: Uow) {
     if (u.isNew) {
       await this.repo.insert(u.tx, u.ev);
       u.isNew = false;
-    } else if (u.transitions.length || u.publishes.length) await this.repo.update(u.tx, u.ev);
+    } else if (u.dirty || u.transitions.length || u.publishes.length) await this.repo.update(u.tx, u.ev);
     await this.repo.insertTransitions(u.tx, u.ev.id, u.transitions);
     for (const p of u.publishes) {
       const payload = p.payload === u.ev ? { ...u.ev, transitions: undefined } : p.payload;
-      await this.outbox.publish(
-        p.topic,
-        {
-          eventId: uuidv7(),
-          type: p.topic,
-          version: 1,
-          occurredAt: new Date().toISOString(),
-          countryCode: this.pack.country,
-          subjectUserId: u.ev.protectedPersonId,
-          payload,
-        },
-        u.tx,
-      );
+      await this.outbox.publish(p.topic, this.envelope(p.topic, u.ev.protectedPersonId, payload), u.tx);
     }
+    u.dirty = false;
     u.transitions = [];
     u.publishes = [];
   }

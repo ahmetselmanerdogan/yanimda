@@ -4,7 +4,8 @@ import { and, arrayContains, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { validate as isUuid } from 'uuid';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, event, transition } from '../../db/schema';
+import { auditLog, device, event, transition } from '../../db/schema';
+import { DEFAULT_TIMEZONE } from './night';
 
 export type ActorKind = 'SYSTEM' | 'USER' | 'OPERATOR';
 
@@ -190,6 +191,61 @@ export class EventRepository {
   async all(): Promise<EventRecord[]> {
     const rows = await this.db.select().from(event).orderBy(asc(event.createdAt));
     return rows.map((r) => toRecord(r));
+  }
+
+  async insertAudit(
+    tx: Tx,
+    a: { actorKind: ActorKind; actorId?: string; action: string; entityId: string; data?: unknown },
+  ): Promise<void> {
+    await tx.insert(auditLog).values({
+      actorKind: a.actorKind,
+      actorId: a.actorId ?? null,
+      action: a.action,
+      entityType: 'event',
+      entityId: a.entityId,
+      data: a.data ?? null,
+    });
+  }
+
+  /**
+   * Kişinin saat dilimi (gece penceresi için). Salt okuma: profile modülünün tablosu; profile servisi (T-040)
+   * gelince oradan alınacak. Kayıtlı değilse varsayılan.
+   */
+  async timezoneOf(protectedPersonId: string): Promise<string> {
+    const r = (await this.db.execute(
+      sql`SELECT timezone FROM profile.protected_person WHERE id::text = ${protectedPersonId}`,
+    )) as unknown as { rows: { timezone: string }[] };
+    return r.rows[0]?.timezone ?? DEFAULT_TIMEZONE;
+  }
+
+  /**
+   * `before`'dan beri sinyal göndermeyen cihazlar (salt okuma; device modülü T-041'de servis olarak sunacak).
+   */
+  async silentDevices(
+    before: Date,
+  ): Promise<
+    { deviceId: string; protectedPersonId: string; lastSeenAt: Date; batteryPct: number | null; timezone: string }[]
+  > {
+    const r = (await this.db.execute(sql`
+      SELECT d.id::text AS device_id, d.protected_person_id::text AS person_id, d.last_seen_at, d.battery_pct,
+             coalesce(p.timezone, ${DEFAULT_TIMEZONE}) AS timezone
+      FROM ${device} d LEFT JOIN profile.protected_person p ON p.id = d.protected_person_id
+      WHERE d.last_seen_at IS NOT NULL AND d.last_seen_at < ${before.toISOString()}::timestamptz`)) as unknown as {
+      rows: {
+        device_id: string;
+        person_id: string;
+        last_seen_at: Date | string;
+        battery_pct: number | null;
+        timezone: string;
+      }[];
+    };
+    return r.rows.map((x) => ({
+      deviceId: x.device_id,
+      protectedPersonId: x.person_id,
+      lastSeenAt: new Date(x.last_seen_at),
+      batteryPct: x.battery_pct,
+      timezone: x.timezone,
+    }));
   }
 
   /** Cihaz sorusu süresi `before`'dan önce dolmuş, hâlâ DEVICE_PROMPT olan olaylar. */

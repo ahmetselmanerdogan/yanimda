@@ -79,7 +79,21 @@ export const TOPICS = {
   eventCreated: 'event.created',
   eventTransitioned: 'event.transitioned',
   eventClosed: 'event.closed',
+  eventUpdated: 'event.updated',
+  notifyRequested: 'notify.requested',
+  rulesReloaded: 'rules.reloaded',
   protectionChanged: 'user.protection.changed',
   chainStepResult: 'chain.step.result',
   devicePromptAnswered: 'device.prompt.answered',
 } as const;
+
+/** Bildirim isteği (T-012 üretir, T-053 notify modülü tüketir). Metin değil, katalog kodu taşır. */
+export interface NotifyRequest {
+  code: string;
+  audience: 'ELDER' | 'FAMILY';
+  protectedPersonId: string;
+  /** Tüketici tekrarı ayıklasın: aynı kaynak + kod bir kez gönderilir. */
+  dedupeKey: string;
+  eventId?: string;
+  vars?: Record<string, string | number>;
+}

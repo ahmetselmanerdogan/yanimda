@@ -24,12 +24,17 @@ export interface RulePack {
   rules: Rule[];
 }
 
-export const RULE_PACK = Symbol('RULE_PACK');
+/** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
+export interface RulesProvider {
+  current(): RulePack;
+}
+export const RULES = Symbol('RULES');
 
-/** D-02: kural paketi YAML'dan yüklenir; T-012'de sıcak yükleme ve JSON Schema doğrulaması eklenir. */
+export const staticRules = (pack: RulePack): RulesProvider => ({ current: () => pack });
+
+/** Doğrulamasız ham okuma (testler/araçlar). Uygulama RulesService üzerinden doğrulanmış paketi kullanır. */
 export function loadRulePack(country = process.env.COUNTRY_CODE ?? 'TR'): RulePack {
   const p = join(__dirname, `../../../../../packages/rules/${country.toLowerCase()}.yaml`);
-  const pack = YAML.parse(readFileSync(p, 'utf8')) as RulePack;
-  return pack;
+  return YAML.parse(readFileSync(p, 'utf8')) as RulePack;
 }
 export const ruleFor = (pack: RulePack, type: EventType) => pack.rules.find((r) => r.type === type);

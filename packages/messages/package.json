@@ -7,5 +7,6 @@
     "test": "node -e \"const m=require('./tr.json'); console.log(Object.keys(m).length+' mesaj')\"",
     "lint": "eslint index.js",
     "typecheck": "node --check index.js"
-  }
+  },
+  "types": "index.d.ts"
 }

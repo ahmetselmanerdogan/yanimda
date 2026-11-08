@@ -96,3 +96,14 @@ export const auditLog = auditSchema.table('log', {
   entityId: text('entity_id').notNull(),
   data: jsonb('data'),
 });
+
+export const chainSchema = pgSchema('chain');
+
+export const procedureTemplate = chainSchema.table('procedure_template', {
+  country: text('country').notNull(),
+  version: integer('version').notNull(),
+  checksum: text('checksum').notNull(),
+  content: jsonb('content').notNull(),
+  loadedAt: timestamptz('loaded_at').notNull().defaultNow(),
+  loadedBy: text('loaded_by'),
+});

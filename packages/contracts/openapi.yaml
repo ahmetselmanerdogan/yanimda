@@ -88,6 +88,33 @@ paths:
                 followUpAfterHours: { type: integer }
       responses:
         '204': { description: Closed }
+  /admin/rules/reload:
+    post:
+      summary: Kural paketini sıcak yükle (yönetici). D-02, T-012
+      description: |
+        packages/rules/<ülke>.yaml okunur, JSON Schema ve anlamsal kontrollerle (TTS kodları mesaj kataloğunda)
+        doğrulanır, chain.procedure_template'e (ülke, sürüm) kaydedilir ve uygulanır. Aynı sürüm farklı içerikle
+        veya daha düşük sürüm yüklenemez (409). Geçersiz paket geçerli paketi değiştirmez. Diğer API örnekleri
+        yeni sürümü en geç RULES_REFRESH_MS içinde alır. T-020'ye kadar `x-admin-token` ile korunur.
+      operationId: reloadRules
+      parameters:
+        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Yüklendi (changed=false ise aynı sürüm zaten yüklüydü)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [country, version, changed]
+                properties:
+                  country: { type: string }
+                  version: { type: integer }
+                  changed: { type: boolean }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }

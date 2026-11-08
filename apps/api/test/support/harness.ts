@@ -11,7 +11,7 @@ import type { Db, SqlExecutor } from '../../src/db/client';
 import { migrate } from '../../src/db/migrate';
 import * as schema from '../../src/db/schema';
 import { EventService } from '../../src/modules/event/event.service';
-import type { RulePack } from '../../src/modules/event/rules.loader';
+import type { RulePack, RulesProvider } from '../../src/modules/event/rules.loader';
 import { IdempotencyStore } from '../../src/modules/signal/idempotency.store';
 import { SignalService } from '../../src/modules/signal/signal.service';
 
@@ -30,7 +30,7 @@ export interface Harness {
   signals: SignalService;
   worker: (opts?: OutboxWorkerOptions) => OutboxWorker;
   /** Yeni EventService örneği (= yeni süreç); global bus'a abone olur, aynı veritabanını kullanır. */
-  events: (timers?: Timers, pack?: RulePack) => EventService;
+  events: (timers?: Timers, rules?: RulePack | RulesProvider) => EventService;
   rows: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
   /** Testler arası: tabloları boşalt, Redis/outbox/servisleri yeniden kur (PGlite açılışı pahalı, paylaşılır). */
   reset: () => Promise<void>;
@@ -57,8 +57,8 @@ export async function createHarness(bus: LocalBus = globalBus): Promise<Harness>
     exec,
     bus,
     worker: (opts?: OutboxWorkerOptions) => new OutboxWorker(db, bus, h.outbox, opts),
-    events: (timers?: Timers, pack?: RulePack) => {
-      const ev = new EventService(db, h.outbox, timers ?? new InMemoryTimers(), pack);
+    events: (timers?: Timers, rules?: RulePack | RulesProvider) => {
+      const ev = new EventService(db, h.outbox, timers ?? new InMemoryTimers(), rules);
       ev.onModuleInit();
       return ev;
     },
