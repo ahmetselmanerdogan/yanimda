@@ -12,6 +12,9 @@ docker compose -f infra/docker-compose.yml up -d
 pnpm --filter @yanimda/api db:seed   # migration + demo kişi/cihaz (API açılışta da migration uygular)
 pnpm dev            # api :3000, console :5173
 pnpm test
+pnpm --filter @yanimda/api test:e2e   # uçtan uca + kaos (redis-server gerekir, Docker gerekmez)
+pnpm --filter @yanimda/api stack:local # Redis + PGlite sunucusu + API (Docker'sız yerel yığın)
+scripts/load-smoke.sh -e DURATION=2m    # k6 duman testi (k6 gerekir)
 pnpm --filter @yanimda/simulator start -- fall --person pp_demo --no-cancel
 ```
 

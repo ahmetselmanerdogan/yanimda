@@ -1,0 +1,13 @@
+{
+  "redisDownFallEscalatedMs": 6104,
+  "redisLostJobEscalatedMs": 11174,
+  "redisRecoveredFallEscalatedMs": 7631,
+  "redisDownMs": 30000,
+  "pgDownQueueStatus": 503,
+  "pgDownRetryAfter": "2",
+  "pgDownMs": 10310,
+  "pgRecoveryMs": 2205,
+  "pgSignals": 40,
+  "pgDeviceRetries": 7,
+  "pgLost": 0
+}

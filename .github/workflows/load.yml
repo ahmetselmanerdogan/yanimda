@@ -1,0 +1,29 @@
+name: load-smoke
+# T-016 k6 duman testi (10 dk): her gece ve elle. PR'larda koşmaz (süre).
+on:
+  schedule: [{ cron: '0 2 * * *' }]
+  workflow_dispatch:
+    inputs:
+      duration: { description: 'Süre (ör. 10m, 2m)', default: '10m' }
+
+permissions:
+  contents: read
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.12.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: sudo apt-get update && sudo apt-get install -y redis-server && sudo systemctl stop redis-server || true
+      - uses: grafana/setup-k6-action@v1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanimda/contracts build
+      - run: scripts/load-smoke.sh -e DURATION=${{ inputs.duration || '10m' }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: k6-summary, path: test-results/ }

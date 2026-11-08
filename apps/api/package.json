@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:migrate": "tsx src/db/cli.ts migrate",
     "db:rollback": "tsx src/db/cli.ts rollback",
-    "db:seed": "tsx src/db/cli.ts seed"
+    "db:seed": "tsx src/db/cli.ts seed",
+    "test:e2e": "vitest run -c vitest.e2e.config.ts",
+    "stack:local": "tsx test/e2e/stack-cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",
@@ -32,10 +34,12 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite-socket": "0",
     "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^22.7.0",
     "@types/pg": "^8.23.1",
     "@types/uuid": "^10.0.0",
+    "@yanimda/simulator": "workspace:^",
     "ioredis-mock": "^8.13.1",
     "tsx": "^4.19.1",
     "typescript": "^5.6.0",

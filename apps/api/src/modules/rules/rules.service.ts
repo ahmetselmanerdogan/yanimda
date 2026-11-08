@@ -51,7 +51,7 @@ export class RulesService implements RulesProvider {
     @Inject(DB) private readonly db: Db,
     @Optional() @Inject(RULES_OPTIONS) opts: RulesOptions = {},
   ) {
-    this.dir = opts.dir ?? RULES_DIR;
+    this.dir = opts.dir ?? process.env.RULES_DIR ?? RULES_DIR;
     this.country = (opts.country ?? process.env.COUNTRY_CODE ?? 'TR').toUpperCase();
     const ajv = new Ajv2020({ allErrors: true });
     this.validateSchema = ajv.compile(JSON.parse(readFileSync(join(RULES_DIR, 'schema.json'), 'utf8')));
