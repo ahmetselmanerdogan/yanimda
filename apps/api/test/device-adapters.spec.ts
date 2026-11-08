@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AdapterRegistry } from '../src/modules/device/adapter.registry';
 import { AndroidPhoneAdapter } from '../src/modules/device/adapters/android-phone.adapter';
+import { IosPhoneAdapter } from '../src/modules/device/adapters/ios-phone.adapter';
 import { SimulatorAdapter } from '../src/modules/device/adapters/simulator.adapter';
 import { WearOsAdapter } from '../src/modules/device/adapters/wearos.adapter';
 import { UnsupportedSignalError } from '../src/modules/device/device.types';
@@ -120,6 +121,45 @@ describe('AndroidPhoneAdapter', () => {
   });
 });
 
+describe('IosPhoneAdapter', () => {
+  const push = new RecordingPush();
+  const a = new IosPhoneAdapter(push);
+
+  it('capabilities: telefon rolü, Android telefonla aynı sinyal kümesi; düşme/bilek/nabız yok (T-073)', () => {
+    const c = a.capabilities();
+    expect(a.kind).toBe('IOS_PHONE');
+    expect(c).toMatchObject({ role: 'PHONE', fallDetection: false, offBodyDetection: false, heartRate: false });
+    expect(c).toMatchObject({ devicePrompt: true, ring: true });
+    expect([...c.signals].sort()).toEqual([...new AndroidPhoneAdapter(push).capabilities().signals].sort());
+  });
+
+  it('TTS yok: iOS arka planda sesli okuma yapamaz, soru bildirimle gösterilir', () => {
+    expect(a.capabilities().tts).toBe(false);
+  });
+
+  it.each(['FALL', 'OFF_BODY', 'ON_BODY', 'HEART_RATE'])('normalize %s → desteklenmiyor', (kind) => {
+    expect(() => a.normalize(s(kind))).toThrow(UnsupportedSignalError);
+  });
+
+  it('normalize: onWrist atılır, konum kaynağı PHONE, giriş değişmez', () => {
+    const raw = s('SOS', { device: { batteryPct: 50, onWrist: true }, location: { lat: 41, lng: 29 } });
+    const copy = structuredClone(raw);
+    const out = a.normalize(raw);
+    expect(out.device).toEqual({ batteryPct: 50 });
+    expect(out.location).toEqual({ lat: 41, lng: 29, source: 'PHONE' });
+    expect(raw).toEqual(copy);
+  });
+
+  it('promptUser / ring push ile gider (T-053 APNs)', async () => {
+    await a.promptUser('dev-i', { eventId: 'ev-3', tts: 'W-INACT-1', windowSec: 120, silent: false });
+    await a.ring('dev-i', { eventId: 'ev-3' });
+    expect(push.sent.map((m) => [m.deviceId, m.data.type, m.priority])).toEqual([
+      ['dev-i', 'PROMPT', 'normal'],
+      ['dev-i', 'RING', 'high'],
+    ]);
+  });
+});
+
 describe('SimulatorAdapter', () => {
   it('capabilities: saat gibi davranır (tüm sinyaller)', () => {
     const a = new SimulatorAdapter({ enabled: true });
@@ -153,6 +193,7 @@ describe('AdapterRegistry', () => {
     new AdapterRegistry([
       new WearOsAdapter(push),
       new AndroidPhoneAdapter(push),
+      new IosPhoneAdapter(push),
       new SimulatorAdapter({ enabled: simulator }),
     ]);
 
@@ -160,6 +201,7 @@ describe('AdapterRegistry', () => {
     const r = registry();
     expect(r.for('WEAROS_WATCH')).toBeInstanceOf(WearOsAdapter);
     expect(r.for('ANDROID_PHONE')).toBeInstanceOf(AndroidPhoneAdapter);
+    expect(r.for('IOS_PHONE')).toBeInstanceOf(IosPhoneAdapter);
   });
 
   it('kayıtsız cihaz → simülatör (geliştirme); bilinmeyen tür → hata', () => {

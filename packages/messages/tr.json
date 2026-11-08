@@ -10,6 +10,35 @@
   "P-HOME-PHONE": { "channel": "phone", "text": "Saatiniz bağlı değil. Telefonunuz sizi koruyor." },
   "P-WATCH-OFF-2H": { "channel": "phone", "text": "Saatinizi takmayı unutmayın." },
   "P-PERM": { "channel": "phone", "text": "Bir izin eksik. Sorun yok, yardım edeceğiz." },
+  "P-HOME-PHONE-ONLY": {
+    "channel": "phone",
+    "text": "Telefonunuz sizi koruyor. Yardım gerekirse düğmeye basılı tutun."
+  },
+  "P-HOME-NIGHT": { "channel": "phone", "text": "Gece modu. Telefonunuz yanınızda kalsın." },
+  "P-HOME-UNPROTECTED": { "channel": "phone", "text": "Bağlantı yok. Koruma şu an çalışmıyor." },
+  "P-PERM-NOTIF": {
+    "channel": "phone",
+    "text": "Operatörümüz size ulaşabilsin diye bildirimlere izin verin.",
+    "action": "İzin ver"
+  },
+  "P-PERM-LOC": {
+    "channel": "phone",
+    "text": "Yardım gerekirse sizi bulabilmemiz için konuma \"Her zaman\" izni verin.",
+    "action": "İzin ver"
+  },
+  "P-PERM-MOTION": {
+    "channel": "phone",
+    "text": "Uzun süre hareketsiz kalırsanız fark edebilmemiz için hareket izni verin.",
+    "action": "İzin ver"
+  },
+  "P-PERM-LATER": { "channel": "phone", "text": "Bu izni daha sonra verebilirsiniz.", "action": "Sonra" },
+  "P-PERM-DONE": { "channel": "phone", "text": "Hazırsınız. Yanımda sizi koruyor.", "action": "Başla" },
+  "P-SOS-HOLD": { "channel": "phone", "text": "Yardım için 3 saniye basılı tutun.", "action": "YARDIM" },
+  "P-SOS-SENT": { "channel": "phone", "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak." },
+  "P-SOS-QUEUED": {
+    "channel": "phone",
+    "text": "İnternet yok. Yardım isteğiniz saklandı, bağlanınca hemen gönderilecek."
+  },
   "F-EVT-FALL": {
     "channel": "family",
     "text": "{name} düşmüş olabilir. Operatörümüz arıyor. Sizi bilgilendireceğiz.",

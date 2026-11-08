@@ -26,6 +26,7 @@ paths:
         T-015: her sinyal cihaz türünün adaptöründen geçer (deviceId → device.device.kind; kayıtsız → simülatör,
         üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) partiyi 400 ile reddeder.
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
+        T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
       responses:
         '202':
           description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)

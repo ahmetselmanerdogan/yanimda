@@ -68,7 +68,7 @@ export type EventState =
   | 'CLOSED';
 
 /** Kayıtlı cihaz türü (device.device.kind). Yeni tür = yeni DeviceAdapter (T-015). */
-export type DeviceKind = 'WEAROS_WATCH' | 'ANDROID_PHONE' | 'SIMULATOR';
+export type DeviceKind = 'WEAROS_WATCH' | 'ANDROID_PHONE' | 'IOS_PHONE' | 'SIMULATOR';
 export type DeviceRole = 'WATCH' | 'PHONE';
 
 export type ProtectionState = 'PROTECTED_WATCH' | 'PROTECTED_PHONE' | 'NIGHT' | 'UNPROTECTED';
