@@ -4,42 +4,24 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
+  type OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { type EventState, type EventType, type KafkaEnvelope, type Signal, TOPICS } from '@yanimda/contracts';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus } from '../../common/bus';
+import { OutboxBus } from '../../common/outbox';
+import { safeError } from '../../common/safe-error';
 import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
+import { DB, type Db, type Tx } from '../../db/client';
+import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
 import { loadRulePack, type Rule, RULE_PACK, ruleFor, type RulePack } from './rules.loader';
 
-export interface EventRecord {
-  id: string;
-  protectedPersonId: string;
-  type: EventType;
-  priority: number;
-  state: EventState;
-  createdAt: string;
-  devicePromptUntil?: string;
-  escalatedAt?: string;
-  operatorId?: string;
-  confirmedOutcome?: string;
-  closedAt?: string;
-  closeReason?: string;
-  location?: Signal['location'];
-  sourceSignalIds: string[];
-  isTest: boolean;
-  transitions: {
-    from?: EventState;
-    to: EventState;
-    actorKind: 'SYSTEM' | 'USER' | 'OPERATOR';
-    actorId?: string;
-    at: string;
-    note?: string;
-  }[];
-}
+export type { EventRecord } from './event.repository';
 
 const SIGNAL_TO_EVENT: Partial<Record<Signal['kind'], EventType>> = {
   SOS: 'SOS',
@@ -57,62 +39,123 @@ interface EventSource {
   location?: Signal['location'];
 }
 
+/** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
+interface Uow {
+  tx: Tx;
+  ev: EventRecord;
+  isNew: boolean;
+  transitions: TransitionRecord[];
+  publishes: { topic: string; payload: unknown }[];
+  /** Commit'ten SONRA çalışacak işler (ör. zamanlayıcı iptali). */
+  after: (() => Promise<void>)[];
+}
+
+const pgCode = (e: unknown) =>
+  (e as { code?: string; cause?: { code?: string } })?.cause?.code ?? (e as { code?: string })?.code;
+
 /**
- * D-02 olay üretimi, D-03/D-04 kuyruk, D-05 koruma durumu, D-09 zamanlayıcılar (T-013: Timers/BullMQ),
- * D-10 geçiş kaydı (S0: bellek; T-011b: Postgres event.transition).
+ * D-02 olay üretimi, D-03/D-04 kuyruk, D-09 zamanlayıcılar (Timers/BullMQ), D-10 geçiş kaydı (T-011b).
+ *
+ * Kalıcılık (T-011b): olay event.event'te, geçişler event.transition'da. Her işlem tek transaction'da:
+ * olay satırı FOR UPDATE kilitlenir → durum değişir → geçiş + audit.log + outbox (event.*) yazılır → commit.
+ * Bellekte durum tutulmaz; yeni süreç aynı olayları görür.
+ *
+ * Zamanlayıcılar commit'ten ÖNCE kurulur: commit başarısız olursa geride kalan iş olayı bulamaz ve no-op olur;
+ * tersi (commit oldu, iş kurulamadı) olmaz. Ayrıca periyodik tarama süresi geçmiş cihaz sorularını yükseltir.
  */
 @Injectable()
-export class EventService implements OnModuleInit {
+export class EventService implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
   private readonly log = new Logger('EventService');
   private readonly pack: RulePack;
-  private readonly events = new Map<string, EventRecord>();
-  private readonly openBySubject = new Map<string, string>(); // protectedPersonId -> açık olay id (tip bazlı değil; T-012 iyileştirir)
+  private readonly repo: EventRepository;
+  private sweepTimer?: NodeJS.Timeout;
+  private unsubscribe?: () => void;
 
   constructor(
-    @Inject(TIMERS) private timers: Timers,
+    @Inject(DB) private readonly db: Db,
+    @Inject(OutboxBus) private readonly outbox: OutboxBus,
+    @Inject(TIMERS) private readonly timers: Timers,
     @Optional() @Inject(RULE_PACK) pack?: RulePack,
   ) {
     this.pack = pack ?? loadRulePack();
+    this.repo = new EventRepository(db);
   }
 
   onModuleInit() {
-    bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e));
+    this.unsubscribe = bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e));
     this.registerTimerHandlers();
     this.log.log(`Kural paketi ${this.pack.country} v${this.pack.version} (${this.pack.rules.length} kural)`);
   }
 
-  /** Zamanlayıcı değiştir (yeniden başlatma benzetimi / testler). */
-  useTimers(timers: Timers) {
-    this.timers = timers;
-    this.registerTimerHandlers();
+  onApplicationBootstrap() {
+    const every = Number(process.env.EVENT_SWEEP_MS ?? 30_000);
+    if (every > 0) {
+      const tick = () =>
+        this.recoverOverdue()
+          .catch((e) => this.log.error(`Tarama başarısız: ${safeError(e)}`))
+          .finally(() => (this.sweepTimer = setTimeout(tick, every)));
+      void tick();
+    }
   }
 
-  all(): EventRecord[] {
-    return [...this.events.values()];
+  onModuleDestroy() {
+    clearTimeout(this.sweepTimer);
+    this.unsubscribe?.();
   }
 
-  // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu okur, beklenen durumda değilse no-op (yarış güvenli) ----
+  // ---- Okuma ----
+  async get(id: string): Promise<EventRecord> {
+    const ev = await this.repo.get(id);
+    if (!ev) throw new NotFoundException('Olay yok');
+    return ev;
+  }
+  queue(): Promise<EventRecord[]> {
+    return this.repo.queue();
+  }
+  all(): Promise<EventRecord[]> {
+    return this.repo.all();
+  }
+
+  // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu kilitli okur, beklenen durumda değilse no-op ----
   private registerTimerHandlers() {
     const expirePrompt = async ({ eventId }: TimerJob) => {
-      const ev = this.events.get(eventId);
-      if (!ev) return void this.log.warn(`Zamanlayıcı: olay bulunamadı (T-011b öncesi yeniden başlatma?) ${eventId}`);
-      if (ev.state === 'DEVICE_PROMPT') this.escalate(ev, 'cevap yok');
+      const found = await this.withEvent(eventId, async (u) => {
+        if (u.ev.state === 'DEVICE_PROMPT') this.escalate(u, 'cevap yok');
+      });
+      if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
     };
     this.timers.on('prompt-expire', expirePrompt);
     this.timers.on('silent-ask-expire', expirePrompt);
     this.timers.on('follow-up', async ({ eventId }) => {
-      const src = this.events.get(eventId);
+      const src = await this.repo.get(eventId);
       if (!src) return void this.log.warn(`Takip: kaynak olay bulunamadı ${eventId}`);
-      const sourceId = `follow-up:${eventId}`;
-      if (this.all().some((e) => e.sourceSignalIds.includes(sourceId))) return; // çift tetiklenme
-      await this.create('FOLLOW_UP', { protectedPersonId: src.protectedPersonId, sourceId, location: src.location });
+      await this.create('FOLLOW_UP', {
+        protectedPersonId: src.protectedPersonId,
+        sourceId: `follow-up:${eventId}`,
+        location: src.location,
+      });
     });
+  }
+
+  /** Süresi (+ pay) geçmiş DEVICE_PROMPT olaylarını yükseltir. Yükseltilen olay sayısını döner. */
+  async recoverOverdue(graceMs = Number(process.env.EVENT_SWEEP_GRACE_MS ?? 20_000)): Promise<number> {
+    let n = 0;
+    for (const id of await this.repo.overduePromptIds(new Date(Date.now() - graceMs))) {
+      await this.withEvent(id, async (u) => {
+        if (u.ev.state !== 'DEVICE_PROMPT') return;
+        this.escalate(u, 'cevap yok (tarama)');
+        n++;
+      });
+    }
+    if (n) this.log.warn(`Tarama: ${n} gecikmiş cihaz sorusu yükseltildi`);
+    return n;
   }
 
   private promptKind(rule: Rule): TimerKind {
     return rule.devicePrompt?.silent ? 'silent-ask-expire' : 'prompt-expire';
   }
 
+  // ---- Sinyal işleme (outbox → bus) ----
   private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
     const src: EventSource = {
@@ -127,148 +170,206 @@ export class EventService implements OnModuleInit {
       return;
     }
     const type = SIGNAL_TO_EVENT[s.kind];
-    if (!type) return; // HEARTBEAT, HEART_RATE, STEPS, LOCATION: T-010 Timescale'e yazılır
+    if (!type) return; // HEARTBEAT, HEART_RATE, STEPS, LOCATION: yalnız signal.signal
     return this.create(type, src);
   }
 
-  private async create(type: EventType, s: EventSource) {
+  private async create(type: EventType, s: EventSource, retry = true): Promise<void> {
     const rule = ruleFor(this.pack, type);
-    if (!rule) {
-      this.log.warn(`Kural yok: ${type}`);
-      return;
-    }
-    if (this.openBySubject.has(s.protectedPersonId)) {
-      this.log.log(`Açık olay var, ${type} sinyali eklendi`);
-      this.events.get(this.openBySubject.get(s.protectedPersonId)!)!.sourceSignalIds.push(s.sourceId);
-      return;
-    }
-    const ev: EventRecord = {
-      id: uuidv7(),
-      protectedPersonId: s.protectedPersonId,
-      type,
-      priority: rule.priority,
-      state: 'CREATED',
-      createdAt: new Date().toISOString(),
-      location: s.location ?? undefined,
-      sourceSignalIds: [s.sourceId],
-      isTest: type === 'TEST',
-      transitions: [{ to: 'CREATED', actorKind: 'SYSTEM', at: new Date().toISOString() }],
-    };
-    this.events.set(ev.id, ev);
-    this.openBySubject.set(s.protectedPersonId, ev.id);
-    this.publish(TOPICS.eventCreated, ev);
-    if (rule.devicePrompt?.enabled) {
-      const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
-      ev.devicePromptUntil = new Date(Date.now() + win).toISOString();
-      this.transition(ev, 'DEVICE_PROMPT', 'SYSTEM', undefined, `prompt ${rule.devicePrompt.tts ?? ''} ${win / 1000}s`);
-      await this.timers.schedule(ev.id, this.promptKind(rule), win);
-    } else {
-      this.escalate(ev, 'cihaz sorusu yok');
+    if (!rule) return void this.log.warn(`Kural yok: ${type}`);
+    try {
+      await this.db.transaction(async (tx) => {
+        // Outbox en az bir kez teslim eder: aynı kaynak ikinci kez olay açmasın.
+        if (await this.repo.hasSource(tx, s.sourceId)) return;
+        const open = await this.repo.findOpenForUpdate(tx, s.protectedPersonId);
+        if (open) {
+          this.log.log(`Açık olay var, ${type} kaynağı olaya eklendi`); // T-012: SOS önceliği yükseltir
+          await this.repo.appendSource(tx, open.id, s.sourceId);
+          return;
+        }
+        const now = new Date().toISOString();
+        const u: Uow = {
+          tx,
+          isNew: true,
+          transitions: [],
+          publishes: [],
+          after: [],
+          ev: {
+            id: uuidv7(),
+            protectedPersonId: s.protectedPersonId,
+            type,
+            priority: rule.priority,
+            state: 'CREATED',
+            createdAt: now,
+            location: s.location ?? undefined,
+            sourceSignalIds: [s.sourceId],
+            isTest: type === 'TEST',
+            transitions: [],
+          },
+        };
+        u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
+        this.transition(u, 'CREATED', 'SYSTEM');
+        if (rule.devicePrompt?.enabled) {
+          const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
+          u.ev.devicePromptUntil = new Date(Date.now() + win).toISOString();
+          this.transition(
+            u,
+            'DEVICE_PROMPT',
+            'SYSTEM',
+            undefined,
+            `prompt ${rule.devicePrompt.tts ?? ''} ${win / 1000}s`,
+          );
+          await this.flush(u);
+          await this.timers.schedule(u.ev.id, this.promptKind(rule), win); // commit'ten önce (bkz. sınıf notu)
+        } else {
+          this.escalate(u, 'cihaz sorusu yok');
+          await this.flush(u);
+        }
+      });
+    } catch (e) {
+      // Eş zamanlı ikinci açık olay tekil indekse takıldı → bir kez daha dene (bu kez açık olaya eklenir).
+      if (retry && pgCode(e) === '23505') return this.create(type, s, false);
+      throw e;
     }
   }
 
-  private escalate(ev: EventRecord, note: string) {
-    if (ev.state !== 'CREATED' && ev.state !== 'DEVICE_PROMPT') return;
-    ev.escalatedAt = new Date().toISOString();
-    this.transition(ev, 'ESCALATED', 'SYSTEM', undefined, note);
-    this.transition(ev, 'OPERATOR_QUEUE', 'SYSTEM');
-    this.log.warn(`KUYRUK: ${ev.type} P${ev.priority} olay=${ev.id}`);
+  private escalate(u: Uow, note: string) {
+    if (u.ev.state !== 'CREATED' && u.ev.state !== 'DEVICE_PROMPT') return;
+    u.ev.escalatedAt = new Date().toISOString();
+    this.transition(u, 'ESCALATED', 'SYSTEM', undefined, note);
+    this.transition(u, 'OPERATOR_QUEUE', 'SYSTEM');
+    this.log.warn(`KUYRUK: ${u.ev.type} P${u.ev.priority} olay=${u.ev.id}`);
   }
 
   private async onUserAnswer(s: Signal) {
-    const id = this.openBySubject.get(s.protectedPersonId);
-    if (!id) return;
-    const ev = this.events.get(id)!;
-    if (ev.state !== 'DEVICE_PROMPT') return; // ESCALATED sonrası kullanıcı cevabı operatöre not olarak gider
-    // Önce durum (senkron), sonra iş silme: arada tetiklenen iş durumu DEVICE_PROMPT görmez → no-op.
-    this.transition(ev, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
-    this.close(ev, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM');
-    const rule = ruleFor(this.pack, ev.type);
-    if (rule) await this.timers.cancel(ev.id, this.promptKind(rule));
+    await this.withOpenEvent(s.protectedPersonId, async (u) => {
+      if (u.ev.state !== 'DEVICE_PROMPT') return; // ESCALATED sonrası kullanıcı cevabı operatöre not olarak gider
+      this.transition(u, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
+      this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM');
+      const rule = ruleFor(this.pack, u.ev.type);
+      if (rule) u.after.push(() => this.timers.cancel(u.ev.id, this.promptKind(rule)));
+    });
   }
 
-  private autoCloseWatchOff(subject: string) {
-    const id = this.openBySubject.get(subject);
-    if (!id) return;
-    const ev = this.events.get(id)!;
-    if (ev.type !== 'WATCH_OFF') return;
-    if (ev.state === 'DEVICE_PROMPT' || ev.state === 'OPERATOR_QUEUE') {
-      void this.timers.cancel(id, 'watch-off-remind');
-      void this.timers.cancel(id, 'watch-off-operator');
-      if (ev.state === 'DEVICE_PROMPT') this.transition(ev, 'CANCELLED_BY_USER', 'USER', undefined, 'saat takıldı');
+  private async autoCloseWatchOff(subject: string) {
+    await this.withOpenEvent(subject, async (u) => {
+      if (u.ev.type !== 'WATCH_OFF') return;
+      if (u.ev.state !== 'DEVICE_PROMPT' && u.ev.state !== 'OPERATOR_QUEUE') return;
+      if (u.ev.state === 'DEVICE_PROMPT') this.transition(u, 'CANCELLED_BY_USER', 'USER', undefined, 'saat takıldı');
       else {
-        this.transition(ev, 'OPERATOR_ASSIGNED', 'SYSTEM');
-        this.transition(ev, 'CONFIRMED_OK', 'SYSTEM', undefined, 'saat takıldı');
+        this.transition(u, 'OPERATOR_ASSIGNED', 'SYSTEM');
+        this.transition(u, 'CONFIRMED_OK', 'SYSTEM', undefined, 'saat takıldı');
       }
-      this.close(ev, 'OK', 'saat takıldı', 'SYSTEM');
-    }
+      this.close(u, 'OK', 'saat takıldı', 'SYSTEM');
+      u.after.push(async () => {
+        await this.timers.cancel(u.ev.id, 'watch-off-remind');
+        await this.timers.cancel(u.ev.id, 'watch-off-operator');
+      });
+    });
   }
 
   // ---- Konsol tarafı (E-02, E-07) ----
-  queue(): EventRecord[] {
-    return [...this.events.values()]
-      .filter((e) => e.state === 'OPERATOR_QUEUE' || e.state === 'OPERATOR_ASSIGNED')
-      .sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
-  }
-  claim(id: string, operatorId: string) {
-    const ev = this.get(id);
-    if (ev.state === 'OPERATOR_ASSIGNED' && ev.operatorId !== operatorId)
-      throw new ConflictException('Başka operatör üstlendi');
-    if (ev.state === 'OPERATOR_QUEUE') {
-      ev.operatorId = operatorId;
-      this.transition(ev, 'OPERATOR_ASSIGNED', 'OPERATOR', operatorId);
-    }
-    return ev;
-  }
-  closeByOperator(id: string, operatorId: string, outcome: string, note?: string) {
-    const ev = this.get(id);
-    if (ev.operatorId !== operatorId) throw new ConflictException('Olay sizde değil');
-    const confirmed: EventState = outcome === 'EMERGENCY' ? 'CONFIRMED_EMERGENCY' : 'CONFIRMED_OK';
-    if (ev.state === 'OPERATOR_ASSIGNED' || ev.state === 'CONTACT_CHAIN')
-      this.transition(ev, confirmed, 'OPERATOR', operatorId, note);
-    if (confirmed === 'CONFIRMED_EMERGENCY') this.transition(ev, 'DISPATCH', 'OPERATOR', operatorId);
-    this.close(ev, outcome, note ?? '', 'OPERATOR', operatorId);
-    const hours = ruleFor(this.pack, ev.type)?.followUpAfterHours;
-    if (confirmed === 'CONFIRMED_EMERGENCY' && hours)
-      void this.timers.schedule(ev.id, 'follow-up', hours * 3600 * 1000);
-    return ev;
-  }
-  get(id: string) {
-    const ev = this.events.get(id);
+  async claim(id: string, operatorId: string): Promise<EventRecord> {
+    const ev = await this.withEvent(id, async (u) => {
+      if (u.ev.state === 'OPERATOR_ASSIGNED' && u.ev.operatorId !== operatorId)
+        throw new ConflictException('Başka operatör üstlendi');
+      if (u.ev.state === 'OPERATOR_QUEUE') {
+        u.ev.operatorId = operatorId;
+        this.transition(u, 'OPERATOR_ASSIGNED', 'OPERATOR', operatorId);
+      }
+      return u.ev;
+    });
     if (!ev) throw new NotFoundException('Olay yok');
     return ev;
   }
 
-  private close(ev: EventRecord, outcome: string, reason: string, actorKind: 'SYSTEM' | 'OPERATOR', actorId?: string) {
-    ev.confirmedOutcome = outcome;
-    ev.closedAt = new Date().toISOString();
-    ev.closeReason = reason;
-    this.transition(ev, 'CLOSED', actorKind, actorId, reason);
-    this.openBySubject.delete(ev.protectedPersonId);
-    this.publish(TOPICS.eventClosed, ev);
-  }
-  private transition(
-    ev: EventRecord,
-    to: EventState,
-    actorKind: 'SYSTEM' | 'USER' | 'OPERATOR',
-    actorId?: string,
-    note?: string,
-  ) {
-    const from = ev.state;
-    assertTransition(from, to);
-    ev.state = to;
-    ev.transitions.push({ from, to, actorKind, actorId, at: new Date().toISOString(), note });
-    this.publish(TOPICS.eventTransitioned, { eventId: ev.id, from, to, note });
-  }
-  private publish(topic: string, payload: unknown) {
-    bus.publish(topic, {
-      eventId: uuidv7(),
-      type: topic,
-      version: 1,
-      occurredAt: new Date().toISOString(),
-      countryCode: this.pack.country,
-      subjectUserId: (payload as { protectedPersonId?: string }).protectedPersonId ?? 'n/a',
-      payload,
+  async closeByOperator(id: string, operatorId: string, outcome: string, note?: string): Promise<EventRecord> {
+    const ev = await this.withEvent(id, async (u) => {
+      if (u.ev.operatorId !== operatorId) throw new ConflictException('Olay sizde değil');
+      const confirmed: EventState = outcome === 'EMERGENCY' ? 'CONFIRMED_EMERGENCY' : 'CONFIRMED_OK';
+      if (u.ev.state === 'OPERATOR_ASSIGNED' || u.ev.state === 'CONTACT_CHAIN')
+        this.transition(u, confirmed, 'OPERATOR', operatorId, note);
+      if (confirmed === 'CONFIRMED_EMERGENCY') this.transition(u, 'DISPATCH', 'OPERATOR', operatorId);
+      this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
+      const hours = ruleFor(this.pack, u.ev.type)?.followUpAfterHours;
+      if (confirmed === 'CONFIRMED_EMERGENCY' && hours)
+        await this.timers.schedule(u.ev.id, 'follow-up', hours * 3600 * 1000); // commit'ten önce
+      return u.ev;
     });
+    if (!ev) throw new NotFoundException('Olay yok');
+    return ev;
+  }
+
+  // ---- Birim iş (unit of work) ----
+
+  /** Olayı kilitleyip fn'i çalıştırır, değişiklikleri tek transaction'da yazar. Olay yoksa null. */
+  private async withEvent<T>(id: string, fn: (u: Uow) => Promise<T>): Promise<T | null | undefined> {
+    return this.unitOfWork((tx) => this.repo.findForUpdate(tx, id), fn);
+  }
+
+  private async withOpenEvent<T>(protectedPersonId: string, fn: (u: Uow) => Promise<T>) {
+    return this.unitOfWork((tx) => this.repo.findOpenForUpdate(tx, protectedPersonId), fn);
+  }
+
+  private async unitOfWork<T>(
+    load: (tx: Tx) => Promise<EventRecord | null>,
+    fn: (u: Uow) => Promise<T>,
+  ): Promise<T | null | undefined> {
+    const after: Uow['after'] = [];
+    const result = await this.db.transaction(async (tx) => {
+      const ev = await load(tx);
+      if (!ev) return null;
+      const u: Uow = { tx, ev, isNew: false, transitions: [], publishes: [], after };
+      const r = await fn(u);
+      await this.flush(u);
+      return r;
+    });
+    for (const a of after) await a().catch((e) => this.log.warn(`Commit sonrası iş başarısız: ${safeError(e)}`));
+    return result;
+  }
+
+  private close(u: Uow, outcome: string, reason: string, actorKind: 'SYSTEM' | 'OPERATOR', actorId?: string) {
+    u.ev.confirmedOutcome = outcome;
+    u.ev.closedAt = new Date().toISOString();
+    u.ev.closeReason = reason;
+    this.transition(u, 'CLOSED', actorKind, actorId, reason);
+    u.publishes.push({ topic: TOPICS.eventClosed, payload: u.ev });
+  }
+
+  private transition(u: Uow, to: EventState, actorKind: ActorKind, actorId?: string, note?: string) {
+    const from = u.transitions.length || !u.isNew || u.ev.transitions.length ? u.ev.state : undefined;
+    if (from) assertTransition(from, to);
+    u.ev.state = to;
+    const t: TransitionRecord = { id: uuidv7(), from, to, actorKind, actorId, at: new Date().toISOString(), note };
+    u.ev.transitions.push(t);
+    u.transitions.push(t);
+    u.publishes.push({ topic: TOPICS.eventTransitioned, payload: { eventId: u.ev.id, from, to, note } });
+  }
+
+  /** Olay satırı + geçişler + audit + outbox — çağıranın transaction'ında. */
+  private async flush(u: Uow) {
+    if (u.isNew) {
+      await this.repo.insert(u.tx, u.ev);
+      u.isNew = false;
+    } else if (u.transitions.length || u.publishes.length) await this.repo.update(u.tx, u.ev);
+    await this.repo.insertTransitions(u.tx, u.ev.id, u.transitions);
+    for (const p of u.publishes) {
+      const payload = p.payload === u.ev ? { ...u.ev, transitions: undefined } : p.payload;
+      await this.outbox.publish(
+        p.topic,
+        {
+          eventId: uuidv7(),
+          type: p.topic,
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          countryCode: this.pack.country,
+          subjectUserId: u.ev.protectedPersonId,
+          payload,
+        },
+        u.tx,
+      );
+    }
+    u.transitions = [];
+    u.publishes = [];
   }
 }

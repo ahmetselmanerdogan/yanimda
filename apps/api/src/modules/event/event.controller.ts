@@ -6,8 +6,8 @@ import { EventService } from './event.service';
 @Controller()
 export class EventController {
   constructor(@Inject(EventService) private readonly events: EventService) {}
-  @Get('queue') queue() {
-    return this.events.queue().map((e) => ({
+  @Get('queue') async queue() {
+    return (await this.events.queue()).map((e) => ({
       eventId: e.id,
       type: e.type,
       priority: e.priority,
@@ -24,11 +24,11 @@ export class EventController {
   }
   @Post('events/:id/close')
   @HttpCode(204)
-  close(
+  async close(
     @Param('id') id: string,
     @Headers('x-operator-id') op = 'op-dev',
     @Body() body: { outcome: string; note?: string },
   ) {
-    this.events.closeByOperator(id, op, body.outcome, body.note);
+    await this.events.closeByOperator(id, op, body.outcome, body.note);
   }
 }

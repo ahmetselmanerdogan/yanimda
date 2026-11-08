@@ -4,6 +4,7 @@ import { assertKind, type TimerHandler, type TimerJob, timerJobId, type TimerKin
 export class InMemoryTimers implements Timers {
   private readonly handlers = new Map<TimerKind, TimerHandler>();
   private readonly jobs = new Map<string, { job: TimerJob; delayMs: number; t: NodeJS.Timeout }>();
+  private readonly running = new Set<Promise<void>>();
 
   on(kind: TimerKind, handler: TimerHandler): void {
     this.handlers.set(kind, handler);
@@ -41,7 +42,16 @@ export class InMemoryTimers implements Timers {
     return this.jobs.get(id)?.delayMs;
   }
 
-  private async run(job: TimerJob) {
-    await this.handlers.get(job.kind)?.(job);
+  /** Test: tetiklenmiş işleyicilerin bitmesini bekle. */
+  async idle(): Promise<void> {
+    while (this.running.size) await Promise.all([...this.running]);
+  }
+
+  private run(job: TimerJob): Promise<void> {
+    const p = (async () => {
+      await this.handlers.get(job.kind)?.(job);
+    })();
+    this.running.add(p);
+    return p.finally(() => this.running.delete(p));
   }
 }

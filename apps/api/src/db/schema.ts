@@ -53,3 +53,46 @@ export const device = deviceSchema.table('device', {
   connectivity: text('connectivity'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
+
+export const auditSchema = pgSchema('audit');
+
+export const event = eventSchema.table('event', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  type: text('type').notNull(),
+  priority: integer('priority').notNull(),
+  state: text('state').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  devicePromptUntil: timestamptz('device_prompt_until'),
+  escalatedAt: timestamptz('escalated_at'),
+  operatorId: text('operator_id'),
+  confirmedOutcome: text('confirmed_outcome'),
+  closedAt: timestamptz('closed_at'),
+  closeReason: text('close_reason'),
+  location: jsonb('location'),
+  sourceSignalIds: text('source_signal_ids').array().notNull().default([]),
+  isTest: boolean('is_test').notNull().default(false),
+});
+
+export const transition = eventSchema.table('transition', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  fromState: text('from_state'),
+  toState: text('to_state').notNull(),
+  actorKind: text('actor_kind').notNull(),
+  actorId: text('actor_id'),
+  at: timestamptz('at').notNull().defaultNow(),
+  note: text('note'),
+  seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity(),
+});
+
+export const auditLog = auditSchema.table('log', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  at: timestamptz('at').notNull().defaultNow(),
+  actorKind: text('actor_kind').notNull(),
+  actorId: text('actor_id'),
+  action: text('action').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  data: jsonb('data'),
+});

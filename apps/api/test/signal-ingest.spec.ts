@@ -5,6 +5,7 @@ import { Logger } from '@nestjs/common';
 import type { KafkaEnvelope, Signal } from '@yanimda/contracts';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { down, migrate } from '../src/db/migrate';
@@ -288,6 +289,32 @@ describe('OutboxWorker', () => {
     expect(calls).toBe(1);
   });
 
+  it('ölü işçinin kirası dolmadan başka işçi teslim etmez; dolunca devralır (tek aktif işçi)', async () => {
+    const seen: string[] = [];
+    h.bus.subscribe<Signal>('signal.received', (e) => {
+      seen.push(e.payload.kind);
+    });
+    await h.signals.accept([sig('SOS')]);
+    await h.pg.exec(
+      "INSERT INTO event.outbox_lease (id, owner, until) VALUES (1, 'olu-isci', now() + interval '1 hour')",
+    );
+    expect(await h.worker().drain()).toBe(0);
+    expect(seen).toEqual([]);
+    await h.pg.exec("UPDATE event.outbox_lease SET until = now() - interval '1 second'");
+    expect(await h.worker().drain()).toBe(1);
+    expect(seen).toEqual(['SOS']);
+  });
+
+  it("abone kendi transaction'ını açabilir (işçi bağlantı tutmaz; tek bağlantıda kilitlenme yok)", async () => {
+    h.bus.subscribe('signal.received', async () => {
+      await h.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT 1`);
+      });
+    });
+    await h.signals.accept([sig('SOS')]);
+    expect(await h.worker().drain()).toBe(1);
+  });
+
   it('sinyal kabulü işçiyi hemen uyandırır (1 sn yoklamayı beklemez)', async () => {
     const got = new Promise<string>((resolve) =>
       h.bus.subscribe<Signal>('signal.received', (e) => resolve(e.payload.kind)),
@@ -302,7 +329,7 @@ describe('OutboxWorker', () => {
 
 describe('Migration geri alınabilir (X-05)', () => {
   it('down → up temiz çalışır', async () => {
-    await down(h.exec);
+    await down(h.exec, 99); // tüm migration'lar
     expect(
       await h.rows("SELECT 1 FROM information_schema.tables WHERE table_schema='event' AND table_name='outbox'"),
     ).toEqual([]);

@@ -2,12 +2,16 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import RedisMock from 'ioredis-mock';
 
-import { LocalBus } from '../../src/common/bus';
+import { bus as globalBus, LocalBus } from '../../src/common/bus';
 import { OutboxBus } from '../../src/common/outbox';
 import { OutboxWorker, type OutboxWorkerOptions } from '../../src/common/outbox.worker';
+import { InMemoryTimers } from '../../src/common/timers/memory-timers';
+import type { Timers } from '../../src/common/timers/timers';
 import type { Db, SqlExecutor } from '../../src/db/client';
 import { migrate } from '../../src/db/migrate';
 import * as schema from '../../src/db/schema';
+import { EventService } from '../../src/modules/event/event.service';
+import type { RulePack } from '../../src/modules/event/rules.loader';
 import { IdempotencyStore } from '../../src/modules/signal/idempotency.store';
 import { SignalService } from '../../src/modules/signal/signal.service';
 
@@ -25,6 +29,8 @@ export interface Harness {
   outbox: OutboxBus;
   signals: SignalService;
   worker: (opts?: OutboxWorkerOptions) => OutboxWorker;
+  /** Yeni EventService örneği (= yeni süreç); global bus'a abone olur, aynı veritabanını kullanır. */
+  events: (timers?: Timers, pack?: RulePack) => EventService;
   rows: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
   /** Testler arası: tabloları boşalt, Redis/outbox/servisleri yeniden kur (PGlite açılışı pahalı, paylaşılır). */
   reset: () => Promise<void>;
@@ -40,7 +46,7 @@ export function pgliteExecutor(pg: PGlite): SqlExecutor {
   };
 }
 
-export async function createHarness(bus = new LocalBus()): Promise<Harness> {
+export async function createHarness(bus: LocalBus = globalBus): Promise<Harness> {
   const pg = new PGlite();
   const exec = pgliteExecutor(pg);
   await migrate(exec);
@@ -51,6 +57,11 @@ export async function createHarness(bus = new LocalBus()): Promise<Harness> {
     exec,
     bus,
     worker: (opts?: OutboxWorkerOptions) => new OutboxWorker(db, bus, h.outbox, opts),
+    events: (timers?: Timers, pack?: RulePack) => {
+      const ev = new EventService(db, h.outbox, timers ?? new InMemoryTimers(), pack);
+      ev.onModuleInit();
+      return ev;
+    },
     rows: async (sql: string, params?: unknown[]) => (await pg.query(sql, params ?? [])).rows as never,
     reset: async () => {
       h.redis?.disconnect();
@@ -60,7 +71,8 @@ export async function createHarness(bus = new LocalBus()): Promise<Harness> {
       h.signals = new SignalService(db, new IdempotencyStore(h.redis), h.outbox);
       bus.clear();
       await pg.exec(
-        'TRUNCATE signal.signal, event.outbox, event.outbox_dlq, device.device, profile.protected_person RESTART IDENTITY CASCADE',
+        // audit.log append-only'dir (TRUNCATE reddedilir); testler kendi olay kimliğiyle süzer.
+        'TRUNCATE signal.signal, event.outbox, event.outbox_dlq, event.outbox_lease, event.transition, event.event, device.device, profile.protected_person RESTART IDENTITY CASCADE',
       );
     },
     close: async () => {
