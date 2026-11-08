@@ -89,7 +89,9 @@ describe('Tek transaction: durum + geçiş + audit + outbox', () => {
   it("her geçiş outbox'a event.transitioned yazar", async () => {
     h.events();
     await deliver(sig('SOS'));
-    const topics = (await h.rows<{ topic: string }>('SELECT topic FROM event.outbox ORDER BY id')).map((r) => r.topic);
+    const topics = (
+      await h.rows<{ topic: string }>("SELECT topic FROM event.outbox WHERE topic LIKE 'event.%' ORDER BY id")
+    ).map((r) => r.topic);
     expect(topics).toEqual(['event.created', 'event.transitioned', 'event.transitioned', 'event.transitioned']);
   });
 

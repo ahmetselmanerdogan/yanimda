@@ -88,6 +88,54 @@ paths:
                 followUpAfterHours: { type: integer }
       responses:
         '204': { description: Closed }
+  /protected-persons/{id}/status:
+    get:
+      summary: Korunan kişinin koruma durumu. D-05, T-014
+      description: |
+        Koruma durumu sinyallerle ve periyodik taramayla (gece başlangıcı/bitişi, 15 dk sessiz cihaz) güncellenir:
+        saat bağlı ve bilekte → PROTECTED_WATCH; değilse gece penceresinde → NIGHT; değilse telefon bağlı →
+        PROTECTED_PHONE; hiçbiri → UNPROTECTED. Bağlantı: ONLINE (<15 dk), NO_CONNECTION (<6 saat), LOST.
+        TODO T-020/T-040: FAMILY yalnız kendi kişisini görür.
+      operationId: getProtectionStatus
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Durum
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protectedPersonId, state, since, watch, phone, sleepWindow]
+                properties:
+                  protectedPersonId: { type: string }
+                  state: { enum: [PROTECTED_WATCH, PROTECTED_PHONE, NIGHT, UNPROTECTED] }
+                  since: { type: string, format: date-time }
+                  reason: { type: [string, 'null'] }
+                  watch:
+                    type: object
+                    properties:
+                      onWrist: { type: [boolean, 'null'] }
+                      lastSeenAt: { type: [string, 'null'], format: date-time }
+                      connection: { enum: [ONLINE, NO_CONNECTION, LOST] }
+                  phone:
+                    type: object
+                    properties:
+                      lastSeenAt: { type: [string, 'null'], format: date-time }
+                      connection: { enum: [ONLINE, NO_CONNECTION, LOST] }
+                  sleepWindow:
+                    type: object
+                    properties:
+                      timezone: { type: string }
+                      start: { type: string, example: '22:00' }
+                      end: { type: string, example: '08:00' }
+                  openEvent:
+                    type: [object, 'null']
+                    properties:
+                      id: { type: string }
+                      type: { type: string }
+                      state: { type: string }
+                      priority: { type: integer }
+        '404': { $ref: '#/components/responses/Problem' }
   /admin/rules/reload:
     post:
       summary: Kural paketini sıcak yükle (yönetici). D-02, T-012

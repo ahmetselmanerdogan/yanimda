@@ -21,7 +21,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-011b olay ve geçiş kalıcılığı: event.event + event.transition, tek transaction (durum + geçiş + audit + outbox), kişi başına tek açık olay, append-only audit.log, gecikmiş soru taraması
 - [x] T-012 kural paketi (D-02): JSON Schema + katalog doğrulama, chain.procedure_template sürümleme, POST /v1/admin/rules/reload; karar tablosu (decide.ts); açık olayda SOS → P1; WATCH_OFF 120/240 dk bekleme; pil bildirimleri; BATTERY_DEAD/CONNECTION_LOST cihaz taraması; test olayları 112'siz şablon
 - [x] T-013 BullMQ zamanlayıcılar (D-09): prompt-expire, silent-ask-expire, follow-up bağlı; watch-off/battery-dead/connection-lost türleri hazır (T-012/T-014 bağlar). Yeniden başlatma kabulü T-011b ile uçtan uca sağlandı
-- [ ] T-014 koruma durumu ve gece penceresi (D-05) — not: gece bastırılan OFF_BODY sabah hâlâ takılı değilse WATCH_OFF üretimi burada; isInWindow/connectionState hazır
+- [x] T-014 koruma durumu ve gece penceresi (D-05): PROTECTED_WATCH/NIGHT/PROTECTED_PHONE/UNPROTECTED, event.threshold uyku penceresi, user.protection.changed, GET /v1/protected-persons/{id}/status, sabah WATCH_OFF, gece başında bekleyen WATCH_OFF kapanır. Açık: aile bildirimi için katalog kodu yok (02 PRD kataloğu)
 - [ ] T-015 cihaz adaptörü arayüzü + simülatör adaptörü
 - [ ] T-016 Entegrasyon testi (Testcontainers): simülatör FALL → 60 sn → ESCALATED → Kafka
 

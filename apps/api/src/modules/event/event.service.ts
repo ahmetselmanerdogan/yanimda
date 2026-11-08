@@ -28,6 +28,7 @@ import { BATTERY_DEAD_PCT, decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
 import { isInWindow } from './night';
+import { type ProtectionChange, ProtectionService } from './protection.service';
 import {
   loadRulePack,
   type Rule,
@@ -80,6 +81,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   private readonly log = new Logger('EventService');
   private readonly rules: RulesProvider;
   private readonly repo: EventRepository;
+  private readonly protection: ProtectionService;
   private sweepTimer?: NodeJS.Timeout;
   private unsubscribe?: () => void;
 
@@ -91,6 +93,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   ) {
     this.rules = rules && 'current' in rules ? rules : staticRules((rules as RulePack | undefined) ?? loadRulePack());
     this.repo = new EventRepository(db);
+    this.protection = new ProtectionService(db, outbox, this.rules);
   }
 
   private get pack(): RulePack {
@@ -106,7 +109,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const every = Number(process.env.EVENT_SWEEP_MS ?? 30_000);
     if (every > 0) {
       const tick = () =>
-        Promise.all([this.recoverOverdue(), this.sweepDevices()])
+        Promise.all([this.recoverOverdue(), this.sweepDevices(), this.sweepProtection()])
           .catch((e) => this.log.error(`Tarama başarısız: ${safeError(e)}`))
           .finally(() => (this.sweepTimer = setTimeout(tick, every)));
       void tick();
@@ -204,7 +207,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         )
           n++;
       } else if (lost && silentMin >= lostMin) {
-        if (lost.suppressIn?.includes('NIGHT') && isInWindow(at, d.timezone)) continue; // sabah tekrar bakılır
+        const w = await this.protection.sleepWindowOf(d.protectedPersonId);
+        if (lost.suppressIn?.includes('NIGHT') && isInWindow(at, w.timezone, w.start, w.end)) continue; // sabah tekrar
         if (await this.create('CONNECTION_LOST', { ...src, sourceId: `connection-lost:${key}` })) n++;
       }
     }
@@ -218,28 +222,63 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   // ---- Sinyal işleme (outbox → bus) ----
   private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
-    const night =
-      s.kind === 'OFF_BODY' && isInWindow(new Date(s.occurredAt), await this.repo.timezoneOf(s.protectedPersonId));
+    const change = await this.protection.applySignal(s); // D-05: her sinyal koruma olgularını günceller
+    let night = false;
+    if (s.kind === 'OFF_BODY') {
+      const w = await this.protection.sleepWindowOf(s.protectedPersonId);
+      night = isInWindow(new Date(s.occurredAt), w.timezone, w.start, w.end);
+    }
     const d = decide(s, { pack: this.pack, night });
     switch (d.action) {
       case 'answer':
-        return this.onUserAnswer(s);
+        await this.onUserAnswer(s);
+        break;
       case 'on-body':
-        return this.autoCloseWatchOff(s.protectedPersonId);
+        await this.autoCloseWatchOff(s.protectedPersonId);
+        break;
       case 'notify':
         await this.db.transaction((tx) =>
           this.notify(tx, s.protectedPersonId, d.notices, { dedupeBase: `signal:${s.idempotencyKey}` }),
         );
-        return;
+        break;
       case 'create':
         await this.create(d.type, {
           protectedPersonId: s.protectedPersonId,
           sourceId: s.idempotencyKey,
           location: s.location,
         });
-        return;
+        break;
       case 'none':
-        return;
+        break;
+    }
+    if (change) await this.onProtectionChange(change);
+  }
+
+  /** D-05 koruma taraması: gece başlangıcı/bitişi ve sessizleşen cihazlar. Değişen kişi sayısını döner. */
+  async sweepProtection(now = new Date()): Promise<number> {
+    const changes = await this.protection.sweep(now);
+    for (const c of changes) await this.onProtectionChange(c);
+    return changes.length;
+  }
+
+  /**
+   * Koruma değişikliğinin olay sonuçları:
+   * - NIGHT'a geçiş: bekleyen WATCH_OFF gece operatöre düşmesin diye kapanır.
+   * - NIGHT'tan çıkış ve saat hâlâ çıkarılmış: sabah WATCH_OFF beklemesi açılır (gün başına bir kez).
+   */
+  private async onProtectionChange(c: ProtectionChange) {
+    if (c.to === 'NIGHT') {
+      await this.withOpenEvent(c.protectedPersonId, async (u) => {
+        if (u.ev.type !== 'WATCH_OFF' || u.ev.state !== 'DEVICE_PROMPT') return;
+        this.transition(u, 'CANCELLED_BY_USER', 'SYSTEM', undefined, 'gece penceresi');
+        this.close(u, 'SUPPRESSED', 'gece penceresi', 'SYSTEM');
+        u.after.push(() => this.cancelWaitTimers(u.ev.id));
+      });
+    } else if (c.from === 'NIGHT' && c.facts.watchOnWrist === false) {
+      await this.create('WATCH_OFF', {
+        protectedPersonId: c.protectedPersonId,
+        sourceId: `watch-off-morning:${c.protectedPersonId}:${c.at.toISOString().slice(0, 10)}`,
+      });
     }
   }
 

@@ -5,7 +5,6 @@ import { validate as isUuid } from 'uuid';
 
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, device, event, transition } from '../../db/schema';
-import { DEFAULT_TIMEZONE } from './night';
 
 export type ActorKind = 'SYSTEM' | 'USER' | 'OPERATOR';
 
@@ -208,43 +207,22 @@ export class EventRepository {
   }
 
   /**
-   * Kişinin saat dilimi (gece penceresi için). Salt okuma: profile modülünün tablosu; profile servisi (T-040)
-   * gelince oradan alınacak. Kayıtlı değilse varsayılan.
-   */
-  async timezoneOf(protectedPersonId: string): Promise<string> {
-    const r = (await this.db.execute(
-      sql`SELECT timezone FROM profile.protected_person WHERE id::text = ${protectedPersonId}`,
-    )) as unknown as { rows: { timezone: string }[] };
-    return r.rows[0]?.timezone ?? DEFAULT_TIMEZONE;
-  }
-
-  /**
    * `before`'dan beri sinyal göndermeyen cihazlar (salt okuma; device modülü T-041'de servis olarak sunacak).
    */
   async silentDevices(
     before: Date,
-  ): Promise<
-    { deviceId: string; protectedPersonId: string; lastSeenAt: Date; batteryPct: number | null; timezone: string }[]
-  > {
+  ): Promise<{ deviceId: string; protectedPersonId: string; lastSeenAt: Date; batteryPct: number | null }[]> {
     const r = (await this.db.execute(sql`
-      SELECT d.id::text AS device_id, d.protected_person_id::text AS person_id, d.last_seen_at, d.battery_pct,
-             coalesce(p.timezone, ${DEFAULT_TIMEZONE}) AS timezone
-      FROM ${device} d LEFT JOIN profile.protected_person p ON p.id = d.protected_person_id
+      SELECT d.id::text AS device_id, d.protected_person_id::text AS person_id, d.last_seen_at, d.battery_pct
+      FROM ${device} d
       WHERE d.last_seen_at IS NOT NULL AND d.last_seen_at < ${before.toISOString()}::timestamptz`)) as unknown as {
-      rows: {
-        device_id: string;
-        person_id: string;
-        last_seen_at: Date | string;
-        battery_pct: number | null;
-        timezone: string;
-      }[];
+      rows: { device_id: string; person_id: string; last_seen_at: Date | string; battery_pct: number | null }[];
     };
     return r.rows.map((x) => ({
       deviceId: x.device_id,
       protectedPersonId: x.person_id,
       lastSeenAt: new Date(x.last_seen_at),
       batteryPct: x.battery_pct,
-      timezone: x.timezone,
     }));
   }
 

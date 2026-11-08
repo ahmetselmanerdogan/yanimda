@@ -107,3 +107,14 @@ export const procedureTemplate = chainSchema.table('procedure_template', {
   loadedAt: timestamptz('loaded_at').notNull().defaultNow(),
   loadedBy: text('loaded_by'),
 });
+
+export const protectionState = eventSchema.table('protection_state', {
+  protectedPersonId: text('protected_person_id').primaryKey(),
+  state: text('state').notNull(),
+  since: timestamptz('since').notNull().defaultNow(),
+  reason: text('reason'),
+  watchOnWrist: boolean('watch_on_wrist'),
+  watchSeenAt: timestamptz('watch_seen_at'),
+  phoneSeenAt: timestamptz('phone_seen_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
