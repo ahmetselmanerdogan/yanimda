@@ -16,7 +16,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-007 CI: kural doğrulama, lint, typecheck, test, build; API imajı (<250 MB), duman testi, Trivy (ilk CI koşusunda doğrulanacak)
 
 ## Epik 1 · Olay motoru (S1)
-- [ ] T-010 signal: Timescale yazımı, Kafka üretici, Redis idempotency (D-01) — S0'da bellek içi
+- [x] T-010 signal: Postgres/Timescale yazımı + transactional outbox + OutboxWorker (DLQ), Redis idempotency (D-01). Testler PGlite ile; Testcontainers T-016
 - [x] T-011 event: durum makinesi + geçiş kaydı (D-10) — bellek içi; Postgres event.transition yazımı eklenecek
 - [ ] T-012 kural paketi sıcak yükleme + JSON Schema doğrulama; BATTERY 20/10, BATTERY_DEAD, CONNECTION_LOST üretimi (D-02)
 - [ ] T-013 BullMQ zamanlayıcılar: prompt, sessiz soru, bağlantı kaybı, takip (D-09) — S0'da setTimeout

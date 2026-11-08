@@ -9,6 +9,7 @@ Pronet'in ev için yaptığını insan için yapar: saat → olay motoru → Sa�
 corepack enable     # pnpm 9.12 (package.json packageManager)
 pnpm install        # Husky git hook'larını da kurar
 docker compose -f infra/docker-compose.yml up -d
+pnpm --filter @yanimda/api db:seed   # migration + demo kişi/cihaz (API açılışta da migration uygular)
 pnpm dev            # api :3000, console :5173
 pnpm test
 pnpm --filter @yanimda/simulator start -- fall --person pp_demo --no-cancel

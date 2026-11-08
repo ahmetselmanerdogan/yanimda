@@ -18,9 +18,30 @@ paths:
             schema:
               type: array
               items: { $ref: '#/components/schemas/Signal' }
+      description: |
+        T-010 · D-01. Parti sırayla işlenir; her sinyal tek transaction'da signal.signal + event.outbox
+        (signal.received) olarak yazılır. idempotencyKey 24 saat tekildir (Redis; Redis yoksa veritabanı tekil
+        indeksi). Geçersiz bir sinyal varsa partiden hiçbir şey yazılmaz (400). 503 alan cihaz partiyi
+        Retry-After sonrası aynen yeniden gönderir; önceden yazılanlar `duplicates` sayılır.
       responses:
-        '202': { description: Accepted }
+        '202':
+          description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, duplicates]
+                properties:
+                  accepted: { type: integer, minimum: 0, description: Yeni yazılan sinyal sayısı }
+                  duplicates: { type: integer, minimum: 0, description: Daha önce alınmış (yok sayılan) sinyal sayısı }
         '400': { $ref: '#/components/responses/Problem' }
+        '503':
+          description: Geçici olarak yazılamadı veya aynı sinyal şu an işleniyor; yeniden deneyin
+          headers:
+            Retry-After: { schema: { type: integer }, description: Saniye }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /prompts/{id}/answer:
     post:
       summary: Cihaz sorusuna cevap (İyiyim / Yardım). A-02, D-09
@@ -76,18 +97,15 @@ components:
       description: RFC 7807
       content:
         application/problem+json:
-          schema:
-            {
-              type: object,
-              properties:
-                {
-                  type: { type: string },
-                  title: { type: string },
-                  status: { type: integer },
-                  detail: { type: string },
-                },
-            }
+          schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
     Signal:
       $ref: './schemas/signal.schema.json'
     QueueItem:

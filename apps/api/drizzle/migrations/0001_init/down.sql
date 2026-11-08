@@ -1,0 +1,20 @@
+-- 0001_init geri alma. Şemalar boşsa düşürülür (IF EXISTS / RESTRICT: başka migration'ın tablosu varsa hata verir).
+DROP TABLE IF EXISTS event.outbox_dlq;
+DROP TABLE IF EXISTS event.outbox;
+DROP TABLE IF EXISTS event.protection_state;
+DROP TABLE IF EXISTS event.transition;
+DROP TABLE IF EXISTS event.event;
+DROP TABLE IF EXISTS signal.signal;
+DROP TABLE IF EXISTS device.device;
+DROP TABLE IF EXISTS profile.protected_person;
+DROP SCHEMA IF EXISTS report;
+DROP SCHEMA IF EXISTS audit;
+DROP SCHEMA IF EXISTS telephony;
+DROP SCHEMA IF EXISTS notify;
+DROP SCHEMA IF EXISTS chain;
+DROP SCHEMA IF EXISTS event;
+DROP SCHEMA IF EXISTS signal;
+DROP SCHEMA IF EXISTS device;
+DROP SCHEMA IF EXISTS health;
+DROP SCHEMA IF EXISTS profile;
+DROP SCHEMA IF EXISTS identity;

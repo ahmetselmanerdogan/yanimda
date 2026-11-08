@@ -28,7 +28,7 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
-    files: ['packages/simulator/**', 'packages/rules/validate.mjs', '**/*.spec.ts', '**/test/**'],
+    files: ['packages/simulator/**', 'packages/rules/validate.mjs', '**/src/db/cli.ts', '**/*.spec.ts', '**/test/**'],
     rules: { 'no-console': 'off' },
   },
   prettier,

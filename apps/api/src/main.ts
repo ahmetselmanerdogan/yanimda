@@ -10,6 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger: ['log', 'warn', 'error'] });
   app.setGlobalPrefix('v1');
   app.useGlobalFilters(new ProblemFilter());
+  app.enableShutdownHooks();
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   new Logger('Bootstrap').log(`Yanımda API :${port}/v1 (country=${process.env.COUNTRY_CODE ?? 'TR'})`);
