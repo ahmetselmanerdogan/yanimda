@@ -59,12 +59,25 @@ jobs:
         with: { name: e2e-chaos, path: test-results/, if-no-files-found: ignore }
 
   image:
-    name: API imajı · boyut · Trivy
+    name: API imajı · gerçek TimescaleDB duman · Trivy
     runs-on: ubuntu-latest
     needs: check
+    services:
+      postgres:
+        image: timescale/timescaledb:2.17.2-pg16
+        env: { POSTGRES_USER: yanimda, POSTGRES_PASSWORD: yanimda, POSTGRES_DB: yanimda }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U yanimda" --health-interval 2s --health-timeout 2s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 15
     env:
       IMAGE: yanimda-api:ci
       MAX_IMAGE_MB: 250
+      API: http://localhost:3000/v1
     steps:
       - uses: actions/checkout@v4
       - name: İmajı kur
@@ -75,15 +88,39 @@ jobs:
           mb=$((bytes / 1024 / 1024))
           echo "İmaj boyutu: ${mb} MB"
           [ "$mb" -lt "$MAX_IMAGE_MB" ] || { echo "::error::İmaj ${mb} MB, sınır ${MAX_IMAGE_MB} MB"; exit 1; }
-      - name: Duman testi (açılıyor mu)
+      - name: TimescaleDB uzantıları (infra/init.sql, docker-compose ile aynı)
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
+      - name: İmaj açılıyor (migration'lar gerçek TimescaleDB'ye)
         run: |
-          docker run -d --name api -p 3000:3000 "$IMAGE"
-          for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda \
+            -e REDIS_URL=redis://localhost:6379 -e PORT=3000 "$IMAGE"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/signals" -H 'content-type: application/json' -d '[]') || true
             [ "$code" = "400" ] && echo "API ayakta" && exit 0
             sleep 1
           done
           docker logs api; exit 1
+      - name: Uçtan uca (gerçek TimescaleDB + Redis, üretim imajı)
+        run: |
+          psql() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda -tA "$@"; }
+          # signal.signal hypertable oldu mu
+          [ "$(psql -c "SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='signal' AND hypertable_name='signal'")" = "1" ] \
+            || { echo "::error::signal.signal hypertable değil"; exit 1; }
+          # üretimde kayıtsız cihaz (simülatör) reddedilir
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          sig() { echo "[{\"schemaVersion\":1,\"idempotencyKey\":\"ci-$1-$(date +%s%N)\",\"deviceId\":\"$2\",\"protectedPersonId\":\"00000000-0000-0000-0000-000000000001\",\"kind\":\"$1\",\"occurredAt\":\"$now\"}]"; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/signals" -H 'content-type: application/json' -d "$(sig SOS kayitsiz)")
+          [ "$code" = "400" ] || { echo "::error::kayıtsız cihaz $code döndü (400 beklenir)"; exit 1; }
+          # kayıtlı demo cihazdan SOS → hypertable'a yazılır → outbox → olay → operatör kuyruğu
+          psql < apps/api/drizzle/seed-dev.sql
+          curl -sf -X POST "$API/signals" -H 'content-type: application/json' -d "$(sig SOS 00000000-0000-0000-0000-00000000d001)"; echo
+          [ "$(psql -c "SELECT count(*) FROM signal.signal WHERE kind='SOS'")" = "1" ] || { echo "::error::sinyal yazılmadı"; exit 1; }
+          for i in $(seq 1 20); do
+            curl -s "$API/queue" | grep -q '"type":"SOS"' && echo "SOS operatör kuyruğunda" && exit 0
+            sleep 0.5
+          done
+          echo "::error::SOS kuyruğa düşmedi"; docker logs api; exit 1
       - name: Trivy (yüksek/kritik açıkta fail)
         # Sabit sürümlü resmi imaj; hareketli etiket kullanma.
         run: |

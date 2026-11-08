@@ -1,5 +1,5 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { createDevice } from '@yanimda/simulator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -23,7 +23,10 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
     st = await startStack({ timeScale: SCALE });
   });
   afterAll(async () => {
-    if (process.env.CHAOS_REPORT) writeFileSync(process.env.CHAOS_REPORT, JSON.stringify(report, null, 2));
+    if (process.env.CHAOS_REPORT) {
+      mkdirSync(dirname(process.env.CHAOS_REPORT), { recursive: true });
+      writeFileSync(process.env.CHAOS_REPORT, JSON.stringify(report, null, 2));
+    }
     await st?.close();
   });
 
