@@ -2,10 +2,17 @@
   "name": "@yanimda/contracts",
   "version": "0.1.0",
   "private": true,
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "echo contracts: no build",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p .",
     "lint": "eslint src"
-  }
+  },
+  "types": "src/index.ts",
+  "files": [
+    "dist",
+    "src",
+    "schemas",
+    "openapi.yaml"
+  ]
 }

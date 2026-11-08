@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+.git
+.husky
+.github
+docs
+infra
+*.log
+.env
+.env.*

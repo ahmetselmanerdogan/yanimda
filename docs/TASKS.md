@@ -13,7 +13,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-004 packages/rules: JSON Schema + tr.yaml + validate.mjs
 - [x] T-005 packages/messages: tr.json + t()
 - [x] T-006 packages/simulator: fall/sos/heartbeat/offbody/onbody/battery/inactivity/cancel/scenario
-- [ ] T-007 CI: lint, test, build, Trivy (workflow dosyası var; lint ve Trivy adımları eklenecek)
+- [x] T-007 CI: kural doğrulama, lint, typecheck, test, build; API imajı (<250 MB), duman testi, Trivy (ilk CI koşusunda doğrulanacak)
 
 ## Epik 1 · Olay motoru (S1)
 - [ ] T-010 signal: Timescale yazımı, Kafka üretici, Redis idempotency (D-01) — S0'da bellek içi

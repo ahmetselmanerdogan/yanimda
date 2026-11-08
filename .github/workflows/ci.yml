@@ -1,15 +1,62 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  check:
+    name: lint · typecheck · test · build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with: { version: 9.12.0 }
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Kural paketi doğrulaması (zorunlu)
+        run: pnpm --filter @yanimda/rules test
       - run: pnpm lint
-      - run: pnpm -r test
-      - run: pnpm -r typecheck
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  image:
+    name: API imajı · boyut · Trivy
+    runs-on: ubuntu-latest
+    needs: check
+    env:
+      IMAGE: yanimda-api:ci
+      MAX_IMAGE_MB: 250
+    steps:
+      - uses: actions/checkout@v4
+      - name: İmajı kur
+        run: docker build -f apps/api/Dockerfile -t "$IMAGE" .
+      - name: İmaj boyutu < 250 MB
+        run: |
+          bytes=$(docker image inspect "$IMAGE" --format '{{.Size}}')
+          mb=$((bytes / 1024 / 1024))
+          echo "İmaj boyutu: ${mb} MB"
+          [ "$mb" -lt "$MAX_IMAGE_MB" ] || { echo "::error::İmaj ${mb} MB, sınır ${MAX_IMAGE_MB} MB"; exit 1; }
+      - name: Duman testi (açılıyor mu)
+        run: |
+          docker run -d --name api -p 3000:3000 "$IMAGE"
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
+            [ "$code" = "400" ] && echo "API ayakta" && exit 0
+            sleep 1
+          done
+          docker logs api; exit 1
+      - name: Trivy (yüksek/kritik açıkta fail)
+        # Sabit sürümlü resmi imaj; hareketli etiket kullanma.
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.56.2 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress "$IMAGE"
