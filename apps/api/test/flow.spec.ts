@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bus } from '../src/common/bus';
+import { InMemoryTimers } from '../src/common/timers/memory-timers';
 import { EventService } from '../src/modules/event/event.service';
 import { createHarness, type Harness, sig } from './support/harness';
 
@@ -15,7 +16,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await h.reset();
-  events = new EventService();
+  events = new EventService(new InMemoryTimers());
   events.onModuleInit();
 });
 afterEach(() => {

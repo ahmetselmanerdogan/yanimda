@@ -13,6 +13,8 @@ import type { Pool } from 'pg';
 import { bus } from './common/bus';
 import { OutboxBus } from './common/outbox';
 import { OutboxWorker } from './common/outbox.worker';
+import { BullTimers } from './common/timers/bull-timers';
+import { TIMERS } from './common/timers/timers';
 import { createDb, createPool, DB, type Db, PG_POOL, pgExecutor } from './db/client';
 import { migrate } from './db/migrate';
 import { IdempotencyStore, REDIS } from './modules/signal/idempotency.store';
@@ -26,19 +28,23 @@ class Lifecycle implements OnApplicationBootstrap, OnApplicationShutdown {
     @Inject(OutboxWorker) private readonly worker: OutboxWorker,
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(REDIS) private readonly redis: Redis,
+    @Inject(TIMERS) private readonly timers: BullTimers,
   ) {}
-  onApplicationBootstrap() {
+  async onApplicationBootstrap() {
+    // İşleyiciler modül onModuleInit'lerinde kaydedildi; işçiler şimdi başlar.
+    await this.timers.start();
     if (process.env.OUTBOX_WORKER !== 'off') this.worker.start();
   }
   async onApplicationShutdown() {
     this.worker.stop();
+    await this.timers.close();
     await this.worker.drain().catch(() => undefined);
     this.redis.disconnect();
     await this.pool.end();
   }
 }
 
-/** Ortak altyapı: Postgres (Drizzle), Redis, outbox yazıcı ve işçi. */
+/** Ortak altyapı: Postgres (Drizzle), Redis, outbox yazıcı ve işçi, zamanlayıcılar (BullMQ). */
 @Global()
 @Module({
   providers: [
@@ -81,8 +87,16 @@ class Lifecycle implements OnApplicationBootstrap, OnApplicationShutdown {
       inject: [DB, OutboxBus],
       useFactory: (db: Db, o: OutboxBus) => new OutboxWorker(db, bus, o),
     },
+    {
+      provide: TIMERS,
+      useFactory: () =>
+        new BullTimers({
+          url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+          prefix: process.env.TIMERS_PREFIX ?? 'yanimda',
+        }),
+    },
     Lifecycle,
   ],
-  exports: [DB, REDIS, IdempotencyStore, OutboxBus],
+  exports: [DB, REDIS, IdempotencyStore, OutboxBus, TIMERS],
 })
 export class CoreModule {}

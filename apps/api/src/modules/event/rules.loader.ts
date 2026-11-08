@@ -24,6 +24,8 @@ export interface RulePack {
   rules: Rule[];
 }
 
+export const RULE_PACK = Symbol('RULE_PACK');
+
 /** D-02: kural paketi YAML'dan yüklenir; T-012'de sıcak yükleme ve JSON Schema doğrulaması eklenir. */
 export function loadRulePack(country = process.env.COUNTRY_CODE ?? 'TR'): RulePack {
   const p = join(__dirname, `../../../../../packages/rules/${country.toLowerCase()}.yaml`);

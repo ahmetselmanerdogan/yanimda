@@ -1,10 +1,19 @@
-import { ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { type EventState, type EventType, type KafkaEnvelope, type Signal, TOPICS } from '@yanimda/contracts';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus } from '../../common/bus';
+import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
 import { assertTransition } from './event-state-machine';
-import { loadRulePack, ruleFor, type RulePack } from './rules.loader';
+import { loadRulePack, type Rule, RULE_PACK, ruleFor, type RulePack } from './rules.loader';
 
 export interface EventRecord {
   id: string;
@@ -41,37 +50,88 @@ const SIGNAL_TO_EVENT: Partial<Record<Signal['kind'], EventType>> = {
   TEST: 'TEST',
 };
 
+/** Olay kaynağı: sinyal veya zamanlayıcı (follow-up). */
+interface EventSource {
+  protectedPersonId: string;
+  sourceId: string;
+  location?: Signal['location'];
+}
+
 /**
- * D-02 olay üretimi, D-03/D-04 kuyruk, D-05 koruma durumu, D-09 zamanlayıcılar (S0: setTimeout; T-013: BullMQ),
- * D-10 geçiş kaydı (S0: bellek; T-011: Postgres event.transition).
+ * D-02 olay üretimi, D-03/D-04 kuyruk, D-05 koruma durumu, D-09 zamanlayıcılar (T-013: Timers/BullMQ),
+ * D-10 geçiş kaydı (S0: bellek; T-011b: Postgres event.transition).
  */
 @Injectable()
 export class EventService implements OnModuleInit {
   private readonly log = new Logger('EventService');
-  private pack: RulePack = loadRulePack();
+  private readonly pack: RulePack;
   private readonly events = new Map<string, EventRecord>();
   private readonly openBySubject = new Map<string, string>(); // protectedPersonId -> açık olay id (tip bazlı değil; T-012 iyileştirir)
-  private readonly timers = new Map<string, NodeJS.Timeout>();
+
+  constructor(
+    @Inject(TIMERS) private timers: Timers,
+    @Optional() @Inject(RULE_PACK) pack?: RulePack,
+  ) {
+    this.pack = pack ?? loadRulePack();
+  }
 
   onModuleInit() {
     bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e));
+    this.registerTimerHandlers();
     this.log.log(`Kural paketi ${this.pack.country} v${this.pack.version} (${this.pack.rules.length} kural)`);
   }
 
-  private onSignal(e: KafkaEnvelope<Signal>) {
+  /** Zamanlayıcı değiştir (yeniden başlatma benzetimi / testler). */
+  useTimers(timers: Timers) {
+    this.timers = timers;
+    this.registerTimerHandlers();
+  }
+
+  all(): EventRecord[] {
+    return [...this.events.values()];
+  }
+
+  // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu okur, beklenen durumda değilse no-op (yarış güvenli) ----
+  private registerTimerHandlers() {
+    const expirePrompt = async ({ eventId }: TimerJob) => {
+      const ev = this.events.get(eventId);
+      if (!ev) return void this.log.warn(`Zamanlayıcı: olay bulunamadı (T-011b öncesi yeniden başlatma?) ${eventId}`);
+      if (ev.state === 'DEVICE_PROMPT') this.escalate(ev, 'cevap yok');
+    };
+    this.timers.on('prompt-expire', expirePrompt);
+    this.timers.on('silent-ask-expire', expirePrompt);
+    this.timers.on('follow-up', async ({ eventId }) => {
+      const src = this.events.get(eventId);
+      if (!src) return void this.log.warn(`Takip: kaynak olay bulunamadı ${eventId}`);
+      const sourceId = `follow-up:${eventId}`;
+      if (this.all().some((e) => e.sourceSignalIds.includes(sourceId))) return; // çift tetiklenme
+      await this.create('FOLLOW_UP', { protectedPersonId: src.protectedPersonId, sourceId, location: src.location });
+    });
+  }
+
+  private promptKind(rule: Rule): TimerKind {
+    return rule.devicePrompt?.silent ? 'silent-ask-expire' : 'prompt-expire';
+  }
+
+  private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
+    const src: EventSource = {
+      protectedPersonId: s.protectedPersonId,
+      sourceId: s.idempotencyKey,
+      location: s.location,
+    };
     if (s.kind === 'CANCEL' || s.kind === 'OK') return this.onUserAnswer(s);
     if (s.kind === 'ON_BODY') return this.autoCloseWatchOff(s.protectedPersonId);
     if (s.kind === 'BATTERY' && typeof s.value === 'number') {
-      if (s.value <= 10) return this.create('BATTERY_LOW', s); // T-012: 20/10 ayrımı ve BATTERY_DEAD zamanlayıcısı
+      if (s.value <= 10) return this.create('BATTERY_LOW', src); // T-012: 20/10 ayrımı ve BATTERY_DEAD zamanlayıcısı
       return;
     }
     const type = SIGNAL_TO_EVENT[s.kind];
     if (!type) return; // HEARTBEAT, HEART_RATE, STEPS, LOCATION: T-010 Timescale'e yazılır
-    this.create(type, s);
+    return this.create(type, src);
   }
 
-  private create(type: EventType, s: Signal) {
+  private async create(type: EventType, s: EventSource) {
     const rule = ruleFor(this.pack, type);
     if (!rule) {
       this.log.warn(`Kural yok: ${type}`);
@@ -79,7 +139,7 @@ export class EventService implements OnModuleInit {
     }
     if (this.openBySubject.has(s.protectedPersonId)) {
       this.log.log(`Açık olay var, ${type} sinyali eklendi`);
-      this.events.get(this.openBySubject.get(s.protectedPersonId)!)!.sourceSignalIds.push(s.idempotencyKey);
+      this.events.get(this.openBySubject.get(s.protectedPersonId)!)!.sourceSignalIds.push(s.sourceId);
       return;
     }
     const ev: EventRecord = {
@@ -90,7 +150,7 @@ export class EventService implements OnModuleInit {
       state: 'CREATED',
       createdAt: new Date().toISOString(),
       location: s.location ?? undefined,
-      sourceSignalIds: [s.idempotencyKey],
+      sourceSignalIds: [s.sourceId],
       isTest: type === 'TEST',
       transitions: [{ to: 'CREATED', actorKind: 'SYSTEM', at: new Date().toISOString() }],
     };
@@ -101,10 +161,7 @@ export class EventService implements OnModuleInit {
       const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
       ev.devicePromptUntil = new Date(Date.now() + win).toISOString();
       this.transition(ev, 'DEVICE_PROMPT', 'SYSTEM', undefined, `prompt ${rule.devicePrompt.tts ?? ''} ${win / 1000}s`);
-      this.timers.set(
-        ev.id,
-        setTimeout(() => this.escalate(ev, 'cevap yok'), win),
-      );
+      await this.timers.schedule(ev.id, this.promptKind(rule), win);
     } else {
       this.escalate(ev, 'cihaz sorusu yok');
     }
@@ -118,15 +175,16 @@ export class EventService implements OnModuleInit {
     this.log.warn(`KUYRUK: ${ev.type} P${ev.priority} olay=${ev.id}`);
   }
 
-  private onUserAnswer(s: Signal) {
+  private async onUserAnswer(s: Signal) {
     const id = this.openBySubject.get(s.protectedPersonId);
     if (!id) return;
     const ev = this.events.get(id)!;
-    if (ev.state !== 'DEVICE_PROMPT') return; // ESCALATED sonrası kullanıcı cevabı operatöre not olarak gider (T-013)
-    clearTimeout(this.timers.get(id));
-    this.timers.delete(id);
+    if (ev.state !== 'DEVICE_PROMPT') return; // ESCALATED sonrası kullanıcı cevabı operatöre not olarak gider
+    // Önce durum (senkron), sonra iş silme: arada tetiklenen iş durumu DEVICE_PROMPT görmez → no-op.
     this.transition(ev, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
     this.close(ev, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM');
+    const rule = ruleFor(this.pack, ev.type);
+    if (rule) await this.timers.cancel(ev.id, this.promptKind(rule));
   }
 
   private autoCloseWatchOff(subject: string) {
@@ -135,7 +193,8 @@ export class EventService implements OnModuleInit {
     const ev = this.events.get(id)!;
     if (ev.type !== 'WATCH_OFF') return;
     if (ev.state === 'DEVICE_PROMPT' || ev.state === 'OPERATOR_QUEUE') {
-      clearTimeout(this.timers.get(id));
+      void this.timers.cancel(id, 'watch-off-remind');
+      void this.timers.cancel(id, 'watch-off-operator');
       if (ev.state === 'DEVICE_PROMPT') this.transition(ev, 'CANCELLED_BY_USER', 'USER', undefined, 'saat takıldı');
       else {
         this.transition(ev, 'OPERATOR_ASSIGNED', 'SYSTEM');
@@ -169,6 +228,9 @@ export class EventService implements OnModuleInit {
       this.transition(ev, confirmed, 'OPERATOR', operatorId, note);
     if (confirmed === 'CONFIRMED_EMERGENCY') this.transition(ev, 'DISPATCH', 'OPERATOR', operatorId);
     this.close(ev, outcome, note ?? '', 'OPERATOR', operatorId);
+    const hours = ruleFor(this.pack, ev.type)?.followUpAfterHours;
+    if (confirmed === 'CONFIRMED_EMERGENCY' && hours)
+      void this.timers.schedule(ev.id, 'follow-up', hours * 3600 * 1000);
     return ev;
   }
   get(id: string) {

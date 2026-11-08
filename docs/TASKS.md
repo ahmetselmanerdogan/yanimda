@@ -19,7 +19,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-010 signal: Postgres/Timescale yazımı + transactional outbox + OutboxWorker (DLQ), Redis idempotency (D-01). Testler PGlite ile; Testcontainers T-016
 - [x] T-011 event: durum makinesi + geçiş kaydı (D-10) — bellek içi; Postgres event.transition yazımı eklenecek
 - [ ] T-012 kural paketi sıcak yükleme + JSON Schema doğrulama; BATTERY 20/10, BATTERY_DEAD, CONNECTION_LOST üretimi (D-02)
-- [ ] T-013 BullMQ zamanlayıcılar: prompt, sessiz soru, bağlantı kaybı, takip (D-09) — S0'da setTimeout
+- [x] T-013 BullMQ zamanlayıcılar (D-09): prompt-expire, silent-ask-expire, follow-up bağlı; watch-off/battery-dead/connection-lost türleri hazır (T-012/T-014 bağlar). Uçtan uca yeniden başlatma kabulü olay kalıcılığıyla (T-011b) tamamlanır
 - [ ] T-014 koruma durumu ve gece penceresi (D-05)
 - [ ] T-015 cihaz adaptörü arayüzü + simülatör adaptörü
 - [ ] T-016 Entegrasyon testi (Testcontainers): simülatör FALL → 60 sn → ESCALATED → Kafka
