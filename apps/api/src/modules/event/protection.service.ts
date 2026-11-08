@@ -32,8 +32,8 @@ const factsOf = (r?: Row): ProtectionFacts => ({
  * T-014 · D-05 koruma durumu (event.protection_state). Sinyallerle olgular güncellenir ve durum o sinyalin
  * anına göre hesaplanır; periyodik tarama gerçek zamana göre yeniden hesaplar (gece başlangıcı/bitişi,
  * sessizleşen cihaz). Her değişiklik aynı transaction'da outbox `user.protection.changed`.
- * Salt okuma: profile.protected_person (saat dilimi) ve device.device (cihaz türü) — ilgili modüller
- * (T-040, T-041) servis sununca oradan alınacak.
+ * Cihaz rolü sinyalin `source` alanından (T-015 adaptör). Salt okuma: profile.protected_person (saat dilimi) —
+ * profile servisi (T-040) gelince oradan alınacak.
  */
 @Injectable()
 export class ProtectionService {
@@ -64,17 +64,10 @@ export class ProtectionService {
     };
   }
 
-  /** Kayıtlı cihaz telefonsa PHONE; değilse (saat veya kayıtsız) WATCH. */
-  private async deviceKind(deviceId: string): Promise<'WATCH' | 'PHONE'> {
-    const r = (await this.db.execute(sql`SELECT kind FROM device.device WHERE id::text = ${deviceId}`)) as unknown as {
-      rows: { kind: string }[];
-    };
-    return /PHONE/i.test(r.rows[0]?.kind ?? '') ? 'PHONE' : 'WATCH';
-  }
-
   /** Sinyalin olgularını işler, durumu sinyal anına göre hesaplar. Durum değiştiyse değişikliği döner. */
   async applySignal(s: Signal): Promise<ProtectionChange | null> {
-    const kind = await this.deviceKind(s.deviceId);
+    // Cihaz rolü sinyal alımında adaptörden gelir (T-015); olay motoru cihaz tablosunu okumaz.
+    const kind = s.source?.role ?? 'WATCH';
     const win = await this.sleepWindowOf(s.protectedPersonId);
     const at = new Date(s.occurredAt);
     return this.db.transaction(async (tx) => {

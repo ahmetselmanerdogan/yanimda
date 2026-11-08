@@ -10,6 +10,7 @@ import type { Timers } from '../../src/common/timers/timers';
 import type { Db, SqlExecutor } from '../../src/db/client';
 import { migrate } from '../../src/db/migrate';
 import * as schema from '../../src/db/schema';
+import { DeviceService } from '../../src/modules/device/device.service';
 import { EventService } from '../../src/modules/event/event.service';
 import type { RulePack, RulesProvider } from '../../src/modules/event/rules.loader';
 import { IdempotencyStore } from '../../src/modules/signal/idempotency.store';
@@ -68,7 +69,7 @@ export async function createHarness(bus: LocalBus = globalBus): Promise<Harness>
       h.redis = new RedisMock();
       await h.redis.flushall(); // ioredis-mock örnekler arası veri paylaşır
       h.outbox = new OutboxBus(db);
-      h.signals = new SignalService(db, new IdempotencyStore(h.redis), h.outbox);
+      h.signals = new SignalService(db, new IdempotencyStore(h.redis), h.outbox, new DeviceService(db));
       bus.clear();
       await pg.exec(
         // audit.log append-only'dir (TRUNCATE reddedilir); testler kendi olay kimliğiyle süzer.

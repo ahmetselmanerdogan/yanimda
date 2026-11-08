@@ -1,0 +1,62 @@
+import { Logger } from '@nestjs/common';
+import type { Signal } from '@yanimda/contracts';
+
+import {
+  ALL_SIGNAL_KINDS,
+  assertSupported,
+  type DeviceAdapter,
+  type DeviceCapabilities,
+  type PromptRequest,
+  type RingRequest,
+  UnsupportedSignalError,
+} from '../device.types';
+
+/**
+ * packages/simulator ve kayıtsız cihazlar (geliştirme). Saat gibi davranır, push göndermez.
+ * Üretimde kapalıdır (SIMULATOR_ENABLED, varsayılan NODE_ENV !== 'production'): sahte sinyal olay açmasın.
+ */
+export class SimulatorAdapter implements DeviceAdapter {
+  readonly kind = 'SIMULATOR' as const;
+  readonly commands: (
+    ({ type: 'PROMPT'; deviceId: string } & PromptRequest) | ({ type: 'RING'; deviceId: string } & RingRequest)
+  )[] = [];
+  private readonly log = new Logger('SimulatorAdapter');
+  private readonly enabled: boolean;
+
+  constructor(opts: { enabled?: boolean } = {}) {
+    this.enabled =
+      opts.enabled ??
+      (process.env.SIMULATOR_ENABLED !== undefined
+        ? process.env.SIMULATOR_ENABLED === 'true'
+        : process.env.NODE_ENV !== 'production');
+  }
+
+  capabilities(): DeviceCapabilities {
+    return {
+      role: 'WATCH',
+      signals: [...ALL_SIGNAL_KINDS],
+      fallDetection: true,
+      offBodyDetection: true,
+      heartRate: true,
+      devicePrompt: true,
+      tts: true,
+      ring: true,
+    };
+  }
+
+  normalize(raw: Signal): Signal {
+    if (!this.enabled) throw new UnsupportedSignalError('Kayıtsız cihaz (simülatör bu ortamda kapalı)');
+    assertSupported(this, raw);
+    return { ...raw, payload: { ...(raw.payload ?? {}), simulated: true } };
+  }
+
+  async promptUser(deviceId: string, req: PromptRequest) {
+    this.commands.push({ type: 'PROMPT', deviceId, ...req });
+    this.log.debug(`PROMPT ${req.tts} ${req.windowSec}s`);
+  }
+
+  async ring(deviceId: string, req: RingRequest) {
+    this.commands.push({ type: 'RING', deviceId, ...req });
+    this.log.debug('RING');
+  }
+}

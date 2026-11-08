@@ -45,6 +45,7 @@ export class OutboxWorker {
   private running?: Promise<number>;
   private again = false;
   private stopped = true;
+  private lastErrLog = 0;
   private unsubscribe?: () => void;
   private readonly leaseMs: number;
   readonly owner = `${process.pid}-${randomUUID()}`;
@@ -92,7 +93,10 @@ export class OutboxWorker {
     try {
       await this.drain();
     } catch (e) {
-      this.log.error(`Outbox turu başarısız: ${safeError(e)}`);
+      if (Date.now() - this.lastErrLog > 30_000) {
+        this.log.error(`Outbox turu başarısız (30 sn'de bir raporlanır): ${safeError(e)}`);
+        this.lastErrLog = Date.now();
+      }
     }
     if (this.stopped) return;
     if (this.again) {

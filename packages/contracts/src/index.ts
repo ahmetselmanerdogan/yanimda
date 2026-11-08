@@ -32,6 +32,11 @@ export interface Signal {
     appVersion?: string;
   };
   payload?: Record<string, unknown>;
+  /**
+   * Sunucu doldurur (T-015, cihaz adaptörü); istemci gönderemez (şema additionalProperties: false).
+   * Olay motoru cihaz türünü buradan okur, cihaz tablosundan değil.
+   */
+  source?: { kind: DeviceKind; role: DeviceRole };
 }
 
 export type EventType =
@@ -61,6 +66,10 @@ export type EventState =
   | 'DISPATCH'
   | 'FOLLOW_UP'
   | 'CLOSED';
+
+/** Kayıtlı cihaz türü (device.device.kind). Yeni tür = yeni DeviceAdapter (T-015). */
+export type DeviceKind = 'WEAROS_WATCH' | 'ANDROID_PHONE' | 'SIMULATOR';
+export type DeviceRole = 'WATCH' | 'PHONE';
 
 export type ProtectionState = 'PROTECTED_WATCH' | 'PROTECTED_PHONE' | 'NIGHT' | 'UNPROTECTED';
 

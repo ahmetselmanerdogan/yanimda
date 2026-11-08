@@ -12,6 +12,8 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { device, signal } from '../../db/schema';
+import { DeviceService } from '../device/device.service';
+import { UnsupportedSignalError } from '../device/device.types';
 import { IdempotencyStore } from './idempotency.store';
 
 export interface AcceptResult {
@@ -36,6 +38,7 @@ export class SignalService {
     @Inject(DB) private readonly db: Db,
     @Inject(IdempotencyStore) private readonly idem: IdempotencyStore,
     @Inject(OutboxBus) private readonly outbox: OutboxBus,
+    @Inject(DeviceService) private readonly devices: DeviceService,
   ) {
     const ajv = new Ajv2020({ allErrors: true });
     addFormats(ajv);
@@ -53,9 +56,18 @@ export class SignalService {
       }
     });
 
+    // T-015: her sinyal cihaz türünün adaptöründen geçer (normalize + source). Desteklenmeyen → tüm parti 400.
+    let prepared: Signal[];
+    try {
+      prepared = await this.devices.prepare(batch as Signal[]);
+    } catch (e) {
+      if (e instanceof UnsupportedSignalError) throw new BadRequestException(e.message);
+      throw e;
+    }
+
     let accepted = 0;
     let duplicates = 0;
-    for (const raw of batch as Signal[]) {
+    for (const raw of prepared) {
       const s: Signal = { ...raw, receivedAt: new Date().toISOString() };
       const claim = await this.idem.claim(s.idempotencyKey);
       if (claim === 'duplicate') {

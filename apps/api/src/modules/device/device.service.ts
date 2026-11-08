@@ -1,0 +1,78 @@
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { Signal } from '@yanimda/contracts';
+import { inArray, sql } from 'drizzle-orm';
+
+import { DB, type Db } from '../../db/client';
+import { device } from '../../db/schema';
+import { AdapterRegistry } from './adapter.registry';
+import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
+import { SimulatorAdapter } from './adapters/simulator.adapter';
+import { WearOsAdapter } from './adapters/wearos.adapter';
+import type { DeviceAdapter, PromptRequest, RingRequest } from './device.types';
+import { PUSH, type PushPort, RecordingPush } from './push.port';
+
+export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
+
+export function defaultRegistry(push: PushPort = new RecordingPush()): AdapterRegistry {
+  return new AdapterRegistry([new WearOsAdapter(push), new AndroidPhoneAdapter(push), new SimulatorAdapter()]);
+}
+
+/**
+ * T-015 device modülü: cihaz türünü bilir, sinyali türünün adaptöründen geçirir, cihaza komut gönderir.
+ * Diğer modüller cihaz tablosunu okumaz; bu servisi kullanır.
+ */
+@Injectable()
+export class DeviceService {
+  private readonly registry: AdapterRegistry;
+
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Optional() @Inject(ADAPTER_REGISTRY) registry?: AdapterRegistry,
+    @Optional() @Inject(PUSH) push?: PushPort,
+  ) {
+    this.registry = registry ?? defaultRegistry(push);
+  }
+
+  /** Kayıtlı cihazların türü (kimlik → tür); kayıtsızlar listede yok. Tek sorgu. */
+  async kindsOf(deviceIds: string[]): Promise<Map<string, string>> {
+    const ids = [...new Set(deviceIds)];
+    if (!ids.length) return new Map();
+    const rows = await this.db
+      .select({ id: sql<string>`${device.id}::text`, kind: device.kind })
+      .from(device)
+      .where(inArray(sql`${device.id}::text`, ids));
+    return new Map(rows.map((r) => [r.id, r.kind]));
+  }
+
+  /**
+   * Partiyi kanonik hâle getirir: her sinyal kendi cihaz türünün adaptöründen geçer ve sunucu `source`
+   * alanını doldurur. Bir sinyal desteklenmiyorsa UnsupportedSignalError (çağıran tüm partiyi reddeder).
+   */
+  async prepare(batch: Signal[]): Promise<Signal[]> {
+    const kinds = await this.kindsOf(batch.map((s) => s.deviceId));
+    return batch.map((raw) => {
+      const adapter = this.registry.for(kinds.get(raw.deviceId) ?? null);
+      const s = adapter.normalize(raw);
+      return { ...s, source: { kind: adapter.kind, role: adapter.capabilities().role } };
+    });
+  }
+
+  async adapterFor(deviceId: string): Promise<DeviceAdapter> {
+    return this.registry.for((await this.kindsOf([deviceId])).get(deviceId) ?? null);
+  }
+
+  /** Cihazda soru göster (cihaz destekliyorsa). Desteklemiyorsa false. */
+  async promptUser(deviceId: string, req: PromptRequest): Promise<boolean> {
+    const a = await this.adapterFor(deviceId);
+    if (!a.capabilities().devicePrompt) return false;
+    await a.promptUser(deviceId, req);
+    return true;
+  }
+
+  async ring(deviceId: string, req: RingRequest): Promise<boolean> {
+    const a = await this.adapterFor(deviceId);
+    if (!a.capabilities().ring) return false;
+    await a.ring(deviceId, req);
+    return true;
+  }
+}

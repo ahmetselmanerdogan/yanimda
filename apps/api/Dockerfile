@@ -13,7 +13,7 @@ RUN pnpm install --frozen-lockfile \
  && cp -r apps/api/dist /out/apps/api/dist \
  && mkdir -p /out/packages/contracts /out/packages/rules \
  && cp -r packages/contracts/schemas /out/packages/contracts/schemas \
- && cp packages/rules/*.yaml /out/packages/rules/
+ && cp packages/rules/*.yaml packages/rules/schema.json /out/packages/rules/
 
 FROM node:20-alpine AS runtime
 ENV NODE_ENV=production PORT=3000

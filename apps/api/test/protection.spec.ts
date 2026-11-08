@@ -155,7 +155,7 @@ describe('Sinyallerle koruma durumu (kabul)', () => {
     expect(await stateOf()).toBe('PROTECTED_WATCH');
   });
 
-  it('kayıtlı telefon cihazından gelen sinyal telefonun görüldüğünü işaretler', async () => {
+  it('telefon rolündeki cihazın sinyali (source.role=PHONE) telefonun görüldüğünü işaretler', async () => {
     await h.pg.exec(`
       INSERT INTO profile.protected_person (id, display_name) VALUES ('00000000-0000-0000-0000-000000000001', 'demo');
       INSERT INTO device.device (id, protected_person_id, kind)
@@ -172,6 +172,7 @@ describe('Sinyallerle koruma durumu (kabul)', () => {
         protectedPersonId: p,
         deviceId: '00000000-0000-0000-0000-00000000f001',
         occurredAt: '2026-11-08T11:01:00Z',
+        source: { kind: 'ANDROID_PHONE', role: 'PHONE' }, // sinyal alımında adaptör doldurur (T-015)
       }),
     );
     expect(await stateOf(p)).toBe('PROTECTED_PHONE');
