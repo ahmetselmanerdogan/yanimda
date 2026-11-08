@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RulePack",
+  "type": "object",
+  "required": ["country", "version", "rules"],
+  "properties": {
+    "country": { "type": "string", "minLength": 2, "maxLength": 2 },
+    "version": { "type": "integer", "minimum": 1 },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "priority", "chain"],
+        "properties": {
+          "type": {
+            "enum": [
+              "SOS",
+              "FALL",
+              "INACTIVITY",
+              "CALLBACK",
+              "WATCH_OFF",
+              "BATTERY_LOW",
+              "BATTERY_DEAD",
+              "CONNECTION_LOST",
+              "ROUTINE_DEVIATION",
+              "HEART_ANOMALY",
+              "TEST",
+              "FOLLOW_UP"
+            ]
+          },
+          "priority": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "devicePrompt": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "windowSec": { "type": "integer" },
+              "repeatVibrateSec": { "type": "integer" },
+              "silent": { "type": "boolean" },
+              "tts": { "type": "string" }
+            }
+          },
+          "escalateWhen": { "type": "object" },
+          "thresholdMin": {
+            "type": "object",
+            "properties": {
+              "default": { "type": "integer" },
+              "learnable": { "type": "boolean" },
+              "min": { "type": "integer" },
+              "max": { "type": "integer" }
+            }
+          },
+          "activeHours": { "type": "object" },
+          "autoVoiceScreening": { "type": "object" },
+          "suppressIn": { "type": "array", "items": { "enum": ["NIGHT", "PROTECTED_PHONE", "UNPROTECTED"] } },
+          "remindAfterMin": { "type": "integer" },
+          "operatorAfterMin": { "type": "integer" },
+          "afterHours": { "type": "integer" },
+          "chain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(CALL_WATCH|CALL_PHONE|CALL_CONTACT:[1-5]|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
+            }
+          },
+          "stepTimeoutSec": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "silenceIsEmergencySec": { "type": "integer" },
+          "followUpAfterHours": { "type": "integer" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

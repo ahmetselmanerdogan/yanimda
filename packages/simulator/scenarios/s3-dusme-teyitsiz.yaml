@@ -1,0 +1,8 @@
+# 01-proje-tanimi.md S3: düşme, cevap yok, operatöre düşer
+name: S3 düşme (teyitsiz)
+steps:
+  - kind: HEARTBEAT
+  - kind: FALL
+    extra: { payload: { confidence: 0.91, impactG: 3.4, postImpactMotionSec: 0 } }
+  - wait: 65 # 60 sn iptal penceresi dolar -> ESCALATED
+  - kind: HEARTBEAT

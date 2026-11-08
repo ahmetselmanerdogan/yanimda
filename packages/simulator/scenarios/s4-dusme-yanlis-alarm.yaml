@@ -1,0 +1,7 @@
+# 01-proje-tanimi.md S4: düşme, kullanıcı 5 sn'de iptal eder
+name: S4 düşme (yanlış alarm)
+steps:
+  - kind: FALL
+    extra: { payload: { confidence: 0.7, impactG: 2.1, postImpactMotionSec: 4 } }
+  - wait: 5
+  - kind: CANCEL

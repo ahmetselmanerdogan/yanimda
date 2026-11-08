@@ -1,0 +1,36 @@
+{
+  "W-SOS-1": { "channel": "watch", "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak." },
+  "W-FALL-1": { "channel": "watch", "text": "Düşme algılandı. İyi misiniz? İyiyseniz dokunun.", "action": "İyiyim" },
+  "W-FALL-2": { "channel": "watch", "text": "Sizi arıyoruz. Lütfen bekleyin." },
+  "W-INACT-1": { "channel": "watch", "text": "İyi misiniz? Dokunun.", "action": "İyiyim" },
+  "W-BAT-20": { "channel": "watch", "text": "Saatinizi şarja takın." },
+  "W-BAT-10": { "channel": "watch", "text": "Pil çok az. Şarja takın." },
+  "W-CALL-1": { "channel": "watch", "text": "Yanımda arıyor.", "action": "Cevapla" },
+  "P-HOME-OK": { "channel": "phone", "text": "Korunuyorsunuz. Operatörünüz: {operator}." },
+  "P-HOME-PHONE": { "channel": "phone", "text": "Saatiniz bağlı değil. Telefonunuz sizi koruyor." },
+  "P-WATCH-OFF-2H": { "channel": "phone", "text": "Saatinizi takmayı unutmayın." },
+  "P-PERM": { "channel": "phone", "text": "Bir izin eksik. Sorun yok, yardım edeceğiz." },
+  "F-EVT-FALL": {
+    "channel": "family",
+    "text": "{name} düşmüş olabilir. Operatörümüz arıyor. Sizi bilgilendireceğiz.",
+    "action": "Olayı aç"
+  },
+  "F-EVT-SOS": { "channel": "family", "text": "{name} yardım istedi. Operatör hatta.", "action": "Olayı aç" },
+  "F-EVT-OK": { "channel": "family", "text": "{name} iyi. Yanlış alarm, saatini iptal etti." },
+  "F-EVT-112": {
+    "channel": "family",
+    "text": "Operatör 112'yi aradı. Ambulans yolda. Adres: {address}",
+    "action": "Olayı aç"
+  },
+  "F-DAILY": { "channel": "family", "text": "Bugün iyi: {steps} adım, saat {wristHours} saat takılı." },
+  "F-BAT-10": { "channel": "family", "text": "{name}'ın saat pili %10." },
+  "F-WATCH-OFF-4H": { "channel": "family", "text": "Saat 4 saattir takılı değil. Operatör arıyor." },
+  "F-CONN-LOST": { "channel": "family", "text": "6 saattir bağlantı yok. Operatör arıyor." },
+  "F-SUB-PAY": { "channel": "family", "text": "Ödeme alınamadı. Koruma 7 gün daha devam eder.", "action": "Ödeme" },
+  "F-FOLLOWUP": {
+    "channel": "family",
+    "text": "Dünkü olayla ilgili operatörümüz {name}'ı aradı: iyi.",
+    "action": "Notu oku"
+  },
+  "O-NEW-SOS": { "channel": "console", "text": "Yeni SOS: {name}, {age}, {district}", "action": "Üstlen" }
+}

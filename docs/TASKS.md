@@ -1,0 +1,84 @@
+# Görev listesi (06 · Geliştirme Planı, v1.0)
+
+> Adım adım tam kapsam: **docs/TASKS-DETAY.md** (07 · Görev Kitabı). v1.0 sadeleştirmesi: Kafka yerine Postgres outbox + BullMQ; K8s yerine VPS + compose (prod). Bu dosya özet/işaretleme listesidir.
+
+Her görev bir PR. Kimlikler PRD'ye (02), teknik referans 03'e işaret eder. S0 kısmen hazır (bu repo).
+Claude Code'a görev verirken 06'daki istem şablonunu kullan.
+
+## Epik 0 · Temel (S0) — bu repo ile başlatıldı
+- [x] T-001 Monorepo iskeleti, CLAUDE.md, docs/
+- [x] T-001b Kod kalitesi: ESLint flat + Prettier, Husky + lint-staged, commitlint `<alan>(<PRD-id>): <özet>`
+- [x] T-002 docker-compose: Postgres+Timescale, Redpanda, Redis, Keycloak, MinIO, Mailhog; init.sql
+- [x] T-003 packages/contracts: OpenAPI taslağı, sinyal ve zarf şemaları, TS tipleri (uç noktalar her görevde genişler)
+- [x] T-004 packages/rules: JSON Schema + tr.yaml + validate.mjs
+- [x] T-005 packages/messages: tr.json + t()
+- [x] T-006 packages/simulator: fall/sos/heartbeat/offbody/onbody/battery/inactivity/cancel/scenario
+- [ ] T-007 CI: lint, test, build, Trivy (workflow dosyası var; lint ve Trivy adımları eklenecek)
+
+## Epik 1 · Olay motoru (S1)
+- [ ] T-010 signal: Timescale yazımı, Kafka üretici, Redis idempotency (D-01) — S0'da bellek içi
+- [x] T-011 event: durum makinesi + geçiş kaydı (D-10) — bellek içi; Postgres event.transition yazımı eklenecek
+- [ ] T-012 kural paketi sıcak yükleme + JSON Schema doğrulama; BATTERY 20/10, BATTERY_DEAD, CONNECTION_LOST üretimi (D-02)
+- [ ] T-013 BullMQ zamanlayıcılar: prompt, sessiz soru, bağlantı kaybı, takip (D-09) — S0'da setTimeout
+- [ ] T-014 koruma durumu ve gece penceresi (D-05)
+- [ ] T-015 cihaz adaptörü arayüzü + simülatör adaptörü
+- [ ] T-016 Entegrasyon testi (Testcontainers): simülatör FALL → 60 sn → ESCALATED → Kafka
+
+## Epik 2 · Konsol çekirdek (S2)
+- [ ] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01)
+- [ ] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi Redis (D-03, D-04)
+- [ ] T-022 GET /v1/queue + WebSocket; claim (E-02) — S0'da REST var
+- [ ] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10)
+- [ ] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06)
+- [ ] T-025 SLA sayaçları ve metrikler (E-09, D-11)
+- [ ] T-026 Playwright e2e
+
+## Epik 3 · Wear OS saat (S3) — repo: yanimda-android
+- [ ] T-030 Proje: Compose for Wear, Health Services, test modu
+- [ ] T-031 FALL_DETECTED + prompt 60 sn, titreşim, TTS (A-02, A-03)
+- [ ] T-032 SOS: 3 sn buton + fiziksel tuş 3× (A-01)
+- [ ] T-033 Hareketsizlik (A-04)
+- [ ] T-034 Off-body, pil, nabız, konum (A-05…A-08)
+- [ ] T-035 Room kuyruk + Wearable Data Layer + LTE HTTPS (A-09)
+- [ ] T-036 Tile, komplikasyon, durum rozeti (A-11, A-13)
+- [ ] T-037 Gelen arama ve otomatik cevap (A-10)
+
+## Epik 4 · Eşlikçi Android + profil (S4)
+- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04)
+- [ ] T-041 /v1/devices/enroll, cihaz token, /config
+- [ ] T-042 phone: davet → 6 ekran kurulum (B-01, B-02)
+- [ ] T-043 phone: köprü ve tampon (B-03)
+- [ ] T-044 phone: ana ekran, foreground service, koruma ve gece modu (B-04, B-05, B-06, B-09)
+- [ ] T-045 Uçtan uca cihaz testi <5 sn
+
+## Epik 5 · Telefoni ve bildirim (S5)
+- [ ] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05)
+- [ ] T-051 Konsol WebRTC softphone
+- [ ] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü
+- [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08)
+- [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)
+
+## Epik 6 · Aile ve web (S6)
+- [ ] T-060 family-web: paket, ödeme, hesap (C-01)
+- [ ] T-061 Aile uygulaması ekranları (C-04…C-10)
+- [ ] T-062 Günlük özet + F-DAILY (C-07, B-10)
+- [ ] T-063 Test SOS akışı (C-05)
+
+## Epik 7 · Öğrenme, yanlış alarm, iOS (S7)
+- [ ] T-070 Öğrenme modu (D-06)
+- [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
+- [ ] T-072 Otomatik sesli ön eleme (D-12)
+- [ ] T-073 iOS Companion
+- [ ] T-074 Amir panosu (E-11)
+
+## Epik 8 · Sertleştirme (S8)
+- [ ] T-080 Yük ve kaos testleri, olay kaybı 0
+- [ ] T-081 Güvenlik taramaları, sertifika sabitleme, PII denetimi
+- [ ] T-082 Erişilebilirlik denetimi ve 5 kullanıcı testi
+- [ ] T-083 Staging (Terraform + Helm), sentetik izleme
+- [ ] T-084 Beta dağıtımı, Kapı 2 raporu
+
+## İlk Claude Code oturumu için önerilen sıra
+1. `pnpm install && pnpm test` yeşil olsun.
+2. T-010 (Timescale + Kafka) → T-013 (BullMQ) → T-012 → T-016.
+3. Ardından T-020 → T-021 → T-022 → T-023.

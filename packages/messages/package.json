@@ -1,0 +1,11 @@
+{
+  "name": "@yanimda/messages",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "test": "node -e \"const m=require('./tr.json'); console.log(Object.keys(m).length+' mesaj')\"",
+    "lint": "eslint index.js",
+    "typecheck": "node --check index.js"
+  }
+}

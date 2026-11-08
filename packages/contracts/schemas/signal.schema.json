@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yanimda.app/schemas/signal.json",
+  "title": "Signal",
+  "type": "object",
+  "required": ["schemaVersion", "idempotencyKey", "deviceId", "protectedPersonId", "kind", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 200 },
+    "deviceId": { "type": "string" },
+    "protectedPersonId": { "type": "string" },
+    "kind": {
+      "enum": [
+        "SOS",
+        "FALL",
+        "CANCEL",
+        "OK",
+        "HEART_RATE",
+        "STEPS",
+        "INACTIVITY",
+        "OFF_BODY",
+        "ON_BODY",
+        "BATTERY",
+        "LOCATION",
+        "HEARTBEAT",
+        "CALLBACK_REQUEST",
+        "TEST"
+      ]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "receivedAt": { "type": ["string", "null"], "format": "date-time" },
+    "value": { "type": ["number", "null"] },
+    "location": {
+      "type": ["object", "null"],
+      "properties": {
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "accuracyM": { "type": "number" },
+        "source": { "enum": ["GPS", "NETWORK", "PHONE"] }
+      },
+      "required": ["lat", "lng"]
+    },
+    "device": {
+      "type": "object",
+      "properties": {
+        "batteryPct": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "onWrist": { "type": "boolean" },
+        "connectivity": { "enum": ["BLE", "LTE", "WIFI", "NONE"] },
+        "appVersion": { "type": "string" }
+      }
+    },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

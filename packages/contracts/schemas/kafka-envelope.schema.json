@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yanimda.app/schemas/kafka-envelope.json",
+  "title": "KafkaEnvelope",
+  "type": "object",
+  "required": ["eventId", "type", "version", "occurredAt", "countryCode", "subjectUserId", "payload"],
+  "properties": {
+    "eventId": { "type": "string" },
+    "type": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "countryCode": { "type": "string", "minLength": 2, "maxLength": 2 },
+    "subjectUserId": { "type": "string" },
+    "payload": { "type": "object" }
+  }
+}

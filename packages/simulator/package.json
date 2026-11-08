@@ -1,0 +1,15 @@
+{
+  "name": "@yanimda/simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node src/index.mjs --dry heartbeat --person pp_demo",
+    "lint": "eslint src",
+    "typecheck": "node --check src/index.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  }
+}

@@ -1,0 +1,8 @@
+# 01-proje-tanimi.md S7: saat çıkarıldı, gündüz
+name: S7 saat çıkarıldı
+steps:
+  - kind: OFF_BODY
+    extra: { device: { batteryPct: 60, onWrist: false, connectivity: BLE } }
+  - wait: 10
+  - kind: HEARTBEAT
+    extra: { device: { batteryPct: 60, onWrist: false, connectivity: BLE } }

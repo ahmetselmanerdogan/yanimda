@@ -1,0 +1,54 @@
+# 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
+country: TR
+version: 1
+rules:
+  - type: SOS
+    priority: 1
+    devicePrompt: { enabled: false }
+    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1, CALL_112]
+    stepTimeoutSec: { CALL_WATCH: 15, CALL_PHONE: 15, CALL_CONTACT: 25 }
+    silenceIsEmergencySec: 20
+    followUpAfterHours: 24
+  - type: FALL
+    priority: 1
+    devicePrompt: { enabled: true, windowSec: 60, repeatVibrateSec: 5, tts: W-FALL-1 }
+    escalateWhen: { noAnswer: true }
+    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1, CALL_CONTACT:2, CALL_NEIGHBOR, CALL_112]
+    stepTimeoutSec: { CALL_WATCH: 15, CALL_PHONE: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
+    silenceIsEmergencySec: 20
+    followUpAfterHours: 24
+  - type: INACTIVITY
+    priority: 2
+    thresholdMin: { default: 30, learnable: true, min: 15, max: 90 }
+    activeHours: { useSleepWindow: true }
+    devicePrompt: { enabled: true, windowSec: 120, silent: true, tts: W-INACT-1 }
+    autoVoiceScreening: { enabled: true, phrase: W-INACT-1, acceptIf: ['evet', 'iyiyim'] }
+    chain: [CALL_PHONE, CALL_WATCH, CALL_CONTACT:1, CALL_NEIGHBOR, CALL_112]
+    stepTimeoutSec: { CALL_PHONE: 15, CALL_WATCH: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
+  - type: WATCH_OFF
+    priority: 3
+    suppressIn: [NIGHT]
+    remindAfterMin: 120
+    operatorAfterMin: 240
+    chain: [CALL_PHONE, CALL_CONTACT:1]
+  - type: BATTERY_LOW
+    priority: 3
+    chain: [NOTIFY_FAMILY]
+  - type: BATTERY_DEAD
+    priority: 3
+    operatorAfterMin: 120
+    chain: [CALL_PHONE, CALL_CONTACT:1]
+  - type: CONNECTION_LOST
+    priority: 3
+    afterHours: 6
+    suppressIn: [NIGHT]
+    chain: [CALL_PHONE, CALL_CONTACT:1]
+  - type: CALLBACK
+    priority: 4
+    chain: [CALL_PHONE]
+  - type: TEST
+    priority: 4
+    chain: [CALL_WATCH, CALL_PHONE]
+  - type: FOLLOW_UP
+    priority: 4
+    chain: [CALL_PHONE, CALL_CONTACT:1]

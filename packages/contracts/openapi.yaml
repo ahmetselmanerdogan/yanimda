@@ -1,0 +1,106 @@
+openapi: 3.1.0
+info:
+  title: Yanımda API
+  version: 0.1.0
+  description: 03-teknik-mimari.md "API sözleşmeleri" bölümünün S0 taslağı. Her görevde genişletilir.
+servers:
+  - url: http://localhost:3000/v1
+paths:
+  /signals:
+    post:
+      summary: Cihazdan sinyal gönderimi (toplu). D-01
+      operationId: postSignals
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/Signal' }
+      responses:
+        '202': { description: Accepted }
+        '400': { $ref: '#/components/responses/Problem' }
+  /prompts/{id}/answer:
+    post:
+      summary: Cihaz sorusuna cevap (İyiyim / Yardım). A-02, D-09
+      operationId: answerPrompt
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [answer], properties: { answer: { enum: [OK, HELP] } } }
+      responses:
+        '204': { description: No Content }
+  /queue:
+    get:
+      summary: Operatör kuyruğu (öncelik sıralı). E-02
+      operationId: getQueue
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+  /events/{id}/claim:
+    post:
+      summary: Olayı üstlen (kilit). E-02
+      operationId: claimEvent
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Claimed }
+        '409': { description: Başka operatör üstlendi }
+  /events/{id}/close:
+    post:
+      summary: Olayı kapat. E-07
+      operationId: closeEvent
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { enum: [OK, EMERGENCY, FALSE_ALARM, TEST, UNREACHABLE] }
+                note: { type: string, maxLength: 2000 }
+                followUpAfterHours: { type: integer }
+      responses:
+        '204': { description: Closed }
+components:
+  securitySchemes:
+    deviceToken: { type: http, scheme: bearer }
+    operatorToken: { type: http, scheme: bearer }
+  responses:
+    Problem:
+      description: RFC 7807
+      content:
+        application/problem+json:
+          schema:
+            {
+              type: object,
+              properties:
+                {
+                  type: { type: string },
+                  title: { type: string },
+                  status: { type: integer },
+                  detail: { type: string },
+                },
+            }
+  schemas:
+    Signal:
+      $ref: './schemas/signal.schema.json'
+    QueueItem:
+      type: object
+      properties:
+        eventId: { type: string }
+        type: { type: string }
+        priority: { type: integer }
+        state: { type: string }
+        createdAt: { type: string, format: date-time }
+        person:
+          {
+            type: object,
+            properties: { displayName: { type: string }, age: { type: integer }, district: { type: string } },
+          }
+        lockedBy: { type: [string, 'null'] }
