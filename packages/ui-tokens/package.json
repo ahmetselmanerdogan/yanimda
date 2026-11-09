@@ -1,0 +1,9 @@
+{
+  "name": "@yanimda/ui-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "main": "tokens.json",
+  "scripts": {
+    "test": "node -e \"JSON.parse(require('fs').readFileSync('tokens.json','utf8'))\""
+  }
+}

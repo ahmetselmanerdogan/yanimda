@@ -253,5 +253,307 @@
     "channel": "console",
     "text": "Olay bırakıldı (operatör kilidi doldu): {type}",
     "action": "Üstlen"
+  },
+  "O-UI-TITLE": {
+    "channel": "console",
+    "text": "Yanımda Operatör Konsolu"
+  },
+  "O-UI-LOGIN": {
+    "channel": "console",
+    "text": "Operatör girişi gerekli.",
+    "action": "Giriş yap"
+  },
+  "O-UI-LOGGING-IN": {
+    "channel": "console",
+    "text": "Giriş yapılıyor…"
+  },
+  "O-UI-LOGIN-FAILED": {
+    "channel": "console",
+    "text": "Giriş tamamlanamadı. Yeniden deneyin.",
+    "action": "Yeniden dene"
+  },
+  "O-UI-NO-ROLE": {
+    "channel": "console",
+    "text": "Bu hesabın konsol yetkisi yok.",
+    "action": "Çıkış"
+  },
+  "O-UI-LOGOUT": {
+    "channel": "console",
+    "text": "Çıkış"
+  },
+  "O-UI-ONLINE": {
+    "channel": "console",
+    "text": "Canlı"
+  },
+  "O-UI-OFFLINE": {
+    "channel": "console",
+    "text": "Bağlantı yok, yeniden deneniyor"
+  },
+  "O-UI-QUEUE": {
+    "channel": "console",
+    "text": "Kuyruk ({n})"
+  },
+  "O-UI-QUEUE-EMPTY": {
+    "channel": "console",
+    "text": "Bekleyen olay yok"
+  },
+  "O-UI-NEW-EVENT": {
+    "channel": "console",
+    "text": "Yeni olay: {type}"
+  },
+  "O-UI-NO-SELECTION": {
+    "channel": "console",
+    "text": "Kuyruktan bir olay seçin (↑ ↓, Enter üstlenir)."
+  },
+  "O-UI-CLAIM": {
+    "channel": "console",
+    "text": "Bu olay henüz üstlenilmedi.",
+    "action": "Üstlen"
+  },
+  "O-UI-LOCKED-BY": {
+    "channel": "console",
+    "text": "Başka operatörde"
+  },
+  "O-UI-MINE": {
+    "channel": "console",
+    "text": "Sizde"
+  },
+  "O-UI-AGE": {
+    "channel": "console",
+    "text": "Olay yaşı"
+  },
+  "O-UI-CLAIM-SLA": {
+    "channel": "console",
+    "text": "Üstlenmeye kalan"
+  },
+  "O-UI-CALL-SLA": {
+    "channel": "console",
+    "text": "İlk aramaya kalan"
+  },
+  "O-UI-OVERDUE": {
+    "channel": "console",
+    "text": "Süre aşıldı"
+  },
+  "O-UI-STEPS": {
+    "channel": "console",
+    "text": "Arama adımları"
+  },
+  "O-UI-CALL": {
+    "channel": "console",
+    "text": "Ara"
+  },
+  "O-UI-CALLING": {
+    "channel": "console",
+    "text": "Aranıyor"
+  },
+  "O-UI-NOTE": {
+    "channel": "console",
+    "text": "Görüşme notu"
+  },
+  "O-UI-SKIP-REASON": {
+    "channel": "console",
+    "text": "Atlama gerekçesi (zorunlu)"
+  },
+  "O-UI-ASSESS": {
+    "channel": "console",
+    "text": "Ulaşıldı. Kişinin durumu?"
+  },
+  "O-UI-ASSESS-CONTINUE": {
+    "channel": "console",
+    "text": "Zincire devam"
+  },
+  "O-UI-CHAIN-DONE": {
+    "channel": "console",
+    "text": "Tüm adımlar tamamlandı. Olayı kapatın."
+  },
+  "O-UI-SCRIPT": {
+    "channel": "console",
+    "text": "Konuşma metni"
+  },
+  "O-UI-SCRIPT-READ": {
+    "channel": "console",
+    "text": "Okundu olarak işaretle"
+  },
+  "O-UI-UNKNOWN": {
+    "channel": "console",
+    "text": "bilinmiyor"
+  },
+  "O-UI-PERSON": {
+    "channel": "console",
+    "text": "Kişi"
+  },
+  "O-UI-PERSON-UNKNOWN": {
+    "channel": "console",
+    "text": "Kişi bilgisi yok"
+  },
+  "O-UI-AGE-YEARS": {
+    "channel": "console",
+    "text": "{age} yaş"
+  },
+  "O-UI-MEDICAL": {
+    "channel": "console",
+    "text": "Tıbbi özet"
+  },
+  "O-UI-MEDICAL-NONE": {
+    "channel": "console",
+    "text": "Tıbbi bilgi kayıtlı değil."
+  },
+  "O-UI-COPY-BLOCKED": {
+    "channel": "console",
+    "text": "Kişisel ve tıbbi bilgiler kopyalanamaz."
+  },
+  "O-UI-PHONE": {
+    "channel": "console",
+    "text": "Telefon"
+  },
+  "O-UI-PHONE-NONE": {
+    "channel": "console",
+    "text": "Softphone bağlı değil. Numarayı kayıtlı hattan arayın."
+  },
+  "O-UI-CLOSE": {
+    "channel": "console",
+    "text": "Olayı kapat",
+    "action": "Kapat"
+  },
+  "O-UI-OUTCOME": {
+    "channel": "console",
+    "text": "Sonuç"
+  },
+  "O-UI-CANCEL": {
+    "channel": "console",
+    "text": "Vazgeç"
+  },
+  "O-UI-FOLLOWUP": {
+    "channel": "console",
+    "text": "Takip araması: {hours} saat sonra"
+  },
+  "O-UI-112": {
+    "channel": "console",
+    "text": "Doğrudan 112'ye aktar",
+    "action": "112'ye aktar"
+  },
+  "O-UI-112-REASON": {
+    "channel": "console",
+    "text": "Gerekçe (zorunlu)"
+  },
+  "O-UI-ERROR": {
+    "channel": "console",
+    "text": "İşlem yapılamadı: {detail}"
+  },
+  "O-UI-CONFLICT": {
+    "channel": "console",
+    "text": "Olay başka operatörde veya durumu değişti. Liste yenilendi."
+  },
+  "O-UI-SHORTCUTS": {
+    "channel": "console",
+    "text": "Enter üstlen · A ara · 1–5 sonuç · N not · C kapat · Ctrl+1 112"
+  },
+  "O-UI-TEST": {
+    "channel": "console",
+    "text": "TEST"
+  },
+  "O-OUT-OK": {
+    "channel": "console",
+    "text": "Kişi iyi"
+  },
+  "O-OUT-EMERGENCY": {
+    "channel": "console",
+    "text": "Acil durum (112)"
+  },
+  "O-OUT-FALSE_ALARM": {
+    "channel": "console",
+    "text": "Yanlış alarm"
+  },
+  "O-OUT-TEST": {
+    "channel": "console",
+    "text": "Test"
+  },
+  "O-OUT-UNREACHABLE": {
+    "channel": "console",
+    "text": "Ulaşılamadı"
+  },
+  "O-TYPE-SOS": {
+    "channel": "console",
+    "text": "SOS"
+  },
+  "O-TYPE-FALL": {
+    "channel": "console",
+    "text": "Düşme"
+  },
+  "O-TYPE-INACTIVITY": {
+    "channel": "console",
+    "text": "Hareketsizlik"
+  },
+  "O-TYPE-CALLBACK": {
+    "channel": "console",
+    "text": "Geri arama isteği"
+  },
+  "O-TYPE-WATCH_OFF": {
+    "channel": "console",
+    "text": "Saat takılı değil"
+  },
+  "O-TYPE-BATTERY_LOW": {
+    "channel": "console",
+    "text": "Pil azaldı"
+  },
+  "O-TYPE-BATTERY_DEAD": {
+    "channel": "console",
+    "text": "Pil bitti"
+  },
+  "O-TYPE-CONNECTION_LOST": {
+    "channel": "console",
+    "text": "Bağlantı koptu"
+  },
+  "O-TYPE-ROUTINE_DEVIATION": {
+    "channel": "console",
+    "text": "Rutin dışı durum"
+  },
+  "O-TYPE-HEART_ANOMALY": {
+    "channel": "console",
+    "text": "Nabız anormal"
+  },
+  "O-TYPE-TEST": {
+    "channel": "console",
+    "text": "Test çağrısı"
+  },
+  "O-TYPE-FOLLOW_UP": {
+    "channel": "console",
+    "text": "Takip araması"
+  },
+  "O-STATE-OPERATOR_QUEUE": {
+    "channel": "console",
+    "text": "Bekliyor"
+  },
+  "O-STATE-OPERATOR_ASSIGNED": {
+    "channel": "console",
+    "text": "Üstlenildi"
+  },
+  "O-STATE-CONTACT_CHAIN": {
+    "channel": "console",
+    "text": "Aranıyor"
+  },
+  "O-STATE-CONFIRMED_OK": {
+    "channel": "console",
+    "text": "İyi"
+  },
+  "O-STATE-CONFIRMED_EMERGENCY": {
+    "channel": "console",
+    "text": "Acil"
+  },
+  "O-STATE-DISPATCH": {
+    "channel": "console",
+    "text": "112 yönlendirildi"
+  },
+  "O-STATE-CLOSED": {
+    "channel": "console",
+    "text": "Kapandı"
+  },
+  "O-UI-SECONDS": {
+    "channel": "console",
+    "text": "{n} sn"
+  },
+  "O-UI-PRIORITY": {
+    "channel": "console",
+    "text": "P{n}"
   }
 }
