@@ -56,7 +56,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05)
 - [ ] T-051 Konsol WebRTC softphone
 - [ ] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü
-- [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08)
+- [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08) — başladı: APNs istemcisi, cihaz push yönlendirmesi, iPhone sessiz uyandırma. Açık: FCM, SMS, sesli, aile bildirimleri, yedeklilik
 - [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)
 
 ## Epik 6 · Aile ve web (S6)
@@ -69,7 +69,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-070 Öğrenme modu (D-06)
 - [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
 - [ ] T-072 Otomatik sesli ön eleme (D-12)
-- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. Açık: APNs sessiz push (T-053; hareketsizlik denetimi için güvenilir uyanış), gerçek cihazda pil ölçümü (<%5/24 sa), TestFlight
+- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. APNs sessiz uyandırma (15 dk). Açık: gerçek APNs anahtarı ve cihazda deneme, pil ölçümü (<%5/24 sa), TestFlight
 - [ ] T-074 Amir panosu (E-11)
 
 ## Epik 8 · Sertleştirme (S8)
