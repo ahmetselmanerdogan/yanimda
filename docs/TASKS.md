@@ -69,7 +69,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-070 Öğrenme modu (D-06)
 - [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
 - [ ] T-072 Otomatik sesli ön eleme (D-12)
-- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme). Açık: APNs (T-053), CMMotionActivity hareketsizlik, HealthKit
+- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. Açık: APNs sessiz push (T-053; hareketsizlik denetimi için güvenilir uyanış), gerçek cihazda pil ölçümü (<%5/24 sa), TestFlight
 - [ ] T-074 Amir panosu (E-11)
 
 ## Epik 8 · Sertleştirme (S8)

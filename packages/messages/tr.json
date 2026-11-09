@@ -31,6 +31,11 @@
     "text": "Uzun süre hareketsiz kalırsanız fark edebilmemiz için hareket izni verin.",
     "action": "İzin ver"
   },
+  "P-PERM-HEALTH": {
+    "channel": "phone",
+    "text": "Adım ve nabız bilgileriniz korumanıza yardım etsin diye Sağlık verilerine izin verin.",
+    "action": "İzin ver"
+  },
   "P-PERM-LATER": { "channel": "phone", "text": "Bu izni daha sonra verebilirsiniz.", "action": "Sonra" },
   "P-PERM-DONE": { "channel": "phone", "text": "Hazırsınız. Yanımda sizi koruyor.", "action": "Başla" },
   "P-SOS-HOLD": { "channel": "phone", "text": "Yardım için 3 saniye basılı tutun.", "action": "YARDIM" },
@@ -39,6 +44,8 @@
     "channel": "phone",
     "text": "İnternet yok. Yardım isteğiniz saklandı, bağlanınca hemen gönderilecek."
   },
+  "P-INACT-1": { "channel": "phone", "text": "Bir süredir hareket etmediniz. İyi misiniz?", "action": "İyiyim" },
+  "P-INACT-OK": { "channel": "phone", "text": "Teşekkürler. İyi olduğunuzu ilettik." },
   "P-PAIR": {
     "channel": "phone",
     "text": "Aileniz size 6 haneli bir kod gönderdi. Kodu buraya yazın.",
