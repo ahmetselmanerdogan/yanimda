@@ -753,5 +753,156 @@
   "S-INVITE": {
     "channel": "sms",
     "text": "Yanımda davet kodunuz: {code}. Uygulamayı açıp bu kodu girin. Kod 15 dakika geçerlidir."
+  },
+  "O-UI-SUP-TITLE": {
+    "channel": "console",
+    "text": "Amir panosu"
+  },
+  "O-UI-SUP-BACK": {
+    "channel": "console",
+    "text": "Konsola dön"
+  },
+  "O-UI-SUP-WAITING": {
+    "channel": "console",
+    "text": "Kuyrukta bekleyen"
+  },
+  "O-UI-SUP-IN-PROGRESS": {
+    "channel": "console",
+    "text": "İşlemde"
+  },
+  "O-UI-SUP-ACTIVE-OPS": {
+    "channel": "console",
+    "text": "Olay yürüten operatör"
+  },
+  "O-UI-SUP-CLOSED-24H": {
+    "channel": "console",
+    "text": "Son 24 saatte kapanan"
+  },
+  "O-UI-SUP-CLAIM": {
+    "channel": "console",
+    "text": "Üstlenme süresi p50 / p95 (24 saat)"
+  },
+  "O-UI-SUP-SECONDS": {
+    "channel": "console",
+    "text": "{n} sn"
+  },
+  "O-UI-SUP-FALSE-ALARM": {
+    "channel": "console",
+    "text": "Yanlış alarm oranı ({days} gün)"
+  },
+  "O-UI-SUP-REPEAT": {
+    "channel": "console",
+    "text": "Eşiğe ulaşan kişi: {n}"
+  },
+  "O-UI-SUP-CAUSE-USER_CANCEL": {
+    "channel": "console",
+    "text": "Kişi iptal etti"
+  },
+  "O-UI-SUP-CAUSE-OPERATOR": {
+    "channel": "console",
+    "text": "Operatör kapattı"
+  },
+  "O-UI-SUP-CAUSE-FAMILY_FEEDBACK": {
+    "channel": "console",
+    "text": "Aile: gerçek değildi"
+  },
+  "O-UI-SUP-QUEUE-DEPTH": {
+    "channel": "console",
+    "text": "Kuyruk derinliği (son 24 saat)"
+  },
+  "O-UI-SUP-DEPTH-MAX": {
+    "channel": "console",
+    "text": "en yüksek {n}"
+  },
+  "O-UI-SUP-DEPTH-POINT": {
+    "channel": "console",
+    "text": "{hour}: {depth} bekleyen, {entered} giriş"
+  },
+  "O-UI-SUP-BREACHES": {
+    "channel": "console",
+    "text": "SLA ihlalleri"
+  },
+  "O-UI-SUP-BREACHES-NONE": {
+    "channel": "console",
+    "text": "İhlal yok"
+  },
+  "O-UI-SUP-BREACH-CLAIM": {
+    "channel": "console",
+    "text": "Üstlenme > {sec} sn"
+  },
+  "O-UI-SUP-BREACH-FIRST_CALL": {
+    "channel": "console",
+    "text": "İlk arama > {sec} sn"
+  },
+  "O-UI-SUP-LIVE": {
+    "channel": "console",
+    "text": "Sürüyor"
+  },
+  "O-UI-SUP-OPERATORS": {
+    "channel": "console",
+    "text": "Operatörler"
+  },
+  "O-UI-SUP-OPERATORS-NONE": {
+    "channel": "console",
+    "text": "Henüz bağlanan operatör yok"
+  },
+  "O-UI-SUP-STATUS": {
+    "channel": "console",
+    "text": "Durum"
+  },
+  "O-UI-SUP-STATUS-AVAILABLE": {
+    "channel": "console",
+    "text": "Müsait"
+  },
+  "O-UI-SUP-STATUS-BREAK": {
+    "channel": "console",
+    "text": "Molada"
+  },
+  "O-UI-SUP-STATUS-OFFLINE": {
+    "channel": "console",
+    "text": "Çevrim dışı"
+  },
+  "O-UI-SUP-CONNECTED": {
+    "channel": "console",
+    "text": "Bağlı"
+  },
+  "O-UI-SUP-DISCONNECTED": {
+    "channel": "console",
+    "text": "Bağlı değil"
+  },
+  "O-UI-SUP-OP-STATS": {
+    "channel": "console",
+    "text": "24 saat: {claims} üstlenme, ortalama {avg} sn, {closed} kapanış"
+  },
+  "O-UI-SUP-UNCLAIM": {
+    "channel": "console",
+    "text": "Olayı kuyruğa döndür",
+    "action": "Kuyruğa döndür"
+  },
+  "O-UI-SUP-BY-TYPE": {
+    "channel": "console",
+    "text": "Olay dağılımı (son 24 saat)"
+  },
+  "O-UI-SUP-BY-TYPE-NONE": {
+    "channel": "console",
+    "text": "Son 24 saatte olay yok"
+  },
+  "O-UI-SUP-OVERFLOW": {
+    "channel": "console",
+    "text": "Yedek merkeze taşma"
+  },
+  "O-UI-SUP-OVERFLOW-ON": {
+    "channel": "console",
+    "text": "Açık (şimdilik yalnız işaret; yönlendirme v2.0)",
+    "action": "Kapat"
+  },
+  "O-UI-SUP-OVERFLOW-OFF": {
+    "channel": "console",
+    "text": "Kapalı",
+    "action": "Aç"
+  },
+  "O-UI-SUP-UPDATED": {
+    "channel": "console",
+    "text": "Güncellendi {time}"
   }
 }

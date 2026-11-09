@@ -18,6 +18,7 @@ import { bus as globalBus, type LocalBus } from '../../common/bus';
 import { safeError } from '../../common/safe-error';
 import { EventService } from '../event/event.service';
 import { OidcVerifier, type Role, type UserPrincipal } from '../identity/oidc-verifier';
+import { type SupervisorDashboard, SupervisorService } from '../metrics/supervisor.service';
 import { REDIS } from '../signal/idempotency.store';
 
 export const QUEUE_WS_PATH = '/v1/ws/queue';
@@ -26,6 +27,7 @@ const AUTH_TIMEOUT_MS = 5_000;
 const PING_MS = 30_000;
 const SNAPSHOT_LIMIT = 200;
 const ALLOWED: Role[] = ['OPERATOR', 'SUPERVISOR'];
+export const QUEUE_ENV = Symbol('QUEUE_ENV');
 
 /** Sunucu → istemci mesajları (T-022). */
 export type QueueMessage =
@@ -33,7 +35,9 @@ export type QueueMessage =
   | { type: 'snapshot'; items: unknown[]; total: number }
   | { type: 'upsert'; item: unknown }
   | { type: 'remove'; eventId: string }
-  | { type: 'alert'; alert: SupervisorAlert };
+  | { type: 'alert'; alert: SupervisorAlert }
+  /** T-074: yalnız amire, bağlanınca ve SUPERVISOR_PUSH_MS (5 sn) aralıkla. */
+  | { type: 'dashboard'; dashboard: SupervisorDashboard };
 
 /** Örnekler arası yayın: değişen olay kimliği veya amir uyarısı. */
 type Fanout = { eventId: string } | { alert: SupervisorAlert };
@@ -61,6 +65,8 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
   private readonly unsub: (() => void)[] = [];
   private sub?: Redis;
   private ping?: NodeJS.Timeout;
+  private push?: NodeJS.Timeout;
+  private pushing = false;
   private server?: Server;
   private readonly onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => this.upgrade(req, socket, head);
 
@@ -69,6 +75,8 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     @Inject(OidcVerifier) private readonly verifier: OidcVerifier,
     @Optional() @Inject(REDIS) private readonly redis?: Redis,
     @Optional() @Inject(HttpAdapterHost) private readonly host?: HttpAdapterHost,
+    @Optional() @Inject(SupervisorService) private readonly supervisor?: SupervisorService,
+    @Optional() @Inject(QUEUE_ENV) private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
   onApplicationBootstrap() {
@@ -92,12 +100,18 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     this.subscribeRedis();
     this.ping = setInterval(() => this.heartbeat(), PING_MS);
     this.ping.unref();
+    const every = Number(this.env.SUPERVISOR_PUSH_MS ?? 5_000);
+    if (this.supervisor && every > 0) {
+      this.push = setInterval(() => void this.pushDashboard(), every);
+      this.push.unref();
+    }
   }
 
   async close() {
     this.server?.off('upgrade', this.onUpgrade);
     for (const u of this.unsub.splice(0)) u();
     clearInterval(this.ping);
+    clearInterval(this.push);
     for (const c of this.clients) c.ws.terminate();
     this.clients.clear();
     this.sub?.disconnect();
@@ -153,6 +167,35 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     this.send(c, { type: 'ready', user: { sub: user.sub, roles: user.roles } });
     const { items, total } = await this.events.queuePage({ limit: SNAPSHOT_LIMIT, offset: 0 });
     this.send(c, { type: 'snapshot', items, total });
+    await this.markSeen(c);
+    if (isSupervisor(c)) await this.pushDashboard(c);
+  }
+
+  /** T-074: amir istemcilerine pano (tek hesap, hepsine aynı). Hata fırlatmaz. */
+  private async pushDashboard(only?: Client) {
+    if (!this.supervisor) return;
+    const targets = only ? [only] : [...this.clients].filter(isSupervisor);
+    if (!targets.length || (!only && this.pushing)) return;
+    if (!only) this.pushing = true;
+    try {
+      const data = JSON.stringify({ type: 'dashboard', dashboard: await this.supervisor.dashboard() });
+      for (const c of targets) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
+    } catch (e) {
+      this.log.warn(`Amir panosu yayını başarısız: ${safeError(e)}`);
+    } finally {
+      if (!only) this.pushing = false;
+    }
+  }
+
+  /** T-074: bağlı personel "görüldü" (amir kartı: bağlı mı, ad). Ad log'a yazılmaz. */
+  private async markSeen(c: Client) {
+    if (!this.supervisor || !c.user) return;
+    try {
+      const kind = c.user.roles.includes('OPERATOR') ? 'OPERATOR' : 'SUPERVISOR';
+      await this.supervisor.seen(c.user.sub, c.user.name ?? null, kind);
+    } catch (e) {
+      this.log.warn(`Operatör görüldü yazılamadı: ${safeError(e)}`);
+    }
   }
 
   /** Bus aboneliği: hata fırlatmaz (outbox teslimini tekrarlatmamak için). */
@@ -214,9 +257,12 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
       }
       c.alive = false;
       c.ws.ping();
+      void this.markSeen(c);
     }
   }
 }
+
+const isSupervisor = (c: Client) => !!c.user?.roles.includes('SUPERVISOR');
 
 function eventIdOf(e: KafkaEnvelope<{ eventId?: string; id?: string }>): string {
   return e.payload?.eventId ?? e.payload?.id ?? '';

@@ -358,3 +358,23 @@ export const familyFeedback = eventSchema.table('family_feedback', {
   real: boolean('real').notNull(),
   at: timestamptz('at').notNull().defaultNow(),
 });
+
+/** T-074 (E-11) operatör durumu ve son görülme (WS bağlantısı). */
+export const identitySchema = pgSchema('identity');
+export const operator = identitySchema.table('operator', {
+  subject: text('subject').primaryKey(),
+  displayName: text('display_name'),
+  kind: text('kind').notNull().default('OPERATOR'),
+  status: text('status').notNull().default('AVAILABLE'),
+  statusAt: timestamptz('status_at').notNull().defaultNow(),
+  statusBy: text('status_by'),
+  lastSeenAt: timestamptz('last_seen_at'),
+});
+
+/** T-074 amir bayrakları (ör. `overflow`: yedek merkeze taşma; v2.0'da gerçek yönlendirme). */
+export const supervisorFlag = eventSchema.table('supervisor_flag', {
+  key: text('key').primaryKey(),
+  enabled: boolean('enabled').notNull(),
+  changedAt: timestamptz('changed_at').notNull().defaultNow(),
+  changedBy: text('changed_by'),
+});

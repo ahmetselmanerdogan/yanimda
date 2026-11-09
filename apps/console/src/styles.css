@@ -496,3 +496,175 @@ button.ok kbd {
 button.suggest {
   border-color: #8ab4ff;
 }
+
+/* T-074 amir panosu */
+.supervisor {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.supervisor .topbar {
+  min-height: 48px;
+}
+.sup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.sup-tiles,
+.sup-panel.wide {
+  grid-column: 1 / -1;
+}
+.sup-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+.tile,
+.sup-panel,
+.op-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+.tile strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.tile.overflow strong {
+  font-size: 13px;
+}
+.tile.overflow.on {
+  border-color: var(--attention);
+}
+.tile.overflow button {
+  align-self: flex-start;
+}
+.sup-panel {
+  padding: 12px;
+  min-width: 0;
+}
+svg.depth {
+  width: 100%;
+  height: 120px;
+}
+svg.depth .bar {
+  fill: var(--brand);
+}
+svg.depth .hit {
+  fill: transparent;
+}
+svg.depth g:hover .bar {
+  fill: #8ab4ff;
+}
+svg.depth .axis {
+  fill: var(--muted);
+  font-size: 9px;
+}
+ul.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+ul.bars li {
+  display: grid;
+  grid-template-columns: 140px 1fr 40px;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+ul.bars .track {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+ul.bars .fill {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+ul.bars strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.breaches {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-table, 12px);
+}
+table.breaches td {
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+table.breaches tr.live td:first-child {
+  box-shadow: inset 3px 0 0 var(--help);
+}
+.badge-live {
+  background: var(--help);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.op-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.op-card {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.op-card header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.op-card.s-BREAK {
+  border-color: var(--attention);
+}
+.op-card.s-OFFLINE {
+  opacity: 0.7;
+}
+.op-card .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.op-card .dot.on {
+  background: var(--safe);
+}
+.op-card select {
+  background: var(--surface-2);
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+.op-event {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-table, 12px);
+}
+.op-card p {
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .sup-grid {
+    grid-template-columns: 1fr;
+  }
+}

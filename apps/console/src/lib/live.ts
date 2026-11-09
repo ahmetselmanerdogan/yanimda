@@ -1,11 +1,12 @@
-import type { QueueItem } from './api';
+import type { QueueItem, SupervisorDashboard } from './api';
 
 export type ServerMessage =
   | { type: 'ready'; user: { sub: string; roles: string[] } }
   | { type: 'snapshot'; items: QueueItem[]; total: number }
   | { type: 'upsert'; item: QueueItem }
   | { type: 'remove'; eventId: string }
-  | { type: 'alert'; alert: { code: string; eventId: string; eventType: string; operatorId?: string; at: string } };
+  | { type: 'alert'; alert: { code: string; eventId: string; eventType: string; operatorId?: string; at: string } }
+  | { type: 'dashboard'; dashboard: SupervisorDashboard };
 
 export interface LiveHandlers {
   onMessage(m: ServerMessage): void;

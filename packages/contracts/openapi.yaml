@@ -70,7 +70,8 @@ paths:
         Bekleyen (OPERATOR_QUEUE) ve operatördeki (lockedBy dolu) açık olaylar. Canlı değişiklikler için WebSocket
         `/v1/ws/queue`: bağlanınca ilk mesaj `{"type":"auth","token":"<operatör erişim token'ı>"}` (5 sn içinde; token
         yenilenince tekrar). Sunucu `ready`, `snapshot` (tam liste), ardından `upsert {item}`, `remove {eventId}`,
-        `alert {alert}` (amir uyarısı) gönderir. Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
+        `alert {alert}` (amir uyarısı) gönderir. Amire (SUPERVISOR) ayrıca bağlanınca ve `SUPERVISOR_PUSH_MS` (5 sn)
+        aralıkla `dashboard {dashboard}` (GET /supervisor/dashboard ile aynı gövde; T-074). Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
         doldu, 4403 rol yetmiyor. Yeniden bağlanınca tam liste gelir.
       operationId: getQueue
       security: [{ operatorToken: [] }]
@@ -683,8 +684,10 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /supervisor/dashboard:
     get:
-      summary: Amir özeti — kuyruk, işlemdeki olay, aktif operatör, son 24 saat sonuçları ve üstlenme SLA. E-09, T-025
-      description: Prometheus metrikleri ayrıca API'nin iç ağdaki METRICS_PORT'unda `/metrics` (genel API'de yok).
+      summary: Amir panosu — kuyruk, operatörler, SLA ihlalleri, olay dağılımı, yanlış alarm. E-09, E-11, T-025, T-074
+      description: |
+        SUPERVISOR veya ADMIN. Konsol aynı gövdeyi WS'den 5 sn'de bir alır. Prometheus metrikleri ayrıca API'nin iç
+        ağdaki METRICS_PORT'unda `/metrics` (genel API'de yok).
       operationId: supervisorDashboard
       security: [{ operatorToken: [] }]
       responses:
@@ -720,6 +723,74 @@ paths:
                           p95Sec: { type: [number, 'null'] }
                           overSlaCount: { type: integer, description: 10 sn hedefini aşan üstlenme }
                   falseAlarms: { $ref: '#/components/schemas/FalseAlarmStats' }
+                  queueDepth24h:
+                    type: array
+                    description: Son 24 saat, saat başına (24 nokta). depth saat sonundaki (son saatte şimdiki) bekleyen.
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        depth: { type: integer }
+                        entered: { type: integer }
+                  byType24h: { type: object, additionalProperties: { type: integer }, description: Test hariç }
+                  operators: { type: array, items: { $ref: '#/components/schemas/OperatorCard' } }
+                  slaBreaches:
+                    type: array
+                    description: Canlılar önce, sonra en yeni; en çok 50. Test olayları yok.
+                    items: { $ref: '#/components/schemas/SlaBreach' }
+                  sla:
+                    type: object
+                    properties: { claimSec: { type: integer }, firstCallSec: { type: integer } }
+                  overflow: { $ref: '#/components/schemas/OverflowFlag' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/operators/{sub}/status:
+    put:
+      summary: Amir — operatör durumunu değiştir (audit). E-11, T-074
+      description: Durum bilgi amaçlıdır (gelen SOS yönlendirmesi bunu kullanacak); olay kilidini değiştirmez (unclaim ayrı).
+      operationId: setOperatorStatus
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: sub, in: path, required: true, schema: { type: string, maxLength: 200 } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { enum: [AVAILABLE, BREAK, OFFLINE] } }
+      responses:
+        '200':
+          description: Yeni durum
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  status: { enum: [AVAILABLE, BREAK, OFFLINE] }
+                  statusAt: { type: string, format: date-time }
+                  statusBy: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/overflow:
+    put:
+      summary: Amir — yedek merkeze taşma bayrağı (v1.0'da yalnız işaret; yönlendirme v2.0). E-11, T-074
+      operationId: setOverflow
+      security: [{ operatorToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+      responses:
+        '200':
+          {
+            description: Bayrak,
+            content: { application/json: { schema: { $ref: '#/components/schemas/OverflowFlag' } } },
+          }
+        '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
@@ -1109,6 +1180,48 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    OperatorCard:
+      type: object
+      properties:
+        subject: { type: string }
+        name: { type: [string, 'null'] }
+        status: { enum: [AVAILABLE, BREAK, OFFLINE] }
+        online: { type: boolean, description: Son 90 sn içinde WS'de görüldü }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+        open:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string, format: uuid }
+              type: { type: string }
+              priority: { type: integer }
+              state: { type: string }
+              since: { type: string, format: date-time }
+        claims24h: { type: integer }
+        avgClaimSec: { type: [number, 'null'] }
+        closed24h: { type: integer }
+    SlaBreach:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        type: { type: string }
+        priority: { type: integer }
+        kind:
+          {
+            enum: [CLAIM, FIRST_CALL],
+            description: 'CLAIM: kuyruktan üstlenmeye > 10 sn; FIRST_CALL: üstlenmeden ilk aramaya > 20 sn',
+          }
+        live: { type: boolean, description: Hâlâ sürüyor }
+        waitedSec: { type: integer }
+        at: { type: string, format: date-time }
+        operatorId: { type: [string, 'null'] }
+    OverflowFlag:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        changedAt: { type: [string, 'null'], format: date-time }
+        changedBy: { type: [string, 'null'] }
     TestStatus:
       type: object
       required: [eventId, state, completed]

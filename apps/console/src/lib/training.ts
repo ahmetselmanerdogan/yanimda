@@ -234,6 +234,19 @@ export class TrainingSim {
       this.end(c);
       return { ...c };
     },
+    // Amir panosu eğitim modunda yok (T-074).
+    dashboard: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
+    setOperatorStatus: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
+    setOverflow: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
+    unclaim: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     close: async (id, outcome: CloseOutcome) => {
       const d = this.mine(id);
       const emergency = outcome === 'EMERGENCY';

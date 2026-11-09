@@ -40,11 +40,14 @@ export function Console({
   backend,
   training = false,
   onLogout,
+  onSupervisor,
 }: {
   operator: Operator;
   backend: Backend;
   training?: boolean;
   onLogout(): void;
+  /** T-074: amir ise panoya geçiş. */
+  onSupervisor?(): void;
 }) {
   const me = operator.sub;
   const operatorName = operator.name;
@@ -338,6 +341,7 @@ export function Console({
         count={queue.items.length}
         flash={flash}
         onLogout={onLogout}
+        {...(onSupervisor ? { onSupervisor } : {})}
       />
       <QueueList items={queue.items} selected={selected} me={me} now={now} onSelect={setSelected} />
       <main className="center">

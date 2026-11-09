@@ -20,6 +20,7 @@ export function TopBar(p: {
   count: number;
   flash: string | null;
   onLogout(): void;
+  onSupervisor?(): void;
 }) {
   return (
     <header className={`topbar${p.flash ? ' flash' : ''}`}>
@@ -34,6 +35,11 @@ export function TopBar(p: {
       </span>
       <span className="spacer" />
       <span className="muted small">{t('O-UI-SHORTCUTS')}</span>
+      {p.onSupervisor && (
+        <button type="button" onClick={p.onSupervisor}>
+          {t('O-UI-SUP-TITLE')}
+        </button>
+      )}
       <span className="operator">{p.operator}</span>
       <button type="button" onClick={p.onLogout}>
         {t('O-UI-LOGOUT')}

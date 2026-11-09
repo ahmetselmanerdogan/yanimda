@@ -6,6 +6,10 @@ import { OPERATOR_ROLES, restoreSession, rolesOf, sessionLost, userManager } fro
 import { realBackend } from './lib/backend';
 import { action, t } from './lib/i18n';
 import { trainingRequested } from './lib/training-flag';
+import { SupervisorBoard } from './Supervisor';
+
+/** T-074: amir panosu `/supervisor` (giriş dönüşü köke düşer; konsoldaki düğmeyle geçilir). */
+const SUPERVISOR_PATH = '/supervisor';
 
 type Phase = { kind: 'loading' } | { kind: 'anonymous'; failed?: boolean } | { kind: 'ready'; user: User };
 
@@ -25,6 +29,16 @@ export function App() {
 function LiveApp() {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [backend] = useState(realBackend);
+  const [board, setBoard] = useState(() => window.location.pathname === SUPERVISOR_PATH);
+  const go = (on: boolean) => {
+    window.history.pushState(null, '', on ? SUPERVISOR_PATH : '/');
+    setBoard(on);
+  };
+  useEffect(() => {
+    const pop = () => setBoard(window.location.pathname === SUPERVISOR_PATH);
+    window.addEventListener('popstate', pop);
+    return () => window.removeEventListener('popstate', pop);
+  }, []);
 
   useEffect(() => {
     restoreSession()
@@ -77,11 +91,16 @@ function LiveApp() {
       </main>
     );
   const p = phase.user.profile;
+  const name = String(p.name ?? p.preferred_username ?? '');
+  const supervisor = rolesOf(phase.user).includes('SUPERVISOR');
+  if (supervisor && board)
+    return <SupervisorBoard backend={backend} operatorName={name} onBack={() => go(false)} onLogout={logout} />;
   return (
     <Console
-      operator={{ sub: p.sub, name: String(p.name ?? p.preferred_username ?? '') }}
+      operator={{ sub: p.sub, name }}
       backend={backend}
       onLogout={logout}
+      {...(supervisor ? { onSupervisor: () => go(true) } : {})}
     />
   );
 }

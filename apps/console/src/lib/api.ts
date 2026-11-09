@@ -102,6 +102,57 @@ export interface DispatchScript {
   text: string;
 }
 
+/** T-074 amir panosu (`GET /v1/supervisor/dashboard`; canlıda WS `dashboard` mesajı, 5 sn). */
+export type OperatorStatus = 'AVAILABLE' | 'BREAK' | 'OFFLINE';
+export const OPERATOR_STATUSES: OperatorStatus[] = ['AVAILABLE', 'BREAK', 'OFFLINE'];
+export interface OperatorCard {
+  subject: string;
+  name: string | null;
+  status: OperatorStatus;
+  online: boolean;
+  lastSeenAt: string | null;
+  open: { eventId: string; type: EventType; priority: number; state: EventState; since: string }[];
+  claims24h: number;
+  avgClaimSec: number | null;
+  closed24h: number;
+}
+export interface SlaBreach {
+  eventId: string;
+  type: EventType;
+  priority: number;
+  kind: 'CLAIM' | 'FIRST_CALL';
+  live: boolean;
+  waitedSec: number;
+  at: string;
+  operatorId: string | null;
+}
+export interface SupervisorDashboard {
+  at: string;
+  queue: { priority: number; waiting: number; oldestWaitSec: number | null }[];
+  inProgress: number;
+  activeOperators: number;
+  last24h: {
+    closed: number;
+    byOutcome: Record<string, number>;
+    falseAlarmRatio: number;
+    claim: { count: number; p50Sec: number | null; p95Sec: number | null; overSlaCount: number };
+  };
+  falseAlarms: {
+    windowDays: number;
+    closedEvents: number;
+    falseAlarms: number;
+    ratio: number;
+    byCause: Record<string, number>;
+    repeatPersons: number;
+  };
+  queueDepth24h: { at: string; depth: number; entered: number }[];
+  byType24h: Record<string, number>;
+  operators: OperatorCard[];
+  slaBreaches: SlaBreach[];
+  sla: { claimSec: number; firstCallSec: number };
+  overflow: { enabled: boolean; changedAt: string | null; changedBy: string | null };
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -156,6 +207,15 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     conference: (callId: string, contactIndex = 1) =>
       req<CallView>('POST', `${tc(callId)}/conference`, { contactIndex }),
     hangup: (callId: string) => req<CallView>('POST', `${tc(callId)}/hangup`),
+    dashboard: () => req<SupervisorDashboard>('GET', '/supervisor/dashboard'),
+    setOperatorStatus: (sub: string, status: OperatorStatus) =>
+      req<{ subject: string; status: OperatorStatus }>(
+        'PUT',
+        `/supervisor/operators/${encodeURIComponent(sub)}/status`,
+        { status },
+      ),
+    setOverflow: (enabled: boolean) => req<SupervisorDashboard['overflow']>('PUT', '/supervisor/overflow', { enabled }),
+    unclaim: (id: string) => req<{ eventId: string; state: EventState }>('POST', `${ev(id)}/unclaim`, {}),
   };
 }
 export type Api = ReturnType<typeof createApi>;
