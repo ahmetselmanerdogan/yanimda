@@ -1,4 +1,14 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  BadGatewayException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { type ChainStep, TOPICS } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -7,10 +17,11 @@ import { v7 as uuidv7 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, call, contact } from '../../db/schema';
+import { auditLog, call, contact, event } from '../../db/schema';
 import { type ContactInput, type ContactRole, replaceContacts } from '../profile/contacts';
-import { type CpaasProvider, EMPTY_TWIML, sayTwiml, type WebhookUrls } from './cpaas';
+import { conferenceTwiml, type CpaasProvider, EMPTY_TWIML, sayTwiml, type WebhookUrls } from './cpaas';
 import type { RecordingStore } from './recording-store';
+import { clientIdentity, twilioVoiceToken, voiceConfigFromEnv } from './voice-token';
 
 export const CPAAS = Symbol('CPAAS');
 export const RECORDINGS = Symbol('RECORDINGS');
@@ -19,8 +30,8 @@ export const TELEPHONY_ENV = Symbol('TELEPHONY_ENV');
 export type CallStatus =
   'queued' | 'ringing' | 'in-progress' | 'completed' | 'busy' | 'no-answer' | 'failed' | 'canceled';
 export type SuggestedResult = 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER';
-export type WebhookKind = 'status' | 'dial' | 'agent' | 'recording' | 'announce';
-export const WEBHOOK_KINDS: WebhookKind[] = ['status', 'dial', 'agent', 'recording', 'announce'];
+export type WebhookKind = 'status' | 'dial' | 'agent' | 'recording' | 'announce' | 'party';
+export const WEBHOOK_KINDS: WebhookKind[] = ['status', 'dial', 'agent', 'recording', 'announce', 'party'];
 
 /** Konsola giden arama özeti: numara yok. */
 export interface CallView {
@@ -31,8 +42,21 @@ export interface CallView {
   suggestedResult: SuggestedResult | null;
   durationSec: number | null;
   recorded: boolean;
+  /** T-051: görüşme konferansta, aranan beklemede, eklenen yakın sayısı. */
+  conference: boolean;
+  held: boolean;
+  parties: number;
   error: string | null;
   createdAt: string;
+}
+
+/** T-051 yazılım telefonu token'ı (konsol Device kaydı). Sahte sağlayıcıda sahte token. */
+export interface VoiceToken {
+  provider: 'twilio' | 'fake';
+  identity: string;
+  token: string;
+  ttlSec: number;
+  expiresAt: string;
 }
 
 export type { ContactInput, ContactRole };
@@ -129,12 +153,170 @@ export class TelephonyService {
       agent: u('agent'),
       recording: u('recording'),
       announce: u('announce'),
+      party: u('party'),
     };
   }
 
-  /** Operatörün ucu: T-051'e kadar masa hattı (CPAAS_AGENT_NUMBER); sonra yazılım telefonu (client:<operatör>). */
-  agentFor(_operatorId: string): string | null {
+  // ---- yazılım telefonu (T-051) ----
+
+  /**
+   * Yazılım telefonu: CPAAS_SOFTPHONE=off değilse ve sağlayıcı destekliyorsa (sahte sağlayıcı ya da Twilio + API
+   * anahtarı) açık. Kapalıysa operatör ucu masa hattıdır.
+   */
+  get softphone(): boolean {
+    if (!this.provider || this.env.CPAAS_SOFTPHONE === 'off') return false;
+    return this.provider.name === 'fake' || !!voiceConfigFromEnv(this.env);
+  }
+
+  /** Operatörün ucu: yazılım telefonu açıksa `client:<operatör>`, değilse masa hattı (CPAAS_AGENT_NUMBER). */
+  agentFor(operatorId: string): string | null {
+    if (this.softphone) return `client:${clientIdentity(operatorId)}`;
     return this.env.CPAAS_AGENT_NUMBER || null;
+  }
+
+  /** `GET /v1/telephony/token`: kısa ömürlü Voice token'ı (kimlik `client:<sub>`). Kapalıysa 503. */
+  voiceToken(operatorId: string, now: Date = new Date()): VoiceToken {
+    if (!this.softphone) throw new ServiceUnavailableException('Yazılım telefonu kapalı');
+    const identity = clientIdentity(operatorId);
+    if (this.provider!.name === 'fake') {
+      const ttlSec = 3600;
+      return {
+        provider: 'fake',
+        identity,
+        token: `fake.${identity}`,
+        ttlSec,
+        expiresAt: new Date(now.getTime() + ttlSec * 1000).toISOString(),
+      };
+    }
+    const cfg = voiceConfigFromEnv(this.env)!;
+    return {
+      provider: 'twilio',
+      identity,
+      token: twilioVoiceToken(cfg, identity, now),
+      ttlSec: cfg.ttlSec,
+      expiresAt: new Date(Math.floor(now.getTime() / 1000) * 1000 + cfg.ttlSec * 1000).toISOString(),
+    };
+  }
+
+  private room = (callId: string) => `yanimda-${callId}`;
+
+  /** Yalnız aramayı başlatan operatör; yoksa 404, başkası 403. */
+  private async own(callId: string, operatorId: string) {
+    if (!this.provider) throw new ServiceUnavailableException('Telefoni kapalı');
+    const [r] = await this.db.select().from(call).where(eq(call.id, callId));
+    if (!r) throw new NotFoundException('Arama yok');
+    if (r.operatorId !== operatorId) throw new ForbiddenException('Arama başka operatörde');
+    return r;
+  }
+
+  private talking(r: typeof call.$inferSelect) {
+    if (r.status !== 'in-progress' || !r.providerLegId || !r.providerCallId)
+      throw new ConflictException('Görüşme sürmüyor');
+  }
+
+  /** Köprüyü konferansa çevir (bir kez). Önce işaretlenir: taşıma sonrası gelen dial webhook'u odaya katılır. */
+  private async ensureConference(r: typeof call.$inferSelect) {
+    if (r.conference) return;
+    await this.db.update(call).set({ conference: true, updatedAt: new Date() }).where(eq(call.id, r.id));
+    try {
+      await this.provider!.conference({
+        kind: 'move',
+        room: this.room(r.id),
+        legCallId: r.providerLegId!,
+        urls: this.urls(r.id),
+      });
+    } catch (e) {
+      await this.db.update(call).set({ conference: false }).where(eq(call.id, r.id));
+      this.log.warn(`Konferansa taşınamadı (call=${r.id}): ${safeError(e)}`);
+      throw new BadGatewayException('Konferans kurulamadı');
+    }
+    await this.audit(r, 'telephony.conference.started', {});
+  }
+
+  /** Konsol "Aile ekle": rehberdeki CONTACT (sıra `contactIndex`) konferansa aranır. */
+  async addFamily(callId: string, operatorId: string, contactIndex = 1): Promise<CallView> {
+    const r = await this.own(callId, operatorId);
+    this.talking(r);
+    const [ev] = await this.db.select({ personId: event.protectedPersonId }).from(event).where(eq(event.id, r.eventId));
+    const [c] = ev
+      ? await this.db
+          .select()
+          .from(contact)
+          .where(
+            and(
+              eq(contact.protectedPersonId, ev.personId),
+              eq(contact.role, 'CONTACT'),
+              eq(contact.priority, contactIndex),
+            ),
+          )
+      : [];
+    if (!c) throw new ConflictException('Yakın kayıtlı değil');
+    await this.ensureConference(r);
+    try {
+      await this.provider!.conference({
+        kind: 'add',
+        room: this.room(r.id),
+        to: c.phoneE164,
+        announce: t('V-CALL-RECORDED'),
+        urls: this.urls(r.id),
+      });
+    } catch (e) {
+      this.log.warn(`Yakın konferansa aranamadı (call=${r.id}): ${safeError(e)}`);
+      throw new BadGatewayException('Yakın aranamadı');
+    }
+    await this.db
+      .update(call)
+      .set({ parties: r.parties + 1, updatedAt: new Date() })
+      .where(eq(call.id, r.id));
+    await this.audit(r, 'telephony.conference.added', { role: 'CONTACT', priority: contactIndex }, operatorId);
+    return this.view(r.id);
+  }
+
+  /** Konsol "Beklet" / "Devam": aranan bacak konferansta bekletilir (Twilio Participant Hold). */
+  async hold(callId: string, operatorId: string, on: boolean): Promise<CallView> {
+    const r = await this.own(callId, operatorId);
+    this.talking(r);
+    if (r.held === on) return this.view(r.id);
+    await this.ensureConference(r);
+    try {
+      await this.provider!.conference({ kind: 'hold', room: this.room(r.id), legCallId: r.providerLegId!, hold: on });
+    } catch (e) {
+      this.log.warn(`Bekletme başarısız (call=${r.id}): ${safeError(e)}`);
+      throw new BadGatewayException('Bekletilemedi');
+    }
+    await this.db.update(call).set({ held: on, updatedAt: new Date() }).where(eq(call.id, r.id));
+    await this.audit(r, 'telephony.call.hold', { on }, operatorId);
+    return this.view(r.id);
+  }
+
+  /** Konsol "Kapat": operatör bacağı kapatılır (konferansta oda da kapanır). Bitmiş aramada etkisiz. */
+  async hangup(callId: string, operatorId: string): Promise<CallView> {
+    const r = await this.own(callId, operatorId);
+    if (!ACTIVE.includes(r.status as CallStatus) || !r.providerCallId) return this.view(r.id);
+    try {
+      await this.provider!.hangup(r.providerCallId);
+    } catch (e) {
+      this.log.warn(`Arama kapatılamadı (call=${r.id}): ${safeError(e)}`);
+      throw new BadGatewayException('Arama kapatılamadı');
+    }
+    await this.audit(r, 'telephony.call.hangup', {}, operatorId);
+    return this.view(r.id);
+  }
+
+  private async view(callId: string): Promise<CallView> {
+    const [r] = await this.db.select().from(call).where(eq(call.id, callId));
+    return toView(r!);
+  }
+
+  private async audit(r: typeof call.$inferSelect, action: string, data: Record<string, unknown>, operatorId?: string) {
+    await this.db.insert(auditLog).values({
+      actorKind: operatorId ? 'OPERATOR' : 'SYSTEM',
+      ...(operatorId ? { actorId: operatorId } : {}),
+      action,
+      entityType: 'event',
+      entityId: r.eventId,
+      data: { callId: r.id, ...data },
+    });
   }
 
   // ---- rehber (asgari; tam profil T-040) ----
@@ -228,17 +410,7 @@ export class TelephonyService {
 
   async callsFor(eventId: string, q: Db | Tx = this.db): Promise<CallView[]> {
     const rows = await q.select().from(call).where(eq(call.eventId, eventId)).orderBy(asc(call.createdAt));
-    return rows.map((r) => ({
-      id: r.id,
-      stepN: r.stepN,
-      status: r.status as CallStatus,
-      answered: r.answered,
-      suggestedResult: (r.suggestedResult as SuggestedResult) ?? null,
-      durationSec: r.durationSec,
-      recorded: !!r.recordingRef,
-      error: r.error,
-      createdAt: r.createdAt.toISOString(),
-    }));
+    return rows.map(toView);
   }
 
   // ---- webhook ----
@@ -246,7 +418,10 @@ export class TelephonyService {
   /** İmza denetimi denetleyicide. Dönen metin TwiML (anons / boş yanıt). */
   async webhook(kind: WebhookKind, callId: string, p: Record<string, string>): Promise<string> {
     if (kind === 'announce') return sayTwiml(t('V-CALL-RECORDED'));
-    const [row] = await this.db.select({ id: call.id }).from(call).where(eq(call.id, callId));
+    const [row] = await this.db
+      .select({ id: call.id, eventId: call.eventId, conference: call.conference })
+      .from(call)
+      .where(eq(call.id, callId));
     if (!row) return EMPTY_TWIML; // bilinmeyen arama: sağlayıcı yeniden denemesin
     if (kind === 'recording') {
       if (p.RecordingStatus === 'completed' && p.RecordingSid) await this.storeRecording(callId, p.RecordingSid);
@@ -259,11 +434,29 @@ export class TelephonyService {
         await this.update(callId, (r) => (r.status === 'queued' ? { ...r, status: 'failed', error: 'agent' } : r));
       return EMPTY_TWIML;
     }
+    if (kind === 'party') {
+      // Konferansa eklenen yakın: yalnız iz (numara yok); görüşmenin durumu aranan bacaktan.
+      const s = mapStatus(p.CallStatus);
+      if (s)
+        await this.db.insert(auditLog).values({
+          actorKind: 'SYSTEM',
+          action: 'telephony.party.status',
+          entityType: 'event',
+          entityId: row.eventId,
+          data: { callId, status: s },
+        });
+      return EMPTY_TWIML;
+    }
+    // Konferansa taşındıysa operatörün <Dial>'ı biter: operatör odaya katılır (çıkınca oda kapanır, kayıt başından).
+    if (kind === 'dial' && row.conference)
+      return conferenceTwiml(this.room(callId), { endOnExit: true, recordingUrl: this.urls(callId).recording });
     const status = mapStatus(kind === 'dial' ? p.DialCallStatus : p.CallStatus);
     if (!status) return EMPTY_TWIML;
+    const leg = kind === 'status' ? p.CallSid : undefined;
     const dur = Number(kind === 'dial' ? p.DialCallDuration : p.CallDuration);
     await this.update(callId, (r) => {
       if (RANK[status] < RANK[r.status as CallStatus] || RANK[r.status as CallStatus] === 3) return r; // geri gitmez
+      if (leg && !r.providerLegId) r = { ...r, providerLegId: leg };
       const answered = r.answered || status === 'in-progress' || (kind === 'dial' && status === 'completed');
       return {
         ...r,
@@ -289,6 +482,8 @@ export class TelephonyService {
           answered: n.answered,
           suggestedResult: n.suggestedResult,
           durationSec: n.durationSec,
+          providerLegId: n.providerLegId,
+          held: ACTIVE.includes(n.status as CallStatus) ? n.held : false,
           error: n.error,
           updatedAt: new Date(),
         })
@@ -317,23 +512,29 @@ export class TelephonyService {
     });
   }
 
-  /** Kayıt: indir → depo (nesne kilidi) → sağlayıcıdan sil. Depo yoksa sağlayıcıda bırakılır (kayıp olmasın). */
+  /**
+   * Kayıt: indir → depo (nesne kilidi) → sağlayıcıdan sil. Depo yoksa sağlayıcıda bırakılır (kayıp olmasın).
+   * Konferansa geçilen görüşmede iki kayıt olur: köprü (`<arama>.mp3`, call satırında) ve oda (`<arama>-<kayıt>.mp3`).
+   */
   private async storeRecording(callId: string, recordingId: string) {
     const [r] = await this.db.select().from(call).where(eq(call.id, callId));
-    if (!r || r.recordingRef || !this.provider) return;
+    if (!r || !this.provider || r.recordingProviderId === recordingId) return;
+    const first = !r.recordingRef;
     if (!this.store) {
       this.log.warn(`Kayıt deposu yok (S3_*): kayıt sağlayıcıda bırakıldı (call=${callId})`);
-      await this.db.update(call).set({ recordingProviderId: recordingId }).where(eq(call.id, callId));
+      if (first) await this.db.update(call).set({ recordingProviderId: recordingId }).where(eq(call.id, callId));
       return;
     }
     const country = (this.env.COUNTRY_CODE ?? 'TR').toLowerCase();
-    const key = `recordings/${country}/${r.eventId}/${callId}.mp3`;
+    const key = `recordings/${country}/${r.eventId}/${callId}${first ? '' : `-${recordingId}`}.mp3`;
+    if (!first && (await this.store.exists(key))) return; // tekrar teslim
     const body = await this.provider.fetchRecording(recordingId);
     await this.store.put(key, body, 'audio/mpeg');
-    await this.db
-      .update(call)
-      .set({ recordingRef: key, recordingProviderId: recordingId, updatedAt: new Date() })
-      .where(eq(call.id, callId));
+    if (first)
+      await this.db
+        .update(call)
+        .set({ recordingRef: key, recordingProviderId: recordingId, updatedAt: new Date() })
+        .where(eq(call.id, callId));
     await this.db.insert(auditLog).values({
       actorKind: 'SYSTEM',
       action: 'telephony.recording.stored',
@@ -345,4 +546,21 @@ export class TelephonyService {
       this.log.warn(`Sağlayıcıdan kayıt silinemedi (call=${callId}): ${safeError(e)}`);
     });
   }
+}
+
+function toView(r: typeof call.$inferSelect): CallView {
+  return {
+    id: r.id,
+    stepN: r.stepN,
+    status: r.status as CallStatus,
+    answered: r.answered,
+    suggestedResult: (r.suggestedResult as SuggestedResult) ?? null,
+    durationSec: r.durationSec,
+    recorded: !!r.recordingRef,
+    conference: r.conference,
+    held: r.held,
+    parties: r.parties,
+    error: r.error,
+    createdAt: r.createdAt.toISOString(),
+  };
 }

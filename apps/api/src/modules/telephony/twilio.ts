@@ -1,4 +1,11 @@
-import { type CpaasProvider, type DialRequest, verifySignature, xml } from './cpaas';
+import {
+  type ConferenceOp,
+  conferenceTwiml,
+  type CpaasProvider,
+  type DialRequest,
+  verifySignature,
+  xml,
+} from './cpaas';
 
 export interface TwilioConfig {
   accountSid: string;
@@ -92,6 +99,53 @@ export class TwilioProvider implements CpaasProvider {
     return { providerCallId: j.sid };
   }
 
+  /**
+   * T-051 konferans (köprüden konferansa geçiş). move: aranan bacağın TwiML'i odaya katılma ile değiştirilir; Twilio
+   * operatörün `<Dial>`'ını bitirir ve `action` (dial webhook'u) operatörü aynı odaya, kayıtla alır. add: yakını
+   * ayrı arama ile arar (açınca anons + oda). hold: odanın SID'i adından bulunur, katılımcı `Hold` ile bekletilir.
+   */
+  async conference(op: ConferenceOp): Promise<{ providerCallId?: string }> {
+    if (op.kind === 'move') {
+      await this.req(
+        'POST',
+        `/Calls/${encodeURIComponent(op.legCallId)}.json`,
+        new URLSearchParams({ Twiml: conferenceTwiml(op.room, { endOnExit: false }) }),
+      );
+      return {};
+    }
+    if (op.kind === 'add') {
+      const p = new URLSearchParams({
+        To: op.to,
+        From: this.cfg.from,
+        Twiml: conferenceTwiml(op.room, { endOnExit: false, say: op.announce }),
+        StatusCallback: op.urls.party,
+        Timeout: '25',
+      });
+      for (const e of ['initiated', 'ringing', 'answered', 'completed']) p.append('StatusCallbackEvent', e);
+      const j = (await this.req('POST', '/Calls.json', p)) as { sid: string };
+      return { providerCallId: j.sid };
+    }
+    const sid = await this.conferenceSid(op.room);
+    await this.req(
+      'POST',
+      `/Conferences/${encodeURIComponent(sid)}/Participants/${encodeURIComponent(op.legCallId)}.json`,
+      new URLSearchParams({ Hold: String(op.hold) }),
+    );
+    return {};
+  }
+
+  /** Taşımadan hemen sonra oda henüz açılmamış olabilir: kısa aralıkla 3 deneme. */
+  private async conferenceSid(room: string): Promise<string> {
+    for (let i = 0; i < 3; i++) {
+      const q = new URLSearchParams({ FriendlyName: room, Status: 'in-progress' });
+      const j = (await this.req('GET', `/Conferences.json?${q}`)) as { conferences?: { sid: string }[] };
+      const sid = j.conferences?.[0]?.sid;
+      if (sid) return sid;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error('Twilio konferansı bulunamadı');
+  }
+
   verify(url: string, params: Record<string, string>, signature: string | undefined) {
     return verifySignature(this.cfg.authToken, url, params, signature);
   }
@@ -100,11 +154,11 @@ export class TwilioProvider implements CpaasProvider {
     return { authorization: `Basic ${Buffer.from(`${this.cfg.accountSid}:${this.cfg.authToken}`).toString('base64')}` };
   }
 
-  private async req(method: string, path: string, body: URLSearchParams): Promise<unknown> {
+  private async req(method: string, path: string, body?: URLSearchParams): Promise<unknown> {
     const r = await this.http(`${this.base}${path}`, {
       method,
-      headers: { ...this.auth(), 'content-type': 'application/x-www-form-urlencoded' },
-      body,
+      headers: body ? { ...this.auth(), 'content-type': 'application/x-www-form-urlencoded' } : this.auth(),
+      ...(body ? { body } : {}),
       signal: AbortSignal.timeout(10_000),
     });
     if (!r.ok) throw new Error(`Twilio HTTP ${r.status}`); // gövde numara içerebilir: yazılmaz

@@ -232,7 +232,7 @@ describe('sahte CPaaS ile tam akış', () => {
   });
 
   it('operatör hattı tanımlı değilse arama başarısız işaretlenir, olay akışı sürer', async () => {
-    tel = new TelephonyService(h.db, h.outbox, fake, store, { ...ENV, CPAAS_AGENT_NUMBER: '' });
+    tel = new TelephonyService(h.db, h.outbox, fake, store, { ...ENV, CPAAS_AGENT_NUMBER: '', CPAAS_SOFTPHONE: 'off' });
     chain = new ChainService(h.db, h.events(new InMemoryTimers()), loadProcedures(), tel);
     const id = await claimed();
     const r = await chain.call(id, 1, 'op-1');

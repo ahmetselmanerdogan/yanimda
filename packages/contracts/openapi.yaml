@@ -201,7 +201,8 @@ paths:
       summary: Sıradaki adımı ara. E-04, T-021, T-050
       description: |
         Arama başlangıcı yazılır. Telefoni açıksa ve adımın numarası kayıtlıysa CPaaS araması başlar (operatör ucu →
-        aranan; iki kanallı kayıt, arananın duyduğu kayıt anonsu). 112 adımı masa hattından elle (T-052). Süren aramada
+        aranan; iki kanallı kayıt, arananın duyduğu kayıt anonsu). Operatör ucu yazılım telefonu açıksa
+        `client:<sub>` (konsol, T-051), değilse masa hattı (CPAAS_AGENT_NUMBER). 112 adımı masa hattından elle (T-052). Süren aramada
         tekrar çağrı yeni arama açmaz. Durum `calls[]`'ta; son durumda `suggestedResult` operatöre önerilir.
       operationId: callStep
       security: [{ operatorToken: [] }]
@@ -293,12 +294,14 @@ paths:
       summary: CPaaS geri çağrıları (Twilio uyumlu). E-05, T-050
       description: |
         Herkese açık; yalnız imzalı istek (X-Twilio-Signature: base64(HMAC-SHA1(token, CPAAS_WEBHOOK_BASE + yol +
-        sıralı parametreler))). Bozuk imza 403. kind: status (aranan bacak), dial (bağlantı sonucu), agent (operatör
-        bacağı), recording (kayıt hazır → S3, sağlayıcıdan silinir), announce (arananın duyduğu kayıt anonsu).
+        sıralı parametreler))). Bozuk imza 403. kind: status (aranan bacak), dial (bağlantı sonucu; görüşme konferansa
+        taşındıysa operatörü odaya alan TwiML), agent (operatör bacağı), recording (kayıt hazır → S3, sağlayıcıdan
+        silinir; konferans kaydı ayrı nesne), announce (arananın duyduğu kayıt anonsu), party (konferansa eklenen yakın,
+        T-051).
       operationId: cpaasWebhook
       security: []
       parameters:
-        - { name: kind, in: path, required: true, schema: { enum: [status, dial, agent, recording, announce] } }
+        - { name: kind, in: path, required: true, schema: { enum: [status, dial, agent, recording, announce, party] } }
         - { name: call, in: query, required: true, schema: { type: string, format: uuid } }
         - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
       requestBody:
@@ -311,6 +314,90 @@ paths:
           content: { text/xml: { schema: { type: string } } }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /telephony/token:
+    get:
+      summary: Konsol yazılım telefonu token'ı. E-05, T-051
+      description: |
+        Kısa ömürlü Twilio Voice erişim token'ı (AccessToken + VoiceGrant; HS256, TWILIO_API_KEY_SID/SECRET; ömür
+        TWILIO_VOICE_TOKEN_TTL_SEC, 60–3600 sn). Kimlik operatörün `sub`'ı (yalnız harf/rakam/alt çizgi): sunucu
+        `client:<identity>`'yi arar, konsol gelen köprü bacağını kendiliğinden açar. Sahte sağlayıcıda
+        (CPAAS_PROVIDER=fake) `provider: fake` ve sahte token. Yazılım telefonu kapalıysa (CPAAS_SOFTPHONE=off, telefoni
+        kapalı ya da Twilio API anahtarı yok) 503: operatör ucu masa hattıdır.
+      operationId: telephonyToken
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, identity, token, ttlSec, expiresAt]
+                properties:
+                  provider: { enum: [twilio, fake] }
+                  identity: { type: string }
+                  token: { type: string }
+                  ttlSec: { type: integer }
+                  expiresAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /telephony/calls/{callId}/hold:
+    post:
+      summary: Süren görüşmede arananı beklet / devam. E-05, T-051
+      description: |
+        Görüşme ilk kez bekletilince konferansa taşınır (Twilio `<Conference>`), aranan katılımcı `Hold` ile bekletilir.
+        Yalnız aramayı başlatan operatör (başkası 403); görüşme sürmüyorsa 409; sağlayıcı hatası 502.
+      operationId: holdCall
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/CallId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [on], properties: { on: { type: boolean } } }
+      responses:
+        '200': { $ref: '#/components/responses/CallView' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /telephony/calls/{callId}/conference:
+    post:
+      summary: Konferansa aile ekle. E-05, T-051
+      description: |
+        Görüşme konferansa taşınır (bir kez) ve rehberdeki CONTACT (sıra `contactIndex`, varsayılan 1) aranır; açınca
+        kayıt anonsu (V-CALL-RECORDED) duyar ve odaya katılır. Oda kaydı başından alınır ve olay kaydına (S3) yazılır.
+        Numara yanıtta, log'da ve audit'te yok. Yakın kayıtlı değilse veya görüşme sürmüyorsa 409.
+      operationId: conferenceCall
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/CallId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              { type: object, properties: { contactIndex: { type: integer, minimum: 1, maximum: 5, default: 1 } } }
+      responses:
+        '200': { $ref: '#/components/responses/CallView' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /telephony/calls/{callId}/hangup:
+    post:
+      summary: Aramayı bitir. E-05, T-051
+      description: |
+        Operatör bacağı sağlayıcıda kapatılır (konferansta oda da kapanır). Bitmiş aramada etkisiz (200).
+      operationId: hangupCall
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/CallId' }]
+      responses:
+        '200': { $ref: '#/components/responses/CallView' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
   /protected-persons:
     post:
       summary: Korunan kişi oluştur. C-02, T-040
@@ -819,7 +906,13 @@ components:
     EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
     PersonId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
+    CallView:
+      description: Arama (numarasız)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CallView' }
     EventWithChain:
       description: Olay ve zinciri
       content:
@@ -946,6 +1039,9 @@ components:
         suggestedResult: { oneOf: [{ enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER] }, { type: 'null' }] }
         durationSec: { type: [integer, 'null'] }
         recorded: { type: boolean }
+        conference: { type: boolean, description: Görüşme konferansa taşındı (T-051) }
+        held: { type: boolean, description: Aranan beklemede (T-051) }
+        parties: { type: integer, description: Konferansa eklenen yakın sayısı (T-051) }
         error: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
     ChainView:

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CpaasProvider, cpaasSignature, type DialRequest, verifySignature } from './cpaas';
+import { type ConferenceOp, type CpaasProvider, cpaasSignature, type DialRequest, verifySignature } from './cpaas';
 
 export const FAKE_CPAAS_TOKEN = 'fake-cpaas-token';
 
@@ -18,7 +18,9 @@ const httpTransport: FakeTransport = async (url, params, signature) => {
 /**
  * Geliştirme ve test CPaaS'ı (T-050). Gerçek arama yapmaz; Twilio'nun göndereceği webhook'ları imzalayıp sırasıyla
  * gönderir. Aranan numaranın son hanesi sonucu belirler: 0 cevap yok, 1 meşgul, 9 hatalı numara, diğerleri açar
- * (görüşme `talkMs`, ardından kayıt hazır). Operatör ucu her zaman açar.
+ * (görüşme `talkMs`, ardından kayıt hazır). Operatör ucu her zaman açar. `hangup` görüşmeyi hemen bitirir (açılmadan
+ * kapatılırsa `canceled`). Konferans (T-051): `move` operatörün Dial'ını bitirir (dial webhook'u), `add` yakının
+ * bacağını açar (`party` webhook'ları), `hold` kaydedilir.
  */
 export class FakeProvider implements CpaasProvider {
   readonly name = 'fake';
@@ -26,6 +28,10 @@ export class FakeProvider implements CpaasProvider {
   readonly deleted: string[] = [];
   readonly sms: { to: string; body: string }[] = [];
   readonly hungUp: string[] = [];
+  /** T-051: konferans işlemleri (numara `parties`'te; testler denetler). */
+  readonly conferences: ConferenceOp[] = [];
+  readonly parties: { room: string; to: string }[] = [];
+  private readonly live = new Map<string, () => void>();
 
   constructor(private readonly opts: { stepMs?: number; talkMs?: number; transport?: FakeTransport } = {}) {}
 
@@ -70,18 +76,67 @@ export class FakeProvider implements CpaasProvider {
         [0, r.urls.dial, { CallSid: sid, DialCallSid: leg, DialCallStatus: outcome }],
       );
     }
-    const transport = this.opts.transport ?? httpTransport;
+    let hung = false;
+    let wake: () => void = () => undefined;
+    this.live.set(sid, () => {
+      hung = true;
+      wake();
+    });
+    let answered = false;
     this.settled = (async () => {
       for (const [wait, url, params] of steps) {
-        await new Promise((res) => setTimeout(res, wait));
-        await transport(url, params, cpaasSignature(FAKE_CPAAS_TOKEN, url, params));
+        if (!hung)
+          await new Promise<void>((res) => {
+            const t = setTimeout(res, wait);
+            wake = () => {
+              clearTimeout(t);
+              res();
+            };
+          });
+        if (hung && !answered) {
+          if (params.CallStatus === 'in-progress' || params.RecordingSid) continue;
+          if (params.CallStatus === 'completed') params.CallStatus = 'canceled';
+          if (params.DialCallStatus === 'completed') params.DialCallStatus = 'canceled';
+        }
+        if (params.CallStatus === 'in-progress') answered = true;
+        await this.send(url, params);
       }
+      this.live.delete(sid);
     })();
     return this.settled;
   }
 
+  private send(url: string, params: Record<string, string>) {
+    return (this.opts.transport ?? httpTransport)(url, params, cpaasSignature(FAKE_CPAAS_TOKEN, url, params));
+  }
+
   async hangup(sid: string) {
     this.hungUp.push(sid);
+    this.live.get(sid)?.();
+  }
+
+  /** Yakın bacakları: initiated → ringing → in-progress (oda kapanınca bitmesi simüle edilmez). */
+  partiesSettled: Promise<void> = Promise.resolve();
+
+  async conference(op: ConferenceOp) {
+    this.conferences.push(op);
+    if (op.kind === 'move') {
+      // Twilio: aranan bacak taşınınca operatörün <Dial>'ı biter, action (dial) çağrılır.
+      const url = op.urls.dial;
+      setTimeout(() => void this.send(url, { DialCallStatus: 'completed' }), this.step);
+      return {};
+    }
+    if (op.kind === 'hold') return {};
+    this.parties.push({ room: op.room, to: op.to });
+    const sid = `CAfake${randomUUID().replace(/-/g, '')}`;
+    const url = op.urls.party;
+    this.partiesSettled = (async () => {
+      for (const st of ['initiated', 'ringing', 'in-progress']) {
+        await new Promise((res) => setTimeout(res, this.step));
+        await this.send(url, { CallSid: sid, CallStatus: st });
+      }
+    })();
+    return { providerCallId: sid };
   }
 
   async fetchRecording(id: string) {
