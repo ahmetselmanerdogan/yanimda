@@ -65,17 +65,48 @@ paths:
         '204': { description: No Content }
   /queue:
     get:
-      summary: Operatör kuyruğu (öncelik sıralı). E-02
+      summary: Operatör kuyruğu (öncelik → yaş, sayfalı). E-02, T-022
+      description: |
+        Bekleyen (OPERATOR_QUEUE) ve operatördeki (lockedBy dolu) açık olaylar. Canlı değişiklikler için WebSocket
+        `/v1/ws/queue`: bağlanınca ilk mesaj `{"type":"auth","token":"<operatör erişim token'ı>"}` (5 sn içinde; token
+        yenilenince tekrar). Sunucu `ready`, `snapshot` (tam liste), ardından `upsert {item}`, `remove {eventId}`,
+        `alert {alert}` (amir uyarısı) gönderir. Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
+        doldu, 4403 rol yetmiyor. Yeniden bağlanınca tam liste gelir.
       operationId: getQueue
       security: [{ operatorToken: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
         '200':
-          description: Açık olaylar
+          description: Kuyruk sayfası
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /events/{id}/unclaim:
+    post:
+      summary: Amir — üstlenmeyi geri al; olay kuyruğa döner, zincir kaldığı yerden sürer. E-02, T-022
+      operationId: unclaimEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string, maxLength: 500 } } }
+      responses:
+        '200': { description: Kuyrukta }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /events/{id}:
     get:
       summary: Olay + prosedür zinciri. E-03, T-021
@@ -507,15 +538,19 @@ components:
         scriptReadAt: { type: string, format: date-time }
     QueueItem:
       type: object
+      required: [eventId, type, priority, state, createdAt, lockedBy, isTest, person]
       properties:
-        eventId: { type: string }
+        eventId: { type: string, format: uuid }
         type: { type: string }
         priority: { type: integer }
         state: { type: string }
         createdAt: { type: string, format: date-time }
+        escalatedAt: { type: [string, 'null'], format: date-time }
+        lockedBy: { type: [string, 'null'], description: Üstlenen operatör (token sub) }
+        lockUntil: { type: [string, 'null'], format: date-time }
+        isTest: { type: boolean }
         person:
-          {
-            type: object,
-            properties: { displayName: { type: string }, age: { type: integer }, district: { type: string } },
-          }
-        lockedBy: { type: [string, 'null'] }
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties: { displayName: { type: string }, age: { type: [integer, 'null'] } }

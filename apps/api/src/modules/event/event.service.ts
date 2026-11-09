@@ -41,7 +41,7 @@ import {
   staticRules,
 } from './rules.loader';
 
-export type { EventRecord } from './event.repository';
+export type { EventRecord, QueueItem } from './event.repository';
 
 /** Olay kaynağı: sinyal, zamanlayıcı (follow-up) veya cihaz taraması. */
 interface EventSource {
@@ -158,6 +158,26 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   }
   all(): Promise<EventRecord[]> {
     return this.repo.all();
+  }
+  queuePage(page: { limit: number; offset: number }) {
+    return this.repo.queuePage(page);
+  }
+  queueItem(id: string) {
+    return this.repo.queueItem(id);
+  }
+
+  /** E-02 amir: üstlenmeyi geri al (olay kuyruğa döner, zincir kaldığı yerden sürer). Teyitli olay geri alınmaz. */
+  async unclaim(id: string, supervisorId: string, reason?: string): Promise<EventRecord> {
+    const ev = await this.withEvent(id, async (u) => {
+      if (u.ev.state !== 'OPERATOR_ASSIGNED' && u.ev.state !== 'CONTACT_CHAIN')
+        throw new ConflictException('Bu durumda geri alınamaz');
+      u.ev.operatorId = undefined;
+      u.ev.lockUntil = undefined;
+      this.transition(u, 'OPERATOR_QUEUE', 'OPERATOR', supervisorId, reason ?? 'amir geri aldı');
+      return u.ev;
+    });
+    if (!ev) throw new NotFoundException('Olay yok');
+    return ev;
   }
 
   // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu kilitli okur, beklenen durumda değilse no-op ----

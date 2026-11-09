@@ -28,7 +28,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 ## Epik 2 · Konsol çekirdek (S2)
 - [x] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01) — konsol PKCE girişi T-023 ile
 - [x] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi (D-03, D-04) — kilit Redis yerine olay satırında (lock_until); 05 metinleri katalogda, gözden geçirilmeli
-- [ ] T-022 GET /v1/queue + WebSocket; claim (E-02) — S0'da REST var
+- [x] T-022 GET /v1/queue + WebSocket; claim (E-02)
 - [ ] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10)
 - [ ] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06)
 - [ ] T-025 SLA sayaçları ve metrikler (E-09, D-11)
