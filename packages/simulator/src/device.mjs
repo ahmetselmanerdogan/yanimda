@@ -11,7 +11,8 @@ export function createDevice({
   api = process.env.API_URL ?? 'http://localhost:3000/v1',
   person = '00000000-0000-0000-0000-000000000001',
   device = '00000000-0000-0000-0000-00000000d001',
-  token = process.env.DEVICE_TOKEN ?? 'dev-token',
+  // T-041 cihaz token'ı (POST /v1/devices/enroll). Yoksa token'sız: API yalnız simülatör açıkken kabul eder.
+  token = process.env.DEVICE_TOKEN || undefined,
   log = console.log,
   maxBackoffMs = 300_000,
   minBackoffMs = 2_000,
@@ -35,7 +36,7 @@ export function createDevice({
   async function post(signals) {
     const res = await fetch(`${api}/signals`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(signals),
     });
     let body = null;

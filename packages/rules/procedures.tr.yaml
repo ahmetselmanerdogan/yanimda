@@ -1,0 +1,41 @@
+# 05-prosedur.md konsol adım türleri (T-021, D-03). Olay tipine göre adım SIRASI ve süreleri kural paketinden gelir
+# (tr.yaml → rules[].chain, stepTimeoutSec); burada her adım türünün etiketi, operatör metni (katalog kodu) ve
+# atlanabilirliği tanımlanır. Metinler packages/messages kataloğundadır.
+country: TR
+version: 1
+steps:
+  CALL_WATCH:
+    label: O-STEP-WATCH
+    script: O-SCRIPT-ELDER
+    target: WATCH
+    required: true
+    defaultTimeoutSec: 15
+  CALL_PHONE:
+    label: O-STEP-PHONE
+    script: O-SCRIPT-ELDER
+    target: ELDER_PHONE
+    required: true
+    defaultTimeoutSec: 15
+  CALL_CONTACT:
+    label: O-STEP-CONTACT
+    script: O-SCRIPT-CONTACT
+    target: CONTACT
+    required: true
+    defaultTimeoutSec: 25
+  CALL_NEIGHBOR:
+    label: O-STEP-NEIGHBOR
+    script: O-SCRIPT-NEIGHBOR
+    target: NEIGHBOR
+    required: false
+    defaultTimeoutSec: 25
+  CALL_112:
+    label: O-STEP-112
+    script: O-SCRIPT-112
+    target: EMERGENCY
+    required: true
+    defaultTimeoutSec: 0
+  NOTIFY_FAMILY:
+    label: O-STEP-NOTIFY
+    target: FAMILY
+    required: true
+    defaultTimeoutSec: 0

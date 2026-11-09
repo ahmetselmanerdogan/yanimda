@@ -26,6 +26,10 @@ paths:
         T-015: her sinyal cihaz türünün adaptöründen geçer (deviceId → device.device.kind; kayıtsız → simülatör,
         üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) partiyi 400 ile reddeder.
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
+        T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
+        T-041: `Authorization: Bearer <cihaz token>`. Token'lı cihaz yalnız kendi deviceId ve protectedPersonId'si
+        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). Token'sız istek yalnız simülatör açıkken
+        (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
         '202':
           description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)
@@ -38,6 +42,8 @@ paths:
                   accepted: { type: integer, minimum: 0, description: Yeni yazılan sinyal sayısı }
                   duplicates: { type: integer, minimum: 0, description: Daha önce alınmış (yok sayılan) sinyal sayısı }
         '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '503':
           description: Geçici olarak yazılamadı veya aynı sinyal şu an işleniyor; yeniden deneyin
           headers:
@@ -49,6 +55,7 @@ paths:
     post:
       summary: Cihaz sorusuna cevap (İyiyim / Yardım). A-02, D-09
       operationId: answerPrompt
+      security: [{ deviceToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         content:
@@ -58,27 +65,152 @@ paths:
         '204': { description: No Content }
   /queue:
     get:
-      summary: Operatör kuyruğu (öncelik sıralı). E-02
+      summary: Operatör kuyruğu (öncelik → yaş, sayfalı). E-02, T-022
+      description: |
+        Bekleyen (OPERATOR_QUEUE) ve operatördeki (lockedBy dolu) açık olaylar. Canlı değişiklikler için WebSocket
+        `/v1/ws/queue`: bağlanınca ilk mesaj `{"type":"auth","token":"<operatör erişim token'ı>"}` (5 sn içinde; token
+        yenilenince tekrar). Sunucu `ready`, `snapshot` (tam liste), ardından `upsert {item}`, `remove {eventId}`,
+        `alert {alert}` (amir uyarısı) gönderir. Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
+        doldu, 4403 rol yetmiyor. Yeniden bağlanınca tam liste gelir.
       operationId: getQueue
       security: [{ operatorToken: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
         '200':
+          description: Kuyruk sayfası
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /events/{id}/unclaim:
+    post:
+      summary: Amir — üstlenmeyi geri al; olay kuyruğa döner, zincir kaldığı yerden sürer. E-02, T-022
+      operationId: unclaimEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string, maxLength: 500 } } }
+      responses:
+        '200': { description: Kuyrukta }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}:
+    get:
+      summary: Olay + prosedür zinciri. E-03, T-021
+      operationId: getEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
     post:
-      summary: Olayı üstlen (kilit). E-02
+      summary: Olayı üstlen; zincir oluşur, operatör kilidi başlar (300 sn). E-02, D-04, T-021
+      description: Aynı operatör tekrar üstlenirse aynı sonuç döner. Başka operatördeyse veya olay kuyrukta değilse 409.
       operationId: claimEvent
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
       responses:
-        '200': { description: Claimed }
-        '409': { description: Başka operatör üstlendi }
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/heartbeat:
+    post:
+      summary: Operatör kilidini uzat (konsol açıkken periyodik). D-04
+      operationId: heartbeatEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          description: Yeni kilit bitişi
+          content:
+            application/json:
+              schema: { type: object, properties: { lockUntil: { type: string, format: date-time } } }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/call:
+    post:
+      summary: Sıradaki adımı ara (arama başlangıcı yazılır). E-04, T-021
+      operationId: callStep
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/script-read:
+    post:
+      summary: Operatör metninin (ör. 112 şablonu) okunduğunu kaydet. E-06, T-024
+      operationId: scriptRead
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/result:
+    post:
+      summary: Adım sonucu. D-03, T-021
+      description: |
+        Sıra zorunlu: yalnız sıradaki adım (aksi 409). SKIPPED gerekçe (reason) ister. Geçişler:
+        ilk sonuç OPERATOR_ASSIGNED → CONTACT_CHAIN; REACHED + assessment OK → CONFIRMED_OK (kalan adımlar
+        SKIPPED/resolved); REACHED + EMERGENCY → CONFIRMED_EMERGENCY (112 dışı adımlar SKIPPED/emergency);
+        CALL_112 REACHED → DISPATCH; CALL_112 ulaşılamadı → yeni CALL_112 adımı.
+      operationId: stepResult
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+                assessment: { enum: [OK, EMERGENCY], description: Yalnız REACHED ile }
+                note: { type: string, maxLength: 2000 }
+                reason: { type: string, maxLength: 500, description: SKIPPED için zorunlu }
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/escalate-112:
+    post:
+      summary: Doğrudan 112 (Ctrl+1). Gerekçe zorunlu; kalan adımlar SKIPPED(reason=escalate). E-06, T-021
+      operationId: escalate112
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string, minLength: 1, maxLength: 500 } }
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/close:
     post:
-      summary: Olayı kapat. E-07
+      summary: Olayı kapat; bekleyen adımlar SKIPPED(reason=closed). E-07
+      description: EMERGENCY teyitli (CONFIRMED_EMERGENCY/DISPATCH) olay yalnız EMERGENCY ile, CONFIRMED_OK olay EMERGENCY dışı sonuçla kapanır (aksi 409).
       operationId: closeEvent
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
       requestBody:
         content:
           application/json:
@@ -91,6 +223,8 @@ paths:
                 followUpAfterHours: { type: integer }
       responses:
         '204': { description: Closed }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
     get:
       summary: Korunan kişinin koruma durumu. D-05, T-014
@@ -98,10 +232,13 @@ paths:
         Koruma durumu sinyallerle ve periyodik taramayla (gece başlangıcı/bitişi, 15 dk sessiz cihaz) güncellenir:
         saat bağlı ve bilekte → PROTECTED_WATCH; değilse gece penceresinde → NIGHT; değilse telefon bağlı →
         PROTECTED_PHONE; hiçbiri → UNPROTECTED. Bağlantı: ONLINE (<15 dk), NO_CONNECTION (<6 saat), LOST.
-        TODO T-020/T-040: FAMILY yalnız kendi kişisini görür.
+        Şimdilik yalnız operasyon rolleri (OPERATOR, SUPERVISOR, ADMIN). TODO T-040: FAMILY yalnız kendi kişisini görür.
       operationId: getProtectionStatus
+      security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '200':
           description: Durum
           content:
@@ -139,6 +276,150 @@ paths:
                       state: { type: string }
                       priority: { type: integer }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/invite:
+    post:
+      summary: Cihaz davet kodu üret. C-04 (T-040 parçası), T-041
+      description: |
+        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. Yönetici (OIDC ADMIN veya
+        `x-admin-token`); T-040'ta FAMILY yalnız kendi kişisine. SMS gönderimi T-040/notify ile gelir.
+      operationId: createInvite
+      security: [{ operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: Kod
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expiresAt]
+                properties:
+                  code: { type: string, pattern: '^\d{6}$' }
+                  expiresAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /devices/enroll:
+    post:
+      summary: Cihaz kaydı (davet kodu → cihaz token'ı). T-041
+      description: |
+        deviceId istemcide üretilir (UUID, küçük harf) ve sinyallerde aynen kullanılır. Yanıt yolda kaybolursa aynı
+        cihaz aynı kodla kodun süresi içinde yeniden dener ve 200 ile yeni token alır. Yanlış/süresi dolmuş/başka
+        cihazın kullandığı kod 400; kayıtlı deviceId 409; aynı IP'den 15 dk'da 10 hatalı kod 429.
+      operationId: enrollDevice
+      security: [] # davet kodu kimlik doğrular
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inviteCode, deviceId, kind]
+              properties:
+                inviteCode: { type: string, pattern: '^\d{6}$' }
+                deviceId: { type: string, format: uuid }
+                kind: { enum: [WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE] }
+                model: { type: string, maxLength: 100 }
+                osVersion: { type: string, maxLength: 50 }
+                appVersion: { type: string, maxLength: 50 }
+      responses:
+        '201': { $ref: '#/components/responses/DeviceToken' }
+        '200': { $ref: '#/components/responses/DeviceToken' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/token:
+    post:
+      summary: Cihaz token'ını yenile (geçerli token ile). T-041
+      description: Token 1 yıl geçerlidir; istemci `refreshAfter` sonrasında (bitişe 30 gün kala) yeniler.
+      operationId: refreshDeviceToken
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/DeviceToken' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/config:
+    get:
+      summary: Cihaz yapılandırması (eşikler, uyku penceresi, katalog metinleri). T-041
+      operationId: getDeviceConfig
+      security: [{ deviceToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: Yapılandırma
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages]
+                properties:
+                  deviceId: { type: string }
+                  protectedPersonId: { type: string }
+                  kind: { type: string }
+                  rulesVersion: { type: integer }
+                  sleepWindow:
+                    type: object
+                    properties:
+                      timezone: { type: string }
+                      start: { type: string, example: '22:00' }
+                      end: { type: string, example: '08:00' }
+                  devicePrompt:
+                    type: object
+                    properties:
+                      fallWindowSec: { type: [integer, 'null'] }
+                      inactivityWindowSec: { type: [integer, 'null'] }
+                  inactivityThresholdMin: { type: [integer, 'null'] }
+                  messages:
+                    type: object
+                    description: Katalog metinleri (telefon P-*, saat W-*)
+                    additionalProperties:
+                      type: object
+                      required: [text]
+                      properties:
+                        text: { type: string }
+                        action: { type: string }
+        '304': { description: Değişmedi (If-None-Match eşleşti) }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/push-token:
+    put:
+      summary: Push token kaydı (APNS yalnız IOS_PHONE). T-041, T-053 kullanır
+      operationId: putPushToken
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider: { enum: [APNS, FCM] }
+                token: { type: string, maxLength: 4096 }
+                sandbox: { type: boolean, description: APNs geliştirme ortamı }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}:
+    delete:
+      summary: Cihazı kaldır (token iptal → 401). T-041
+      description: Yönetici (OIDC ADMIN veya `x-admin-token`); T-040'ta FAMILY kendi kişisinin cihazını kaldırır.
+      operationId: revokeDevice
+      security: [{ operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Kaldırıldı }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /admin/rules/reload:
     post:
       summary: Kural paketini sıcak yükle (yönetici). D-02, T-012
@@ -146,10 +427,9 @@ paths:
         packages/rules/<ülke>.yaml okunur, JSON Schema ve anlamsal kontrollerle (TTS kodları mesaj kataloğunda)
         doğrulanır, chain.procedure_template'e (ülke, sürüm) kaydedilir ve uygulanır. Aynı sürüm farklı içerikle
         veya daha düşük sürüm yüklenemez (409). Geçersiz paket geçerli paketi değiştirmez. Diğer API örnekleri
-        yeni sürümü en geç RULES_REFRESH_MS içinde alır. T-020'ye kadar `x-admin-token` ile korunur.
+        yeni sürümü en geç RULES_REFRESH_MS içinde alır. Yönetici: OIDC ADMIN rolü veya `x-admin-token`.
       operationId: reloadRules
-      parameters:
-        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
+      security: [{ operatorToken: [] }, { adminToken: [] }]
       responses:
         '200':
           description: Yüklendi (changed=false ise aynı sürüm zaten yüklüydü)
@@ -169,8 +449,50 @@ paths:
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }
-    operatorToken: { type: http, scheme: bearer }
+    operatorToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Keycloak `operations` realm erişim token'ı (T-020): aud `yanimda-api`, amr içinde `otp`, realm rolü OPERATOR /
+        SUPERVISOR / ADMIN. Operatör kimliği `sub`. Token yok/geçersiz 401, rol yetmiyor 403.
+    adminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: Betikler/CI için paylaşılan yönetici anahtarı (ADMIN_TOKEN). Bearer gelirse yalnız OIDC denenir.
+    userToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak `consumers` realm erişim token'ı (ELDER, FAMILY).
+  parameters:
+    EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
   responses:
+    EventWithChain:
+      description: Olay ve zinciri
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [event, chain]
+            properties:
+              event: { type: object, description: 'Olay kaydı: durum, geçişler, lockUntil' }
+              chain: { oneOf: [{ $ref: '#/components/schemas/ChainView' }, { type: 'null' }] }
+    DeviceToken:
+      description: Cihaz token'ı (HS256 JWT, 1 yıl)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceId, protectedPersonId, token, expiresAt, refreshAfter]
+            properties:
+              deviceId: { type: string, format: uuid }
+              protectedPersonId: { type: string, format: uuid }
+              token: { type: string }
+              expiresAt: { type: string, format: date-time }
+              refreshAfter: { type: string, format: date-time }
     Problem:
       description: RFC 7807
       content:
@@ -186,17 +508,49 @@ components:
         detail: { type: string }
     Signal:
       $ref: './schemas/signal.schema.json'
+    ChainView:
+      type: object
+      required: [procedureVersion, steps, current]
+      properties:
+        procedureVersion: { type: integer }
+        current: { type: [integer, 'null'], description: Sıradaki adım; hepsi bittiyse null }
+        steps: { type: array, items: { $ref: '#/components/schemas/ChainStep' } }
+    ChainStep:
+      type: object
+      required: [n, kind, target, label, timeoutSec, required]
+      properties:
+        n: { type: integer }
+        kind:
+          { type: string, description: 'CALL_WATCH, CALL_PHONE, CALL_CONTACT, CALL_NEIGHBOR, CALL_112, NOTIFY_FAMILY' }
+        target: { enum: [WATCH, ELDER_PHONE, CONTACT, NEIGHBOR, EMERGENCY, FAMILY] }
+        contactIndex: { type: integer }
+        label: { type: string, description: Katalog kodu (O-STEP-*) }
+        script: { type: string, description: Katalog kodu (O-SCRIPT-*) }
+        timeoutSec: { type: integer }
+        required: { type: boolean }
+        calledAt: { type: string, format: date-time }
+        result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+        assessment: { enum: [OK, EMERGENCY] }
+        note: { type: string }
+        reason: { type: string }
+        operatorId: { type: string }
+        completedAt: { type: string, format: date-time }
+        scriptReadAt: { type: string, format: date-time }
     QueueItem:
       type: object
+      required: [eventId, type, priority, state, createdAt, lockedBy, isTest, person]
       properties:
-        eventId: { type: string }
+        eventId: { type: string, format: uuid }
         type: { type: string }
         priority: { type: integer }
         state: { type: string }
         createdAt: { type: string, format: date-time }
+        escalatedAt: { type: [string, 'null'], format: date-time }
+        lockedBy: { type: [string, 'null'], description: Üstlenen operatör (token sub) }
+        lockUntil: { type: [string, 'null'], format: date-time }
+        isTest: { type: boolean }
         person:
-          {
-            type: object,
-            properties: { displayName: { type: string }, age: { type: integer }, district: { type: string } },
-          }
-        lockedBy: { type: [string, 'null'] }
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties: { displayName: { type: string }, age: { type: [integer, 'null'] } }

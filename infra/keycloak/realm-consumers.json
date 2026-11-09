@@ -1,0 +1,65 @@
+{
+  "realm": "consumers",
+  "displayName": "Yanımda",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "permanentLockout": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 2592000,
+  "ssoSessionMaxLifespan": 7776000,
+  "offlineSessionIdleTimeout": 7776000,
+  "passwordPolicy": "length(8) and notUsername",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["tr"],
+  "defaultLocale": "tr",
+  "roles": {
+    "realm": [
+      {
+        "name": "ELDER",
+        "description": "Korunan kişi"
+      },
+      {
+        "name": "FAMILY",
+        "description": "Aile yakını / abone"
+      }
+    ]
+  },
+  "defaultRoles": ["FAMILY"],
+  "clients": [
+    {
+      "clientId": "family-app",
+      "name": "Aile uygulaması",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["app.yanimda.family:/oauth2redirect", "http://localhost:5174/*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "fullScopeAllowed": true,
+      "defaultClientScopes": ["basic", "profile", "roles", "web-origins", "acr", "email"],
+      "optionalClientScopes": ["offline_access"],
+      "protocolMappers": [
+        {
+          "name": "audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "yanimda-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

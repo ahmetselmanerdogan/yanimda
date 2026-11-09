@@ -1,0 +1,65 @@
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
+
+import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
+import { ChainService } from './chain.service';
+
+/** E-02 üstlenme, E-03/E-04 zincir adımları, E-06 112 kısayolu, E-07 kapatma (T-021). */
+@Controller('events')
+@UseGuards(OidcGuard)
+@Roles('OPERATOR', 'SUPERVISOR')
+export class ChainController {
+  constructor(@Inject(ChainService) private readonly chain: ChainService) {}
+
+  /** GET /v1/events/{id} — olay + zincir. */
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.chain.get(id);
+  }
+
+  /** POST /v1/events/{id}/claim — üstlen; zincir oluşur. Başka operatörde 409. */
+  @Post(':id/claim')
+  @HttpCode(200)
+  claim(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.chain.claim(id, userOf(req).sub);
+  }
+
+  /** POST /v1/events/{id}/heartbeat — operatör kilidini uzatır. */
+  @Post(':id/heartbeat')
+  @HttpCode(200)
+  heartbeat(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.chain.heartbeat(id, userOf(req).sub);
+  }
+
+  @Post(':id/chain/steps/:n/call')
+  @HttpCode(200)
+  call(@Param('id') id: string, @Param('n', ParseIntPipe) n: number, @Req() req: UserRequest) {
+    return this.chain.call(id, n, userOf(req).sub);
+  }
+
+  @Post(':id/chain/steps/:n/script-read')
+  @HttpCode(200)
+  scriptRead(@Param('id') id: string, @Param('n', ParseIntPipe) n: number, @Req() req: UserRequest) {
+    return this.chain.scriptRead(id, n, userOf(req).sub);
+  }
+
+  /** POST /v1/events/{id}/chain/steps/{n}/result — sıra zorunlu (409), SKIPPED gerekçe ister. */
+  @Post(':id/chain/steps/:n/result')
+  @HttpCode(200)
+  result(@Param('id') id: string, @Param('n', ParseIntPipe) n: number, @Req() req: UserRequest, @Body() body: unknown) {
+    return this.chain.stepResult(id, n, userOf(req).sub, body);
+  }
+
+  /** POST /v1/events/{id}/escalate-112 — gerekçe zorunlu; kalan adımlar atlanır. */
+  @Post(':id/escalate-112')
+  @HttpCode(200)
+  escalate(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+    return this.chain.escalate112(id, userOf(req).sub, body);
+  }
+
+  /** POST /v1/events/{id}/close — sonuç zorunlu, not ≤ 2000. */
+  @Post(':id/close')
+  @HttpCode(204)
+  async close(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+    await this.chain.close(id, userOf(req).sub, body);
+  }
+}

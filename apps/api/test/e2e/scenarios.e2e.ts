@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import { createDevice, loadScenario } from '@yanimda/simulator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
 
 import { hasRedisServer, type Stack, startStack, waitFor } from './infra';
 
@@ -25,16 +26,16 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
   const eventOf = async (person: string) => {
     const [row] = await st.query<{ id: string }>('SELECT id FROM event.event WHERE protected_person_id = $1', [person]);
     if (!row) return undefined;
-    return (await fetch(`${st.api.base}/events/${row.id}`)).json() as Promise<{
-      id: string;
-      type: string;
-      state: string;
-      transitions: { to: string }[];
-    }>;
+    const body = (await (await fetch(`${st.api.base}/events/${row.id}`, { headers: st.op() })).json()) as {
+      event: { id: string; type: string; state: string; transitions: { to: string }[] };
+    };
+    return body.event;
   };
   const transitions = (ev: { transitions: { to: string }[] }) => ev.transitions.map((t) => t.to);
   const queueIds = async () =>
-    ((await (await fetch(`${st.api.base}/queue`)).json()) as { eventId: string }[]).map((q) => q.eventId);
+    (
+      (await (await fetch(`${st.api.base}/queue`, { headers: st.op() })).json()) as { items: { eventId: string }[] }
+    ).items.map((q) => q.eventId);
 
   it('S3 düşme, cevap yok → pencere dolunca operatör kuyruğu; operatör üstlenip kapatır', async () => {
     const sent = await device('pp-s3').scenario(loadScenario(join(SCENARIOS, 's3-dusme-teyitsiz.yaml')), {
@@ -58,8 +59,8 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     );
     expect(n).toBe(3);
 
-    const op = { 'x-operator-id': 'op-e2e', 'content-type': 'application/json' };
-    expect((await fetch(`${st.api.base}/events/${ev.id}/claim`, { method: 'POST', headers: op })).status).toBe(201);
+    const op = st.op();
+    expect((await fetch(`${st.api.base}/events/${ev.id}/claim`, { method: 'POST', headers: op })).status).toBe(200);
     const close = await fetch(`${st.api.base}/events/${ev.id}/close`, {
       method: 'POST',
       headers: op,
@@ -103,10 +104,40 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     const ev = await waitFor(() => eventOf('pp-s7'), 5_000, 'S7 olayı yok');
     expect(ev.type).toBe('WATCH_OFF');
     expect(transitions(ev)).toEqual(['CREATED', 'DEVICE_PROMPT']);
-    const status = (await (await fetch(`${st.api.base}/protected-persons/pp-s7/status`)).json()) as {
+    const status = (await (
+      await fetch(`${st.api.base}/protected-persons/pp-s7/status`, { headers: st.op() })
+    ).json()) as {
       state: string;
       watch: { onWrist: boolean };
     };
     expect(status).toMatchObject({ state: 'PROTECTED_PHONE', watch: { onWrist: false } });
+  });
+
+  it('T-022: iki operatör aynı anda üstlenir → biri 200 biri 409; WS 1 sn içinde yeni olayı gösterir', async () => {
+    const ws = new WebSocket(`${st.api.base.replace('http', 'ws')}/ws/queue`);
+    const msgs: { type: string; item?: { eventId: string; type: string } }[] = [];
+    ws.on('message', (d) => msgs.push(JSON.parse(d.toString())));
+    await new Promise((r, j) => {
+      ws.on('open', r);
+      setTimeout(() => j(new Error('WS açılmadı')), 3_000);
+    });
+    ws.send(JSON.stringify({ type: 'auth', token: st.op('op-ws').authorization.slice(7) }));
+    await waitFor(async () => msgs.some((m) => m.type === 'snapshot'), 3_000, 'snapshot yok');
+
+    const t0 = Date.now();
+    await device('pp-t022').send('SOS');
+    const up = await waitFor(
+      async () => msgs.find((m) => m.type === 'upsert' && m.item?.type === 'SOS' && !m.item.eventId.startsWith('x')),
+      3_000,
+      'WS upsert yok',
+    );
+    const latency = Date.now() - t0;
+    expect(latency).toBeLessThan(1000);
+    ws.close();
+
+    const id = up.item!.eventId;
+    const claim = (op: string) => fetch(`${st.api.base}/events/${id}/claim`, { method: 'POST', headers: st.op(op) });
+    const codes = (await Promise.all([claim('op-a'), claim('op-b')])).map((r) => r.status).sort();
+    expect(codes).toEqual([200, 409]);
   });
 });

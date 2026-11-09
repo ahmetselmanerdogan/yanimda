@@ -34,10 +34,71 @@ export interface EventRecord {
   location?: Signal['location'];
   sourceSignalIds: string[];
   isTest: boolean;
+  /** D-04 operatör kilidi bitişi (T-021). */
+  lockUntil?: string;
   transitions: TransitionRecord[];
 }
 
 type Q = Db | Tx;
+
+/** E-02 kuyruk satırı (T-022). Kişi bilgisi profile.protected_person'dan (yoksa null). */
+export interface QueueItem {
+  eventId: string;
+  type: EventType;
+  priority: number;
+  state: EventState;
+  createdAt: string;
+  escalatedAt: string | null;
+  lockedBy: string | null;
+  lockUntil: string | null;
+  isTest: boolean;
+  person: { displayName: string; age: number | null } | null;
+}
+
+/** Kuyrukta görünen durumlar: bekleyen + operatördekiler (kilitli). */
+export const QUEUE_STATES: EventState[] = [
+  'OPERATOR_QUEUE',
+  'OPERATOR_ASSIGNED',
+  'CONTACT_CHAIN',
+  'CONFIRMED_OK',
+  'CONFIRMED_EMERGENCY',
+  'DISPATCH',
+];
+
+interface QueueRow {
+  id: string;
+  type: string;
+  priority: number;
+  state: string;
+  created_at: Date | string;
+  escalated_at: Date | string | null;
+  operator_id: string | null;
+  lock_until: Date | string | null;
+  is_test: boolean;
+  display_name: string | null;
+  birth_year: number | null;
+  total?: number;
+}
+const isoOrNull = (d: Date | string | null) => (d === null ? null : new Date(d).toISOString());
+
+function toQueueItem(r: QueueRow, now: Date): QueueItem {
+  return {
+    eventId: r.id,
+    type: r.type as EventType,
+    priority: r.priority,
+    state: r.state as EventState,
+    createdAt: new Date(r.created_at).toISOString(),
+    escalatedAt: isoOrNull(r.escalated_at),
+    lockedBy: r.operator_id,
+    lockUntil: isoOrNull(r.lock_until),
+    isTest: r.is_test,
+    person:
+      r.display_name === null
+        ? null
+        : { displayName: r.display_name, age: r.birth_year ? now.getUTCFullYear() - r.birth_year : null },
+  };
+}
+
 type EventRow = typeof event.$inferSelect;
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : undefined);
@@ -60,6 +121,7 @@ function toRecord(r: EventRow, transitions: TransitionRecord[] = []): EventRecor
     location: (r.location as Signal['location']) ?? undefined,
     sourceSignalIds: r.sourceSignalIds,
     isTest: r.isTest,
+    lockUntil: iso(r.lockUntil),
     transitions,
   };
 }
@@ -80,6 +142,7 @@ function toRow(e: EventRecord) {
     location: e.location ?? null,
     sourceSignalIds: e.sourceSignalIds,
     isTest: e.isTest,
+    lockUntil: date(e.lockUntil),
   };
 }
 
@@ -182,9 +245,43 @@ export class EventRepository {
     const rows = await this.db
       .select()
       .from(event)
-      .where(inArray(event.state, ['OPERATOR_QUEUE', 'OPERATOR_ASSIGNED']))
+      .where(inArray(event.state, QUEUE_STATES))
       .orderBy(asc(event.priority), asc(event.createdAt));
     return rows.map((r) => toRecord(r));
+  }
+
+  private queueSql(where: ReturnType<typeof sql>, page?: { limit: number; offset: number }) {
+    return sql`
+      SELECT e.id::text AS id, e.type, e.priority, e.state, e.created_at, e.escalated_at, e.operator_id, e.lock_until,
+             e.is_test, p.display_name, p.birth_year, count(*) OVER ()::int AS total
+      FROM ${event} e
+      LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
+      WHERE ${where}
+      ORDER BY e.priority ASC, e.created_at ASC, e.id ASC
+      ${page ? sql`LIMIT ${page.limit} OFFSET ${page.offset}` : sql``}`;
+  }
+
+  /** T-022 sayfalı kuyruk: öncelik → yaş; operatördeki olaylar `lockedBy` ile. */
+  async queuePage(
+    page: { limit: number; offset: number },
+    now = new Date(),
+  ): Promise<{ items: QueueItem[]; total: number }> {
+    const states = sql.join(
+      QUEUE_STATES.map((s) => sql`${s}`),
+      sql`, `,
+    );
+    const r = (await this.db.execute(this.queueSql(sql`e.state IN (${states})`, page))) as unknown as {
+      rows: QueueRow[];
+    };
+    return { items: r.rows.map((x) => toQueueItem(x, now)), total: r.rows[0]?.total ?? 0 };
+  }
+
+  /** Tek olayın kuyruk satırı; kuyrukta değilse null (WS yayını için). */
+  async queueItem(id: string, now = new Date()): Promise<QueueItem | null> {
+    if (!isUuid(id)) return null;
+    const r = (await this.db.execute(this.queueSql(sql`e.id = ${id}::uuid`))) as unknown as { rows: QueueRow[] };
+    const row = r.rows[0];
+    return row && QUEUE_STATES.includes(row.state as EventState) ? toQueueItem(row, now) : null;
   }
 
   async all(): Promise<EventRecord[]> {
@@ -224,6 +321,12 @@ export class EventRepository {
       lastSeenAt: new Date(x.last_seen_at),
       batteryPct: x.battery_pct,
     }));
+  }
+
+  /** Operatör kilidi `now`'dan önce dolmuş olaylar (T-021). */
+  async expiredLockIds(now: Date): Promise<string[]> {
+    const rows = await this.db.select({ id: event.id }).from(event).where(lt(event.lockUntil, now));
+    return rows.map((r) => r.id);
   }
 
   /** Cihaz sorusu süresi `before`'dan önce dolmuş, hâlâ DEVICE_PROMPT olan olaylar. */

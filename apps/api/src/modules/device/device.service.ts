@@ -6,6 +6,7 @@ import { DB, type Db } from '../../db/client';
 import { device } from '../../db/schema';
 import { AdapterRegistry } from './adapter.registry';
 import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
+import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
 import type { DeviceAdapter, PromptRequest, RingRequest } from './device.types';
@@ -14,7 +15,12 @@ import { PUSH, type PushPort, RecordingPush } from './push.port';
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
 
 export function defaultRegistry(push: PushPort = new RecordingPush()): AdapterRegistry {
-  return new AdapterRegistry([new WearOsAdapter(push), new AndroidPhoneAdapter(push), new SimulatorAdapter()]);
+  return new AdapterRegistry([
+    new WearOsAdapter(push),
+    new AndroidPhoneAdapter(push),
+    new IosPhoneAdapter(push),
+    new SimulatorAdapter(),
+  ]);
 }
 
 /**

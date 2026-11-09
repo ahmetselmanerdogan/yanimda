@@ -26,10 +26,10 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-016 Entegrasyon (S3/S4/S7, gerçek süreçler), kaos (Redis 30 sn, Postgres 10 sn), k6 duman; raporlar docs/test-reports/. Not: Docker yok → Testcontainers yerine redis-server + PGlite sunucusu; gerçek TimescaleDB koşumu açık
 
 ## Epik 2 · Konsol çekirdek (S2)
-- [ ] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01)
-- [ ] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi Redis (D-03, D-04)
-- [ ] T-022 GET /v1/queue + WebSocket; claim (E-02) — S0'da REST var
-- [ ] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10)
+- [x] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01) — konsol PKCE girişi T-023 ile
+- [x] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi (D-03, D-04) — kilit Redis yerine olay satırında (lock_until); 05 metinleri katalogda, gözden geçirilmeli
+- [x] T-022 GET /v1/queue + WebSocket; claim (E-02)
+- [x] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10) — tıbbi özet T-040'ı bekliyor; 04 dokümanı okunamadı, düzen görev kitabından
 - [ ] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06)
 - [ ] T-025 SLA sayaçları ve metrikler (E-09, D-11)
 - [ ] T-026 Playwright e2e
@@ -45,8 +45,8 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-037 Gelen arama ve otomatik cevap (A-10)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
-- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04)
-- [ ] T-041 /v1/devices/enroll, cihaz token, /config
+- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — davet kodu üretimi T-041 ile geldi (yönetici token'ıyla; SMS ve aile yetkisi açık)
+- [x] T-041 /v1/devices/enroll, cihaz token, /config — aile "cihazı kaldır" T-020'ye kadar yönetici token'ıyla
 - [ ] T-042 phone: davet → 6 ekran kurulum (B-01, B-02)
 - [ ] T-043 phone: köprü ve tampon (B-03)
 - [ ] T-044 phone: ana ekran, foreground service, koruma ve gece modu (B-04, B-05, B-06, B-09)
@@ -56,7 +56,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05)
 - [ ] T-051 Konsol WebRTC softphone
 - [ ] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü
-- [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08)
+- [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08) — başladı: APNs istemcisi, cihaz push yönlendirmesi, iPhone sessiz uyandırma. Açık: FCM, SMS, sesli, aile bildirimleri, yedeklilik
 - [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)
 
 ## Epik 6 · Aile ve web (S6)
@@ -69,7 +69,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-070 Öğrenme modu (D-06)
 - [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
 - [ ] T-072 Otomatik sesli ön eleme (D-12)
-- [ ] T-073 iOS Companion
+- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. APNs sessiz uyandırma (15 dk). Açık: gerçek APNs anahtarı ve cihazda deneme, pil ölçümü (<%5/24 sa), TestFlight
 - [ ] T-074 Amir panosu (E-11)
 
 ## Epik 8 · Sertleştirme (S8)

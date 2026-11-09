@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -15,6 +16,7 @@ import {
   type KafkaEnvelope,
   type NotifyRequest,
   type Signal,
+  type SupervisorAlert,
   TOPICS,
 } from '@yanimda/contracts';
 import { v7 as uuidv7 } from 'uuid';
@@ -39,7 +41,7 @@ import {
   staticRules,
 } from './rules.loader';
 
-export type { EventRecord } from './event.repository';
+export type { EventRecord, QueueItem } from './event.repository';
 
 /** Olay kaynağı: sinyal, zamanlayıcı (follow-up) veya cihaz taraması. */
 interface EventSource {
@@ -63,6 +65,30 @@ interface Uow {
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
 const WAIT_TIMERS: TimerKind[] = ['prompt-expire', 'silent-ask-expire', 'watch-off-remind', 'watch-off-operator'];
+
+/** Operatörün elindeki durumlar (kilit, kapatma, zincir). */
+export const OPERATOR_STATES = new Set<EventState>([
+  'OPERATOR_ASSIGNED',
+  'CONTACT_CHAIN',
+  'CONFIRMED_OK',
+  'CONFIRMED_EMERGENCY',
+  'DISPATCH',
+]);
+const CLOSE_OUTCOMES = new Set(['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE']);
+/** D-04 operatör kilidi süresi (varsayılan 300 sn); her operatör isteği uzatır. */
+export const operatorLockMs = () => Number(process.env.OPERATOR_LOCK_SEC ?? 300) * 1000;
+
+/** EventService.operate içinde zincir modülüne verilen işlem bağlamı (aynı transaction). */
+export interface OperatorCtx {
+  ev: EventRecord;
+  tx: Tx;
+  now: Date;
+  rule: Rule | undefined;
+  rulesVersion: number;
+  transition(to: EventState, note?: string): void;
+  publish(topic: string, payload: unknown): void;
+  finish(outcome: string, note?: string): Promise<void>;
+}
 
 const pgCode = (e: unknown) =>
   (e as { code?: string; cause?: { code?: string } })?.cause?.code ?? (e as { code?: string })?.code;
@@ -109,7 +135,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const every = Number(process.env.EVENT_SWEEP_MS ?? 30_000);
     if (every > 0) {
       const tick = () =>
-        Promise.all([this.recoverOverdue(), this.sweepDevices(), this.sweepProtection()])
+        Promise.all([this.recoverOverdue(), this.sweepDevices(), this.sweepProtection(), this.releaseExpiredLocks()])
           .catch((e) => this.log.error(`Tarama başarısız: ${safeError(e)}`))
           .finally(() => (this.sweepTimer = setTimeout(tick, every)));
       void tick();
@@ -132,6 +158,26 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   }
   all(): Promise<EventRecord[]> {
     return this.repo.all();
+  }
+  queuePage(page: { limit: number; offset: number }) {
+    return this.repo.queuePage(page);
+  }
+  queueItem(id: string) {
+    return this.repo.queueItem(id);
+  }
+
+  /** E-02 amir: üstlenmeyi geri al (olay kuyruğa döner, zincir kaldığı yerden sürer). Teyitli olay geri alınmaz. */
+  async unclaim(id: string, supervisorId: string, reason?: string): Promise<EventRecord> {
+    const ev = await this.withEvent(id, async (u) => {
+      if (u.ev.state !== 'OPERATOR_ASSIGNED' && u.ev.state !== 'CONTACT_CHAIN')
+        throw new ConflictException('Bu durumda geri alınamaz');
+      u.ev.operatorId = undefined;
+      u.ev.lockUntil = undefined;
+      this.transition(u, 'OPERATOR_QUEUE', 'OPERATOR', supervisorId, reason ?? 'amir geri aldı');
+      return u.ev;
+    });
+    if (!ev) throw new NotFoundException('Olay yok');
+    return ev;
   }
 
   // ---- D-09 zamanlayıcı işleyicileri: GÜNCEL durumu kilitli okur, beklenen durumda değilse no-op ----
@@ -400,36 +446,119 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     for (const k of WAIT_TIMERS) await this.timers.cancel(eventId, k);
   }
 
-  // ---- Konsol tarafı (E-02, E-07) ----
-  async claim(id: string, operatorId: string): Promise<EventRecord> {
-    const ev = await this.withEvent(id, async (u) => {
-      if (u.ev.state === 'OPERATOR_ASSIGNED' && u.ev.operatorId !== operatorId)
-        throw new ConflictException('Başka operatör üstlendi');
-      if (u.ev.state === 'OPERATOR_QUEUE') {
-        u.ev.operatorId = operatorId;
-        this.transition(u, 'OPERATOR_ASSIGNED', 'OPERATOR', operatorId);
+  // ---- Konsol tarafı (E-02, E-07; T-021 zincir bunun üstünde) ----
+
+  /**
+   * Operatör işlemi: olay kilitlenir, sahiplik denetlenir, operatör kilidi (lock_until) uzatılır, fn aynı
+   * transaction'da çalışır (zincir adımları + olay geçişleri + outbox birlikte yazılır). claim: kuyruktaki olayı
+   * üstlenir (aynı operatöre tekrar → aynı sonuç; başkasında → 409).
+   */
+  async operate<T>(
+    id: string,
+    operatorId: string,
+    fn: (c: OperatorCtx) => Promise<T>,
+    opts: { claim?: boolean; now?: Date } = {},
+  ): Promise<T> {
+    const now = opts.now ?? new Date();
+    const found = await this.withEvent(id, async (u) => {
+      if (opts.claim) {
+        if (u.ev.state === 'OPERATOR_QUEUE') {
+          u.ev.operatorId = operatorId;
+          this.transition(u, 'OPERATOR_ASSIGNED', 'OPERATOR', operatorId);
+        } else if (u.ev.operatorId !== operatorId || !OPERATOR_STATES.has(u.ev.state)) {
+          throw new ConflictException(u.ev.operatorId ? 'Başka operatör üstlendi' : 'Olay kuyrukta değil');
+        }
+      } else if (u.ev.operatorId !== operatorId || !OPERATOR_STATES.has(u.ev.state)) {
+        throw new ConflictException('Olay sizde değil');
       }
-      return u.ev;
+      u.ev.lockUntil = new Date(now.getTime() + operatorLockMs()).toISOString();
+      u.dirty = true;
+      const ctx: OperatorCtx = {
+        ev: u.ev,
+        tx: u.tx,
+        now,
+        rule: ruleFor(this.pack, u.ev.type),
+        rulesVersion: this.pack.version,
+        transition: (to, note) => this.transition(u, to, 'OPERATOR', operatorId, note),
+        publish: (topic, payload) => u.publishes.push({ topic, payload }),
+        finish: (outcome, note) => this.finish(u, operatorId, outcome, note),
+      };
+      return { value: await fn(ctx) };
     });
-    if (!ev) throw new NotFoundException('Olay yok');
-    return ev;
+    if (!found) throw new NotFoundException('Olay yok');
+    return found.value;
+  }
+
+  async claim(id: string, operatorId: string): Promise<EventRecord> {
+    return this.operate(id, operatorId, async (c) => c.ev, { claim: true });
   }
 
   async closeByOperator(id: string, operatorId: string, outcome: string, note?: string): Promise<EventRecord> {
-    const ev = await this.withEvent(id, async (u) => {
-      if (u.ev.operatorId !== operatorId) throw new ConflictException('Olay sizde değil');
-      const confirmed: EventState = outcome === 'EMERGENCY' ? 'CONFIRMED_EMERGENCY' : 'CONFIRMED_OK';
-      if (u.ev.state === 'OPERATOR_ASSIGNED' || u.ev.state === 'CONTACT_CHAIN')
-        this.transition(u, confirmed, 'OPERATOR', operatorId, note);
-      if (confirmed === 'CONFIRMED_EMERGENCY') this.transition(u, 'DISPATCH', 'OPERATOR', operatorId);
-      this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
-      const hours = ruleFor(this.pack, u.ev.type)?.followUpAfterHours;
-      if (confirmed === 'CONFIRMED_EMERGENCY' && hours)
-        await this.timers.schedule(u.ev.id, 'follow-up', hours * 3600 * 1000); // commit'ten önce
-      return u.ev;
+    return this.operate(id, operatorId, async (c) => {
+      await c.finish(outcome, note);
+      return c.ev;
     });
-    if (!ev) throw new NotFoundException('Olay yok');
-    return ev;
+  }
+
+  /** E-07 kapatma: bulunulan duruma göre CONFIRMED_* / DISPATCH üzerinden CLOSED. EMERGENCY → takip zamanlayıcısı. */
+  private async finish(u: Uow, operatorId: string, outcome: string, note?: string) {
+    if (!CLOSE_OUTCOMES.has(outcome)) throw new BadRequestException('Geçersiz sonuç');
+    const op = (to: EventState, n?: string) => this.transition(u, to, 'OPERATOR', operatorId, n);
+    const emergency = outcome === 'EMERGENCY';
+    switch (u.ev.state) {
+      case 'OPERATOR_ASSIGNED':
+      case 'CONTACT_CHAIN':
+        if (emergency) op('CONFIRMED_EMERGENCY', note);
+        else if (outcome === 'UNREACHABLE') {
+          if (u.ev.state === 'OPERATOR_ASSIGNED') op('CONTACT_CHAIN');
+        } else op('CONFIRMED_OK', note);
+        break;
+      case 'CONFIRMED_OK':
+        if (emergency) throw new ConflictException('Olay iyi olarak teyit edildi; acil kapatılamaz');
+        break;
+      case 'CONFIRMED_EMERGENCY':
+      case 'DISPATCH':
+        if (!emergency) throw new ConflictException('Acil teyitli olay yalnız EMERGENCY ile kapanır');
+        break;
+      default:
+        throw new ConflictException('Olay kapatılamaz');
+    }
+    if (u.ev.state === 'CONFIRMED_EMERGENCY') op('DISPATCH');
+    u.ev.lockUntil = undefined;
+    this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
+    const hours = ruleFor(this.pack, u.ev.type)?.followUpAfterHours;
+    if (emergency && hours) await this.timers.schedule(u.ev.id, 'follow-up', hours * 3600 * 1000); // commit'ten önce
+  }
+
+  /**
+   * D-04 operatör kilidi: süresi dolan olay kuyruğa döner (OPERATOR_ASSIGNED / CONTACT_CHAIN), teyit edilmiş olay
+   * operatörde kalır; her iki durumda amir uyarısı outbox'a yazılır (olay başına kilit süresi başına bir kez).
+   */
+  async releaseExpiredLocks(now = new Date()): Promise<number> {
+    let n = 0;
+    for (const id of await this.repo.expiredLockIds(now)) {
+      await this.withEvent(id, async (u) => {
+        if (!u.ev.lockUntil || new Date(u.ev.lockUntil) > now || !OPERATOR_STATES.has(u.ev.state)) return;
+        const operatorId = u.ev.operatorId;
+        u.ev.lockUntil = undefined;
+        u.dirty = true;
+        if (u.ev.state === 'OPERATOR_ASSIGNED' || u.ev.state === 'CONTACT_CHAIN') {
+          u.ev.operatorId = undefined;
+          this.transition(u, 'OPERATOR_QUEUE', 'SYSTEM', undefined, 'operatör kilidi doldu');
+        }
+        const alert: SupervisorAlert = {
+          code: 'O-LOCK-LOST',
+          eventId: u.ev.id,
+          eventType: u.ev.type,
+          ...(operatorId ? { operatorId } : {}),
+          at: now.toISOString(),
+        };
+        u.publishes.push({ topic: TOPICS.supervisorAlert, payload: alert });
+        n++;
+      });
+    }
+    if (n) this.log.warn(`Kilit: ${n} olayın operatör kilidi doldu`);
+    return n;
   }
 
   // ---- Bildirim isteği (T-053 tüketir) ----

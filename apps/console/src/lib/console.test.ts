@@ -1,0 +1,167 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import catalog from '@yanimda/messages/tr.json';
+import { describe, expect, it } from 'vitest';
+
+import type { EventRecord, QueueItem } from './api';
+import { t } from './i18n';
+import { commandFor, type KeyInput } from './keys';
+import { keepSelection, queueReducer } from './queue';
+import { clock, slaOf } from './sla';
+
+const item = (id: string, priority: number, createdAt: string, state = 'OPERATOR_QUEUE'): QueueItem =>
+  ({
+    eventId: id,
+    type: 'SOS',
+    priority,
+    state,
+    createdAt,
+    escalatedAt: createdAt,
+    lockedBy: null,
+    lockUntil: null,
+    isTest: false,
+    person: null,
+  }) as QueueItem;
+
+describe('canlı kuyruk', () => {
+  const a = item('a', 2, '2026-11-09T10:00:00Z');
+  const b = item('b', 1, '2026-11-09T10:05:00Z');
+  const c = item('c', 1, '2026-11-09T10:01:00Z');
+  it('snapshot öncelik → yaş sıralar', () => {
+    expect(queueReducer({ items: [] }, { type: 'snapshot', items: [a, b, c] }).items.map((i) => i.eventId)).toEqual([
+      'c',
+      'b',
+      'a',
+    ]);
+  });
+  it('upsert: yeni bekleyen olay "arrived", güncelleme değil; remove', () => {
+    let s = queueReducer({ items: [] }, { type: 'snapshot', items: [a] });
+    s = queueReducer(s, { type: 'upsert', item: b });
+    expect(s.arrived?.eventId).toBe('b');
+    s = queueReducer(s, { type: 'upsert', item: { ...b, lockedBy: 'op', state: 'OPERATOR_ASSIGNED' } });
+    expect(s.arrived).toBeUndefined();
+    expect(s.items.find((i) => i.eventId === 'b')?.lockedBy).toBe('op');
+    expect(queueReducer(s, { type: 'remove', eventId: 'b' }).items.map((i) => i.eventId)).toEqual(['a']);
+  });
+  it('seçim korunur; seçili düşerse aynı sıradaki olaya geçer', () => {
+    expect(keepSelection([c, b, a], [c, b, a], 'b')).toBe('b');
+    expect(keepSelection([c, b, a], [c, a], 'b')).toBe('a');
+    expect(keepSelection([c, b, a], [c], 'a')).toBe('c');
+    expect(keepSelection([], [c], null)).toBe('c');
+    expect(keepSelection([c], [], 'c')).toBeNull();
+  });
+});
+
+describe('SLA sayaçları', () => {
+  const now = Date.parse('2026-11-09T10:00:30Z');
+  it('olay yaşı ve üstlenmeye kalan (10 sn)', () => {
+    const s = slaOf(item('a', 1, '2026-11-09T10:00:00Z'), null, undefined, now);
+    expect(s.ageSec).toBe(30);
+    expect(s.claimLeftSec).toBe(-20);
+  });
+  it('üstlenince ilk aramaya kalan (20 sn); arandıysa yok', () => {
+    const ev = {
+      state: 'OPERATOR_ASSIGNED',
+      transitions: [{ to: 'OPERATOR_ASSIGNED', at: '2026-11-09T10:00:25Z', actorKind: 'OPERATOR' }],
+    } as unknown as EventRecord;
+    const it2 = item('a', 1, '2026-11-09T10:00:00Z', 'OPERATOR_ASSIGNED');
+    expect(slaOf(it2, ev, undefined, now)).toEqual({ ageSec: 30, firstCallLeftSec: 15 });
+    expect(slaOf(it2, ev, '2026-11-09T10:00:28Z', now).firstCallLeftSec).toBeUndefined();
+  });
+  it('saat biçimi', () => {
+    expect(clock(75)).toBe('1:15');
+    expect(clock(-3)).toBe('−0:03');
+    expect(clock(3725)).toBe('1:02:05');
+  });
+});
+
+describe('klavye (E-10)', () => {
+  const k = (key: string, o: Partial<KeyInput> = {}): KeyInput => ({
+    key,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    editing: false,
+    ...o,
+  });
+  it('Enter üstlen, A ara, 1–5 sonuç, N not, C kapat, Ctrl+1 112', () => {
+    expect(commandFor(k('Enter'), 'normal')).toEqual({ kind: 'claim' });
+    expect(commandFor(k('a'), 'normal')).toEqual({ kind: 'call' });
+    expect(commandFor(k('1'), 'normal')).toEqual({ kind: 'result', result: 'REACHED' });
+    expect(commandFor(k('2'), 'normal')).toEqual({ kind: 'result', result: 'NO_ANSWER' });
+    expect(commandFor(k('3'), 'normal')).toEqual({ kind: 'result', result: 'BUSY' });
+    expect(commandFor(k('4'), 'normal')).toEqual({ kind: 'result', result: 'WRONG_NUMBER' });
+    expect(commandFor(k('5'), 'normal')).toEqual({ kind: 'skip' });
+    expect(commandFor(k('N'), 'normal')).toEqual({ kind: 'note' });
+    expect(commandFor(k('c'), 'normal')).toEqual({ kind: 'close' });
+    expect(commandFor(k('1', { ctrlKey: true }), 'normal')).toEqual({ kind: 'escalate' });
+    expect(commandFor(k('1', { metaKey: true }), 'normal')).toEqual({ kind: 'escalate' });
+  });
+  it('ulaşıldı sonrası 1 iyi / 2 acil / 3 devam', () => {
+    expect(commandFor(k('1'), 'assess')).toEqual({ kind: 'assess', assessment: 'OK' });
+    expect(commandFor(k('2'), 'assess')).toEqual({ kind: 'assess', assessment: 'EMERGENCY' });
+    expect(commandFor(k('3'), 'assess')).toEqual({ kind: 'assess', assessment: 'CONTINUE' });
+    expect(commandFor(k('a'), 'assess')).toBeNull();
+  });
+  it('metin yazarken kısayol yok (Esc ve Ctrl+1 hariç); diyalogda yok', () => {
+    expect(commandFor(k('a', { editing: true }), 'normal')).toBeNull();
+    expect(commandFor(k('Escape', { editing: true }), 'normal')).toEqual({ kind: 'escape' });
+    expect(commandFor(k('1', { ctrlKey: true, editing: true }), 'normal')).toEqual({ kind: 'escalate' });
+    expect(commandFor(k('Enter'), 'close')).toBeNull();
+  });
+});
+
+describe('katalog', () => {
+  it('değişken doldurur; eksik alan "bilinmiyor"', () => {
+    expect(t('O-STEP-CONTACT', { n: 2 })).toBe('2. yakını ara');
+    expect(t('O-SCRIPT-112', { type: 'Düşme', name: 'A', age: 80 })).toContain('Adres: bilinmiyor');
+  });
+  it('konsol kaynaklarında kullanılan her O-* kodu katalogda', () => {
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+        d.isDirectory()
+          ? files(join(dir, d.name))
+          : /\.tsx?$/.test(d.name) && !d.name.endsWith('.test.ts')
+            ? [join(dir, d.name)]
+            : [],
+      );
+    const used = new Set<string>();
+    for (const f of files(join(__dirname, '..')))
+      for (const m of readFileSync(f, 'utf8').matchAll(/'(O-[A-Z0-9-]+)'/g)) used.add(m[1]!);
+    const missing = [...used].filter((c) => !(c in catalog));
+    expect(missing).toEqual([]);
+    expect(used.size).toBeGreaterThan(30);
+  });
+  it('dinamik kodlar (tip, durum, sonuç) katalogda', () => {
+    const types = [
+      'SOS',
+      'FALL',
+      'INACTIVITY',
+      'CALLBACK',
+      'WATCH_OFF',
+      'BATTERY_LOW',
+      'BATTERY_DEAD',
+      'CONNECTION_LOST',
+      'ROUTINE_DEVIATION',
+      'HEART_ANOMALY',
+      'TEST',
+      'FOLLOW_UP',
+    ];
+    const states = [
+      'OPERATOR_QUEUE',
+      'OPERATOR_ASSIGNED',
+      'CONTACT_CHAIN',
+      'CONFIRMED_OK',
+      'CONFIRMED_EMERGENCY',
+      'DISPATCH',
+    ];
+    const codes = [
+      ...types.map((x) => `O-TYPE-${x}`),
+      ...states.map((x) => `O-STATE-${x}`),
+      ...['REACHED', 'NO_ANSWER', 'BUSY', 'WRONG_NUMBER', 'SKIPPED'].map((x) => `O-RES-${x}`),
+      ...['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE'].map((x) => `O-OUT-${x}`),
+    ];
+    expect(codes.filter((c) => !(c in catalog))).toEqual([]);
+  });
+});
