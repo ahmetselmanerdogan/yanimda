@@ -102,10 +102,12 @@ export function scaledRules(dir: string, timeScale: number) {
   copyFileSync(join(RULES_SRC, 'schema.json'), join(dir, 'schema.json'));
 }
 
-export async function startStack(opts: { timeScale?: number; env?: Record<string, string> } = {}): Promise<Stack> {
+export async function startStack(
+  opts: { timeScale?: number; env?: Record<string, string>; apiPort?: number } = {},
+): Promise<Stack> {
   const dir = mkdtempSync(join(tmpdir(), 'yanimda-e2e-'));
   scaledRules(dir, opts.timeScale ?? 1);
-  const [redisPort, dbPort, apiPort] = [await freePort(), await freePort(), await freePort()];
+  const [redisPort, dbPort, apiPort] = [await freePort(), await freePort(), opts.apiPort ?? (await freePort())];
   const oidc = await startFakeOidc();
 
   const redis = managed(

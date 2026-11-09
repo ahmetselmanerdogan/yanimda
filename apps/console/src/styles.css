@@ -417,3 +417,14 @@ button.ok kbd {
 .hours input {
   width: 72px;
 }
+
+.badge-training {
+  background: var(--attention);
+  color: #1a1a1a;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.layout.training .topbar {
+  border-bottom: 2px solid var(--attention);
+}

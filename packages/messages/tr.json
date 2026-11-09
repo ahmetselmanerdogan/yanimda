@@ -575,5 +575,13 @@
   "O-UI-COPIED": {
     "channel": "console",
     "text": "Kopyalandı"
+  },
+  "O-UI-TRAINING": {
+    "channel": "console",
+    "text": "EĞİTİM MODU · gerçek olay değil"
+  },
+  "O-UI-TRAINING-PERSON": {
+    "channel": "console",
+    "text": "Tatbikat kişisi {n}"
   }
 }
