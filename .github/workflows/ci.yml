@@ -100,7 +100,8 @@ jobs:
             -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" "$IMAGE"
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/signals" -H 'content-type: application/json' -d '[]') || true
-            [ "$code" = "400" ] && echo "API ayakta" && exit 0
+            # token'sız boş parti: cihaz koruması (T-041) gövdeden önce çalışır → 401; ikisi de "API ayakta" demek
+            { [ "$code" = "400" ] || [ "$code" = "401" ]; } && echo "API ayakta ($code)" && exit 0
             sleep 1
           done
           docker logs api; exit 1
