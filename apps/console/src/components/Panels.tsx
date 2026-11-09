@@ -1,7 +1,7 @@
 import type { ChainStep } from '@yanimda/contracts';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CloseOutcome, QueueItem } from '../lib/api';
+import type { CloseOutcome, DispatchScript, QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 
 /** Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08). */
@@ -67,20 +67,40 @@ export function PersonPanel({ item }: { item: QueueItem | null }) {
   );
 }
 
-/** 05 konuşma metni (katalog O-SCRIPT-*); eksik alan "bilinmiyor". */
+/**
+ * 05 konuşma metni (katalog O-SCRIPT-*); eksik alan "bilinmiyor". 112 adımında metin sunucudan doldurulur (T-024:
+ * kişi, yaş, konum, tıbbi alanlar); kopyala ve "okundu" zaman damgası adıma yazılır.
+ */
 export function ScriptPanel(p: {
   step: ChainStep;
   vars: Record<string, string | number | null | undefined>;
+  dispatch?: DispatchScript | null;
   onRead(): void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const is112 = p.step.kind === 'CALL_112';
+  const text = is112 && p.dispatch ? p.dispatch.text : t(p.step.script!, p.vars);
   return (
     <section className="script" aria-labelledby="script-title">
       <h3 id="script-title">{t('O-UI-SCRIPT')}</h3>
-      <p>{t(p.step.script!, p.vars)}</p>
-      {p.step.kind === 'CALL_112' && (
-        <button type="button" onClick={p.onRead} disabled={!!p.step.scriptReadAt}>
-          {t('O-UI-SCRIPT-READ')}
-        </button>
+      <p>{text}</p>
+      {is112 && (
+        <div className="row">
+          <button
+            type="button"
+            onClick={() =>
+              void navigator.clipboard?.writeText(text).then(() => {
+                setCopied(true);
+                if (!p.step.scriptReadAt) p.onRead();
+              })
+            }
+          >
+            {copied ? t('O-UI-COPIED') : t('O-UI-COPY')}
+          </button>
+          <button type="button" onClick={p.onRead} disabled={!!p.step.scriptReadAt}>
+            {t('O-UI-SCRIPT-READ')}
+          </button>
+        </div>
       )}
     </section>
   );
@@ -88,17 +108,27 @@ export function ScriptPanel(p: {
 
 const OUTCOMES: CloseOutcome[] = ['OK', 'FALSE_ALARM', 'UNREACHABLE', 'TEST', 'EMERGENCY'];
 
-/** E-07 kapatma: sonuç zorunlu, not ≤ 2000. Acil teyitli olay yalnız EMERGENCY ile. */
+export const DEFAULT_FOLLOW_UP_HOURS = 24;
+
+/**
+ * E-07 kapatma: sonuç zorunlu, not ≤ 2000, takip araması (varsayılan 24 saat; EMERGENCY'de zorunlu). Acil teyitli
+ * olay yalnız EMERGENCY ile.
+ */
 export function ClosePanel(p: {
   allowed: CloseOutcome[];
   initialNote: string;
   busy: boolean;
-  onSubmit(outcome: CloseOutcome, note: string): void;
+  onSubmit(outcome: CloseOutcome, note: string, followUpAfterHours?: number): void;
   onCancel(): void;
 }) {
   const choices = OUTCOMES.filter((o) => p.allowed.includes(o));
   const [outcome, setOutcome] = useState<CloseOutcome | null>(choices.length === 1 ? choices[0]! : null);
   const [note, setNote] = useState(p.initialNote);
+  const [followUp, setFollowUp] = useState(false);
+  const [hours, setHours] = useState(DEFAULT_FOLLOW_UP_HOURS);
+  const forced = outcome === 'EMERGENCY';
+  const plan = forced || followUp;
+  const hoursOk = Number.isInteger(hours) && hours >= 1 && hours <= 168;
   const first = useRef<HTMLInputElement>(null);
   useEffect(() => first.current?.focus(), []);
   return (
@@ -110,7 +140,7 @@ export function ClosePanel(p: {
         aria-labelledby="close-title"
         onSubmit={(e) => {
           e.preventDefault();
-          if (outcome) p.onSubmit(outcome, note.trim());
+          if (outcome && (!plan || hoursOk)) p.onSubmit(outcome, note.trim(), plan ? hours : undefined);
         }}
       >
         <h2 id="close-title">{t('O-UI-CLOSE')}</h2>
@@ -132,11 +162,25 @@ export function ClosePanel(p: {
         </fieldset>
         <label htmlFor="close-note">{t('O-UI-NOTE')}</label>
         <textarea id="close-note" value={note} maxLength={2000} rows={3} onChange={(e) => setNote(e.target.value)} />
+        <div className="row">
+          <label className="radio">
+            <input type="checkbox" checked={plan} disabled={forced} onChange={(e) => setFollowUp(e.target.checked)} />
+            {t('O-UI-FOLLOWUP-PLAN')}
+          </label>
+          {plan && (
+            <label className="hours">
+              {t('O-UI-FOLLOWUP-HOURS')}
+              <input type="number" min={1} max={168} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
+            </label>
+          )}
+        </div>
+        {forced && <p className="muted small">{t('O-UI-FOLLOWUP-REQUIRED')}</p>}
+        {plan && hoursOk && <p className="muted small">{t('O-UI-FOLLOWUP', { hours })}</p>}
         <div className="row end">
           <button type="button" onClick={p.onCancel}>
             {t('O-UI-CANCEL')}
           </button>
-          <button type="submit" className="primary" disabled={!outcome || p.busy}>
+          <button type="submit" className="primary" disabled={!outcome || (plan && !hoursOk) || p.busy}>
             {action('O-UI-CLOSE')}
           </button>
         </div>

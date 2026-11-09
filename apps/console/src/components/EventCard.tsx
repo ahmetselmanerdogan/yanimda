@@ -1,7 +1,7 @@
 import type { ChainStep } from '@yanimda/contracts';
 import type { RefObject } from 'react';
 
-import type { EventWithChain, QueueItem } from '../lib/api';
+import type { DispatchScript, EventWithChain, QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 import type { Mode } from '../lib/keys';
 import { clock, slaOf } from '../lib/sla';
@@ -17,6 +17,7 @@ interface Props {
   note: string;
   skipReason: string;
   scriptVars: Record<string, string | number | null | undefined>;
+  dispatch: DispatchScript | null;
   noteRef: RefObject<HTMLTextAreaElement>;
   skipRef: RefObject<HTMLInputElement>;
   onNote(v: string): void;
@@ -168,7 +169,12 @@ export function EventCard(p: Props) {
             onChange={(e) => p.onNote(e.target.value)}
           />
           {current.script && (
-            <ScriptPanel step={current} vars={p.scriptVars} onRead={() => p.onScriptRead(current.n)} />
+            <ScriptPanel
+              step={current}
+              vars={p.scriptVars}
+              dispatch={p.dispatch}
+              onRead={() => p.onScriptRead(current.n)}
+            />
           )}
         </section>
       )}

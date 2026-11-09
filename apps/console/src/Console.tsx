@@ -8,6 +8,7 @@ import {
   ApiError,
   type CloseOutcome,
   createApi,
+  type DispatchScript,
   type EventWithChain,
   queueSocketUrl,
   type StepResultBody,
@@ -54,6 +55,16 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
   const chain = detail && detail.event.id === selected ? detail.chain : null;
   const mine = !!ev && ev.operatorId === me && OPEN_STATES.includes(ev.state);
   const current = chain?.steps.find((s) => s.n === chain.current) ?? null;
+  const [dispatchScript, setDispatchScript] = useState<DispatchScript | null>(null);
+  const need112 = mine && current?.kind === 'CALL_112' ? selected : null;
+  useEffect(() => {
+    setDispatchScript(null);
+    if (!need112) return;
+    api
+      .dispatchScript(need112)
+      .then((d) => selectedRef.current === need112 && setDispatchScript(d))
+      .catch(() => undefined); // metin katalogdan "bilinmiyor" alanlarıyla gösterilir
+  }, [need112, api]);
 
   // ---- canlı kuyruk ----
   useEffect(() => {
@@ -182,8 +193,8 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
       : ev?.state === 'CONFIRMED_OK'
         ? ['OK', 'FALSE_ALARM', 'TEST']
         : ['OK', 'FALSE_ALARM', 'UNREACHABLE', 'TEST', 'EMERGENCY'];
-  const close = async (outcome: CloseOutcome, closeNote: string) => {
-    const ok = await run(() => api.close(selected!, outcome, closeNote || undefined));
+  const close = async (outcome: CloseOutcome, closeNote: string, followUp?: number) => {
+    const ok = await run(() => api.close(selected!, outcome, closeNote || undefined, followUp));
     if (ok) {
       setMode('normal');
       setNote('');
@@ -282,6 +293,7 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
             note={note}
             skipReason={skipReason}
             scriptVars={scriptVars}
+            dispatch={dispatchScript}
             noteRef={noteRef}
             skipRef={skipRef}
             onNote={setNote}
@@ -307,7 +319,7 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
           allowed={allowedOutcomes()}
           initialNote={note}
           busy={busy}
-          onSubmit={(o, n) => void close(o, n)}
+          onSubmit={(o, n, f) => void close(o, n, f)}
           onCancel={() => setMode('normal')}
         />
       )}

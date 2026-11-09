@@ -408,3 +408,12 @@ button.ok kbd {
   color: inherit;
   border-color: rgb(255 255 255 / 0.7);
 }
+
+.hours {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.hours input {
+  width: 72px;
+}
