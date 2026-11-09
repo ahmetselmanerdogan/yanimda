@@ -54,7 +54,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 
 ## Epik 5 · Telefoni ve bildirim (S5)
 - [x] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05) — Twilio sandbox'ta gerçek arama hesap bekliyor; operatör ucu T-051'e kadar masa hattı
-- [ ] T-051 Konsol WebRTC softphone
+- [x] T-051 Konsol WebRTC softphone — token, PhoneBar, konferans/bekletme; gelen SOS aramaları (müsait operatöre yönlendirme) açık; gerçek Twilio denemesi hesap bekliyor
 - [ ] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü
 - [x] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08) — gerçek FCM/APNs/Twilio hesaplarıyla deneme açık; aile uygulaması T-061
 - [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)

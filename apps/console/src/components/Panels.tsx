@@ -1,8 +1,16 @@
 import type { ChainStep } from '@yanimda/contracts';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CloseOutcome, DispatchScript, PersonCard, QueueItem } from '../lib/api';
+import {
+  CALL_ACTIVE,
+  type CallView,
+  type CloseOutcome,
+  type DispatchScript,
+  type PersonCard,
+  type QueueItem,
+} from '../lib/api';
 import { action, t } from '../lib/i18n';
+import type { DeviceState, PhoneSnapshot } from '../lib/softphone';
 
 /** Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08). */
 export function TopBar(p: {
@@ -287,12 +295,77 @@ export function EscalateDialog(p: { busy: boolean; onSubmit(reason: string): voi
   );
 }
 
-/** Telefon barı (T-051 softphone gelene kadar yer tutucu). */
-export function PhoneBar() {
+const DEVICE_TEXT: Record<DeviceState, string> = {
+  starting: 'O-UI-PHONE-STARTING',
+  'mic-denied': 'O-UI-PHONE-MIC-DENIED',
+  'mic-none': 'O-UI-PHONE-MIC-NONE',
+  ready: 'O-UI-PHONE-READY',
+  fake: 'O-UI-PHONE-FAKE',
+  unavailable: 'O-UI-PHONE-NONE',
+  error: 'O-UI-PHONE-ERROR',
+};
+const DEVICE_TONE: Record<DeviceState, string> = {
+  starting: 'muted',
+  'mic-denied': 'warn',
+  'mic-none': 'warn',
+  ready: 'ok',
+  fake: 'muted',
+  unavailable: 'muted',
+  error: 'warn',
+};
+
+const mmss = (sec: number) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+
+/**
+ * T-051 telefon barı: cihaz durumu (mikrofon izni girişte), süren görüşmenin durumu ve süresi, beklet / devam,
+ * konferansa aile ekle, aramayı bitir. Görüşme bilgisi sunucudaki arama kaydından (numara yok).
+ */
+export function PhoneBar(p: {
+  phone: PhoneSnapshot;
+  call: CallView | null;
+  now: number;
+  busy: boolean;
+  onHold(on: boolean): void;
+  onAddFamily(): void;
+  onHangup(): void;
+}) {
+  const { call } = p;
+  // Süre: görüşmenin "sürüyor"a geçtiği an (istemcide ilk görüldüğü an) başlar.
+  const [since, setSince] = useState<{ id: string; at: number } | null>(null);
+  const talking = call?.status === 'in-progress';
+  useEffect(() => {
+    if (talking && call && since?.id !== call.id) setSince({ id: call.id, at: Date.now() });
+  }, [talking, call, since?.id]);
+  const active = !!call && CALL_ACTIVE.includes(call.status);
+  const elapsed = talking && since?.id === call!.id ? Math.max(0, Math.floor((p.now - since.at) / 1000)) : null;
   return (
     <footer className="phonebar" aria-label={t('O-UI-PHONE')}>
       <strong>{t('O-UI-PHONE')}</strong>
-      <span className="muted">{t('O-UI-PHONE-NONE')}</span>
+      <span className={`phone-device ${DEVICE_TONE[p.phone.device]}`} data-testid="phone-device">
+        {t(DEVICE_TEXT[p.phone.device])}
+      </span>
+      <span className="phone-call" role="status" aria-live="polite" data-testid="phone-call">
+        {call && active ? (
+          <>
+            <span>{t(`O-CALL-${call.status}`)}</span>
+            {elapsed !== null && <span className="phone-time">{mmss(elapsed)}</span>}
+            {call.held && <span className="badge-held">{t('O-UI-PHONE-HELD')}</span>}
+            {!!call.parties && <span className="muted">{t('O-UI-PHONE-PARTIES', { n: call.parties })}</span>}
+          </>
+        ) : (
+          <span className="muted">{t('O-UI-PHONE-IDLE')}</span>
+        )}
+      </span>
+      <span className="spacer" />
+      <button type="button" disabled={!talking || p.busy} onClick={() => p.onHold(!call?.held)}>
+        {t(call?.held ? 'O-UI-PHONE-RESUME' : 'O-UI-PHONE-HOLD')}
+      </button>
+      <button type="button" disabled={!talking || p.busy} onClick={p.onAddFamily}>
+        {t('O-UI-PHONE-ADD-FAMILY')}
+      </button>
+      <button type="button" className="danger" disabled={!active || p.busy} onClick={p.onHangup}>
+        {t('O-UI-PHONE-HANGUP')}
+      </button>
     </footer>
   );
 }

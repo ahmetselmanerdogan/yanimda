@@ -37,4 +37,29 @@ describe('eğitim modu (T-026)', () => {
     expect((await sim.api.queue()).total).toBe(1);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('T-051 tatbikat araması: Ara → çalıyor → görüşme; beklet, aile ekle, bitir → Ulaşıldı önerisi; ağ yok', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const sim = new TrainingSim('egitim', 0);
+    sim.start(0, ['SOS']);
+    const msgs: ServerMessage[] = [];
+    sim.connect({ onStatus: () => undefined, onMessage: (m) => msgs.push(m) });
+    const id = (msgs.find((m) => m.type === 'snapshot') as Extract<ServerMessage, { type: 'snapshot' }>).items[0]!
+      .eventId;
+    await sim.api.claim(id);
+    expect((await sim.api.telephonyToken()).provider).toBe('fake');
+    const r = await sim.api.call(id, 1);
+    const c = r.calls![0]!;
+    expect(c).toMatchObject({ stepN: 1, status: 'ringing' });
+    await expect(sim.api.hold(c.id, true)).rejects.toMatchObject({ status: 409 });
+    await sim.api.call(id, 1); // süren aramada ikinci arama yok
+    await new Promise((res) => setTimeout(res, 5));
+    expect((await sim.api.event(id)).calls).toEqual([expect.objectContaining({ status: 'in-progress' })]);
+    expect(await sim.api.hold(c.id, true)).toMatchObject({ held: true, conference: true });
+    expect(await sim.api.conference(c.id)).toMatchObject({ parties: 1 });
+    expect(await sim.api.hangup(c.id)).toMatchObject({ status: 'completed', suggestedResult: 'REACHED', held: false });
+    await expect(sim.api.hangup('yok')).rejects.toMatchObject({ status: 404 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
 });

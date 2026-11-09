@@ -191,3 +191,31 @@ test('eğitim modu: giriş ve ağ isteği yok, sahte olaylar yürütülür', asy
   await expect(page.locator('.queue-row')).toHaveCount(2);
   expect(apiCalls).toEqual([]);
 });
+
+test('T-051 telefon barı (eğitim modu): sahte cihaz, Ara → görüşme, beklet, aile ekle, bitir', async ({ page }) => {
+  const apiCalls: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname.startsWith('/v1')) apiCalls.push(r.url());
+  });
+  await page.goto('/?training=1');
+  const bar = page.getByRole('contentinfo', { name: 'Telefon' });
+  await expect(bar.getByTestId('phone-device')).toHaveText('Sahte telefon (gerçek arama yok)');
+  await expect(bar.getByTestId('phone-call')).toHaveText('Görüşme yok');
+  await page.locator('main').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.state')).toHaveText('Üstlenildi');
+  await page.keyboard.press('a');
+  await expect(bar.getByRole('button', { name: 'Aramayı bitir' })).toBeEnabled();
+  await expect(bar.getByRole('button', { name: 'Beklet' })).toBeEnabled({ timeout: 5000 });
+  await expect(bar.locator('.phone-time')).toBeVisible();
+  await bar.getByRole('button', { name: 'Beklet' }).click();
+  await expect(bar).toContainText('Beklemede');
+  await bar.getByRole('button', { name: 'Devam et' }).click();
+  await expect(bar).not.toContainText('Beklemede');
+  await bar.getByRole('button', { name: 'Aileyi ekle' }).click();
+  await expect(bar).toContainText('Konferans: 1 yakın');
+  await bar.getByRole('button', { name: 'Aramayı bitir' }).click();
+  await expect(bar.getByTestId('phone-call')).toHaveText('Görüşme yok');
+  await expect(page.locator('.call-line .suggest')).toContainText('Ulaşıldı');
+  expect(apiCalls).toEqual([]);
+});

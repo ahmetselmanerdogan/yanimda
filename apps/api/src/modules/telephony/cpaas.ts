@@ -2,10 +2,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
  * T-050 CPaaS sağlayıcı arayüzü (03 "telephony"). Uygulamalar: TwilioProvider (üretim), FakeProvider (geliştirme ve
- * test; webhook'ları kendisi tetikler). Konferans ve WebRTC istemcisi T-051'de eklenir.
+ * test; webhook'ları kendisi tetikler).
  *
- * Giden arama modeli (tıkla-ara köprüsü): sağlayıcı önce operatörün ucunu (`agent`: masa hattı, T-051'de yazılım
- * telefonu) arar, operatör açınca aranan tarafa bağlanır. Aranan tarafa açar açmaz kayıt anonsu okunur, görüşme
+ * Giden arama modeli (tıkla-ara köprüsü): sağlayıcı önce operatörün ucunu (`agent`: yazılım telefonu
+ * `client:<operatör>` veya masa hattı) arar, operatör açınca aranan tarafa bağlanır. Aranan tarafa açar açmaz kayıt anonsu okunur, görüşme
  * iki kanallı kaydedilir. Durum ve kayıt webhook'ları `?call=<bizim arama kimliğimiz>` taşır.
  */
 export interface DialRequest {
@@ -28,7 +28,20 @@ export interface WebhookUrls {
   recording: string;
   /** Aranan tarafa okunacak kayıt anonsu (TwiML). */
   announce: string;
+  /** T-051: konferansa eklenen yakının bacağı. */
+  party: string;
 }
+
+/**
+ * T-051 konferans işlemleri (Twilio `<Conference>`; oda adı `yanimda-<arama>`).
+ *  - move: aranan bacağı odaya taşı (köprü biter; operatörün Dial'ı `dial` webhook'unda odaya katılır).
+ *  - add: yakını ara; açınca kayıt anonsu + oda.
+ *  - hold: aranan bacağı beklet / devam.
+ */
+export type ConferenceOp =
+  | { kind: 'move'; room: string; legCallId: string; urls: WebhookUrls }
+  | { kind: 'add'; room: string; /** Log'a yazılmaz. */ to: string; announce: string; urls: WebhookUrls }
+  | { kind: 'hold'; room: string; legCallId: string; hold: boolean };
 
 export interface CpaasProvider {
   readonly name: string;
@@ -40,6 +53,8 @@ export interface CpaasProvider {
   sendSms(to: string, body: string, statusCallback?: string): Promise<{ providerId: string }>;
   /** Metni okuyup kapatan arama (D-08 sesli bildirim). */
   ttsCall(to: string, text: string): Promise<{ providerCallId: string }>;
+  /** T-051: konferansa taşı, yakın ekle, beklet. `add` yeni bacağın kimliğini döner. */
+  conference(op: ConferenceOp): Promise<{ providerCallId?: string }>;
   /** Webhook imzası (Twilio X-Twilio-Signature şeması). */
   verify(url: string, params: Record<string, string>, signature: string | undefined): boolean;
 }
@@ -70,5 +85,20 @@ export const xml = (s: string) => s.replace(/[&<>"']/g, (c) => XML[c]!);
 /** Aranan tarafa okunacak anons (TwiML). */
 export const sayTwiml = (text: string) =>
   `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR" voice="Polly.Filiz">${xml(text)}</Say></Response>`;
+
+/**
+ * Odaya katılma TwiML'i. Operatör `endOnExit` ile katılır (çıkınca oda kapanır); `record` verilirse oda kaydı
+ * başından alınır ve kayıt webhook'una gelir. Bekleme müziği yok (waitUrl boş).
+ */
+export function conferenceTwiml(room: string, o: { endOnExit: boolean; recordingUrl?: string; say?: string }): string {
+  const rec = o.recordingUrl
+    ? ` record="record-from-start" recordingStatusCallback="${xml(o.recordingUrl)}" recordingStatusCallbackEvent="completed"`
+    : '';
+  const say = o.say ? `<Say language="tr-TR" voice="Polly.Filiz">${xml(o.say)}</Say>` : '';
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?><Response>${say}<Dial><Conference startConferenceOnEnter="true"` +
+    ` endConferenceOnExit="${o.endOnExit}" beep="false" waitUrl=""${rec}>${xml(room)}</Conference></Dial></Response>`
+  );
+}
 
 export const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response/>';

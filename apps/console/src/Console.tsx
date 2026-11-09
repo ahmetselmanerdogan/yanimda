@@ -6,6 +6,7 @@ import { QueueList } from './components/Queue';
 import {
   ApiError,
   CALL_ACTIVE,
+  type CallView,
   type CloseOutcome,
   type DispatchScript,
   type EventWithChain,
@@ -16,6 +17,7 @@ import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
 import { keepSelection, queueReducer } from './lib/queue';
+import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
 import { alertSound } from './lib/sound';
 
 const HEARTBEAT_MS = 60_000;
@@ -168,6 +170,24 @@ export function Console({
     return () => clearInterval(id);
   }, [mine, selected, api]);
 
+  // ---- T-051 yazılım telefonu: girişte başlar (mikrofon izni), oturum boyunca yaşar ----
+  const [phoneState, setPhoneState] = useState<PhoneSnapshot>({ device: 'starting', connected: false });
+  const phoneRef = useRef<ReturnType<typeof startSoftphone> | null>(null);
+  useEffect(() => {
+    const phone = startSoftphone({ token: () => api.telephonyToken(), training });
+    phoneRef.current = phone;
+    const off = phone.subscribe(setPhoneState);
+    return () => {
+      off();
+      phone.destroy();
+      phoneRef.current = null;
+    };
+  }, [api, training]);
+  const activeCall: CallView | null =
+    (mine && detail?.event.id === selected
+      ? detail.calls?.filter((c) => CALL_ACTIVE.includes(c.status)).at(-1)
+      : undefined) ?? null;
+
   // ---- işlemler ----
   const run = useCallback(
     async (fn: () => Promise<EventWithChain | void>) => {
@@ -228,6 +248,14 @@ export function Console({
       setMode('normal');
       setNote('');
     }
+  };
+  const phoneAction = (fn: (callId: string) => Promise<unknown>) => {
+    if (!activeCall) return;
+    const id = activeCall.id;
+    void run(async () => {
+      await fn(id);
+      if (selectedRef.current) return api.event(selectedRef.current);
+    });
   };
   const escalate = async (reason: string) => {
     if (await run(() => api.escalate(selected!, reason))) setMode('normal');
@@ -349,7 +377,18 @@ export function Console({
         )}
       </main>
       <PersonPanel item={item} card={card && card.id === selected ? card.card : undefined} mine={mine} />
-      <PhoneBar />
+      <PhoneBar
+        phone={phoneState}
+        call={activeCall}
+        now={now}
+        busy={busy}
+        onHold={(on) => phoneAction((id) => api.hold(id, on))}
+        onAddFamily={() => phoneAction((id) => api.conference(id))}
+        onHangup={() => {
+          phoneRef.current?.hangup();
+          phoneAction((id) => api.hangup(id));
+        }}
+      />
       {mode === 'close' && mine && (
         <ClosePanel
           allowed={allowedOutcomes()}

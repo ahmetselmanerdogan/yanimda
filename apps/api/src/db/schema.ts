@@ -220,6 +220,11 @@ export const call = telephonySchema.table('call', {
   durationSec: integer('duration_sec'),
   recordingRef: text('recording_ref'),
   recordingProviderId: text('recording_provider_id'),
+  /** T-051: aranan bacak (konferans ve bekletme). */
+  providerLegId: text('provider_leg_id'),
+  conference: boolean('conference').notNull().default(false),
+  held: boolean('held').notNull().default(false),
+  parties: integer('parties').notNull().default(0),
   error: text('error'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),

@@ -381,6 +381,29 @@ h3 {
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
+.phonebar .phone-device.ok {
+  color: var(--safe);
+}
+.phonebar .phone-device.warn {
+  color: var(--attention);
+}
+.phonebar .phone-device.muted {
+  color: var(--muted);
+}
+.phonebar .phone-call {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.phonebar .phone-time {
+  font-variant-numeric: tabular-nums;
+}
+.badge-held {
+  border: 1px solid var(--attention);
+  color: var(--attention);
+  border-radius: 4px;
+  padding: 0 6px;
+}
 
 .dialog-backdrop {
   position: fixed;

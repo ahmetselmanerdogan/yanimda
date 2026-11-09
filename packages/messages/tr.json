@@ -470,7 +470,59 @@
   },
   "O-UI-PHONE-NONE": {
     "channel": "console",
-    "text": "Softphone bağlı değil. Numarayı kayıtlı hattan arayın."
+    "text": "Yazılım telefonu kapalı. Aramalar masa hattına gelir."
+  },
+  "O-UI-PHONE-STARTING": {
+    "channel": "console",
+    "text": "Telefon hazırlanıyor…"
+  },
+  "O-UI-PHONE-READY": {
+    "channel": "console",
+    "text": "Yazılım telefonu hazır"
+  },
+  "O-UI-PHONE-FAKE": {
+    "channel": "console",
+    "text": "Sahte telefon (gerçek arama yok)"
+  },
+  "O-UI-PHONE-MIC-DENIED": {
+    "channel": "console",
+    "text": "Mikrofon izni yok. Tarayıcı ayarlarından izin verip sayfayı yenileyin."
+  },
+  "O-UI-PHONE-MIC-NONE": {
+    "channel": "console",
+    "text": "Mikrofon bulunamadı. Kulaklığı takıp sayfayı yenileyin."
+  },
+  "O-UI-PHONE-ERROR": {
+    "channel": "console",
+    "text": "Telefon bağlantısı kurulamadı. Sayfayı yenileyin."
+  },
+  "O-UI-PHONE-IDLE": {
+    "channel": "console",
+    "text": "Görüşme yok"
+  },
+  "O-UI-PHONE-HELD": {
+    "channel": "console",
+    "text": "Beklemede"
+  },
+  "O-UI-PHONE-PARTIES": {
+    "channel": "console",
+    "text": "Konferans: {n} yakın"
+  },
+  "O-UI-PHONE-HOLD": {
+    "channel": "console",
+    "text": "Beklet"
+  },
+  "O-UI-PHONE-RESUME": {
+    "channel": "console",
+    "text": "Devam et"
+  },
+  "O-UI-PHONE-ADD-FAMILY": {
+    "channel": "console",
+    "text": "Aileyi ekle"
+  },
+  "O-UI-PHONE-HANGUP": {
+    "channel": "console",
+    "text": "Aramayı bitir"
   },
   "O-UI-CLOSE": {
     "channel": "console",

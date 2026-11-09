@@ -3,9 +3,10 @@ import { Logger, Module } from '@nestjs/common';
 import type { CpaasProvider } from './cpaas';
 import { FakeProvider } from './fake-cpaas';
 import { type RecordingStore, s3ConfigFromEnv, S3RecordingStore } from './recording-store';
-import { CpaasWebhookController } from './telephony.controller';
+import { CpaasWebhookController, TelephonyController } from './telephony.controller';
 import { CPAAS, RECORDINGS, TelephonyService } from './telephony.service';
 import { twilioConfigFromEnv, TwilioProvider } from './twilio';
+import { voiceConfigFromEnv } from './voice-token';
 
 const log = new Logger('Telephony');
 
@@ -19,6 +20,8 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
     if (!cfg)
       throw new Error('CPAAS_PROVIDER=twilio için TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER gerekli');
     if (prod && !s3ConfigFromEnv(env)) throw new Error('Üretimde görüşme kaydı için S3_* gerekli');
+    if (!voiceConfigFromEnv(env) && env.CPAAS_SOFTPHONE !== 'off')
+      log.warn('TWILIO_API_KEY_SID/SECRET yok: yazılım telefonu kapalı, operatör ucu masa hattı (CPAAS_AGENT_NUMBER)');
     return new TwilioProvider(cfg);
   }
   if (kind === 'fake') {
@@ -29,7 +32,7 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
   throw new Error(`Bilinmeyen CPAAS_PROVIDER: ${kind}`);
 }
 
-/** T-050 telefoni (E-05): giden arama, webhook, kayıt. */
+/** T-050/T-051 telefoni (E-05): giden arama, webhook, kayıt, yazılım telefonu token'ı, konferans. */
 @Module({
   providers: [
     TelephonyService,
@@ -47,7 +50,7 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
       },
     },
   ],
-  controllers: [CpaasWebhookController],
+  controllers: [CpaasWebhookController, TelephonyController],
   exports: [TelephonyService, CPAAS],
 })
 export class TelephonyModule {}
