@@ -126,12 +126,25 @@ jobs:
           if-no-files-found: ignore
 
   image:
-    name: API imajı · boyut · Trivy
+    name: API imajı · gerçek TimescaleDB duman · Trivy
     runs-on: ubuntu-latest
     needs: check
+    services:
+      postgres:
+        image: timescale/timescaledb:2.17.2-pg16
+        env: { POSTGRES_USER: yanimda, POSTGRES_PASSWORD: yanimda, POSTGRES_DB: yanimda }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U yanimda" --health-interval 2s --health-timeout 2s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 15
     env:
       IMAGE: yanimda-api:ci
       MAX_IMAGE_MB: 250
+      API: http://localhost:3000/v1
     steps:
       - uses: actions/checkout@v4
       - name: İmajı kur
@@ -142,15 +155,54 @@ jobs:
           mb=$((bytes / 1024 / 1024))
           echo "İmaj boyutu: ${mb} MB"
           [ "$mb" -lt "$MAX_IMAGE_MB" ] || { echo "::error::İmaj ${mb} MB, sınır ${MAX_IMAGE_MB} MB"; exit 1; }
-      - name: Duman testi (açılıyor mu)
+      - name: TimescaleDB uzantıları (infra/init.sql, docker-compose ile aynı)
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
+      - name: İmaj açılıyor (migration'lar gerçek TimescaleDB'ye)
         run: |
-          docker run -d --name api -p 3000:3000 "$IMAGE"
-          for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
-            [ "$code" = "400" ] && echo "API ayakta" && exit 0
+          # T-041: cihaz token imza anahtarı (≥ 32 karakter); her koşuya özel, kaydedilmez
+          echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/device-secret)"
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda \
+            -e REDIS_URL=redis://localhost:6379 -e PORT=3000 \
+            -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" "$IMAGE"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/signals" -H 'content-type: application/json' -d '[]') || true
+            # token'sız boş parti: cihaz koruması (T-041) gövdeden önce çalışır → 401; ikisi de "API ayakta" demek
+            { [ "$code" = "400" ] || [ "$code" = "401" ]; } && echo "API ayakta ($code)" && exit 0
             sleep 1
           done
           docker logs api; exit 1
+      - name: Uçtan uca (gerçek TimescaleDB + Redis, üretim imajı)
+        run: |
+          psql() { docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda -tA "$@"; }
+          # signal.signal hypertable oldu mu
+          [ "$(psql -c "SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='signal' AND hypertable_name='signal'")" = "1" ] \
+            || { echo "::error::signal.signal hypertable değil"; exit 1; }
+          # üretimde token'sız (kayıtsız) cihaz reddedilir (T-041: simülatör kapalı → 401)
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          person=00000000-0000-0000-0000-000000000001
+          dev=00000000-0000-0000-0000-0000000c1d01
+          sig() { echo "[{\"schemaVersion\":1,\"idempotencyKey\":\"ci-$1-$(date +%s%N)\",\"deviceId\":\"$2\",\"protectedPersonId\":\"$person\",\"kind\":\"$1\",\"occurredAt\":\"$now\"}]"; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/signals" -H 'content-type: application/json' -d "$(sig SOS $dev)")
+          [ "$code" = "401" ] || { echo "::error::token'sız cihaz $code döndü (401 beklenir)"; exit 1; }
+          # demo kişi + 15 dk geçerli davet kodu → cihaz kaydı → cihaz token'ı (T-041)
+          psql -c "INSERT INTO profile.protected_person (id, display_name) VALUES ('$person', 'CI') ON CONFLICT DO NOTHING"
+          psql -c "INSERT INTO profile.invite (id, protected_person_id, code_hash, expires_at)
+                   VALUES (gen_random_uuid(), '$person', encode(sha256(convert_to('yanimda-invite:428157', 'UTF8')), 'hex'), now() + interval '15 minutes')"
+          token=$(curl -sf -X POST "$API/devices/enroll" -H 'content-type: application/json' \
+            -d "{\"inviteCode\":\"428157\",\"deviceId\":\"$dev\",\"kind\":\"WEAROS_WATCH\"}" | jq -r .token)
+          [ -n "$token" ] && [ "$token" != "null" ] || { echo "::error::cihaz kaydı token vermedi"; docker logs api; exit 1; }
+          echo "::add-mask::$token"
+          # kayıtlı cihazdan token'lı SOS → hypertable'a yazılır → outbox → olay → operatör kuyruğu
+          curl -sf -X POST "$API/signals" -H 'content-type: application/json' -H "authorization: Bearer $token" -d "$(sig SOS $dev)"; echo
+          [ "$(psql -c "SELECT count(*) FROM signal.signal WHERE kind='SOS'")" = "1" ] || { echo "::error::sinyal yazılmadı"; exit 1; }
+          for i in $(seq 1 20); do
+            # GET /v1/queue OIDC operatör rolü ister (T-020); burada Keycloak yok → durum veritabanından
+            [ "$(psql -c "SELECT count(*) FROM event.event WHERE type='SOS' AND state='OPERATOR_QUEUE'")" = "1" ] \
+              && echo "SOS operatör kuyruğunda" && exit 0
+            sleep 0.5
+          done
+          echo "::error::SOS kuyruğa düşmedi"; docker logs api; exit 1
       - name: Trivy (yüksek/kritik açıkta fail)
         # Sabit sürümlü resmi imaj; hareketli etiket kullanma.
         run: |
