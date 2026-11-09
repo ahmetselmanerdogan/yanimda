@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { Client } from 'pg';
 import YAML from 'yaml';
 
+import { type FakeOidc, startFakeOidc } from '../support/fake-oidc';
+
 /**
  * T-016 uçtan uca / kaos test altyapısı — Docker'sız, gerçek süreçler:
  *   Redis      : redis-server (kalıcılıksız, sabit port; durdur/başlat)
@@ -78,6 +80,10 @@ export interface Stack {
   redis: Proc;
   db: Proc;
   api: Proc & { base: string; env: Record<string, string> };
+  /** Sahte Keycloak (T-020): operatör token'ı üretir. */
+  oidc: FakeOidc;
+  /** Operatör başlıkları (Bearer + JSON). */
+  op(sub?: string, roles?: string[]): Record<string, string>;
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
   close(): Promise<void>;
 }
@@ -100,6 +106,7 @@ export async function startStack(opts: { timeScale?: number; env?: Record<string
   const dir = mkdtempSync(join(tmpdir(), 'yanimda-e2e-'));
   scaledRules(dir, opts.timeScale ?? 1);
   const [redisPort, dbPort, apiPort] = [await freePort(), await freePort(), await freePort()];
+  const oidc = await startFakeOidc();
 
   const redis = managed(
     redisPort,
@@ -128,6 +135,7 @@ export async function startStack(opts: { timeScale?: number; env?: Record<string
     EVENT_SWEEP_GRACE_MS: '5000',
     RULES_REFRESH_MS: '0',
     SIMULATOR_ENABLED: 'true',
+    ...oidc.env,
     ...opts.env,
   };
   const apiProc = managed(
@@ -164,12 +172,18 @@ export async function startStack(opts: { timeScale?: number; env?: Record<string
     redis,
     db,
     api,
+    oidc,
+    op: (sub = 'op-e2e', roles = ['OPERATOR']) => ({
+      authorization: `Bearer ${oidc.token({ sub, roles })}`,
+      'content-type': 'application/json',
+    }),
     query,
     async close() {
       await client?.end().catch(() => undefined);
       await api.stop();
       await db.stop();
       await redis.stop();
+      await oidc.close();
       if (!process.env.E2E_KEEP) rmSync(dir, { recursive: true, force: true });
     },
   };

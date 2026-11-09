@@ -25,7 +25,7 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
   const eventOf = async (person: string) => {
     const [row] = await st.query<{ id: string }>('SELECT id FROM event.event WHERE protected_person_id = $1', [person]);
     if (!row) return undefined;
-    return (await fetch(`${st.api.base}/events/${row.id}`)).json() as Promise<{
+    return (await fetch(`${st.api.base}/events/${row.id}`, { headers: st.op() })).json() as Promise<{
       id: string;
       type: string;
       state: string;
@@ -34,7 +34,9 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
   };
   const transitions = (ev: { transitions: { to: string }[] }) => ev.transitions.map((t) => t.to);
   const queueIds = async () =>
-    ((await (await fetch(`${st.api.base}/queue`)).json()) as { eventId: string }[]).map((q) => q.eventId);
+    ((await (await fetch(`${st.api.base}/queue`, { headers: st.op() })).json()) as { eventId: string }[]).map(
+      (q) => q.eventId,
+    );
 
   it('S3 düşme, cevap yok → pencere dolunca operatör kuyruğu; operatör üstlenip kapatır', async () => {
     const sent = await device('pp-s3').scenario(loadScenario(join(SCENARIOS, 's3-dusme-teyitsiz.yaml')), {
@@ -58,7 +60,7 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     );
     expect(n).toBe(3);
 
-    const op = { 'x-operator-id': 'op-e2e', 'content-type': 'application/json' };
+    const op = st.op();
     expect((await fetch(`${st.api.base}/events/${ev.id}/claim`, { method: 'POST', headers: op })).status).toBe(201);
     const close = await fetch(`${st.api.base}/events/${ev.id}/close`, {
       method: 'POST',
@@ -103,7 +105,9 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     const ev = await waitFor(() => eventOf('pp-s7'), 5_000, 'S7 olayı yok');
     expect(ev.type).toBe('WATCH_OFF');
     expect(transitions(ev)).toEqual(['CREATED', 'DEVICE_PROMPT']);
-    const status = (await (await fetch(`${st.api.base}/protected-persons/pp-s7/status`)).json()) as {
+    const status = (await (
+      await fetch(`${st.api.base}/protected-persons/pp-s7/status`, { headers: st.op() })
+    ).json()) as {
       state: string;
       watch: { onWrist: boolean };
     };

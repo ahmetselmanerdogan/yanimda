@@ -103,7 +103,7 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
       await st.db.stop();
       stoppedAt = Date.now();
       // kesinti sırasında API ayakta ve 503 dönüyor
-      const r = await fetch(`${st.api.base}/queue`);
+      const r = await fetch(`${st.api.base}/queue`, { headers: st.op() });
       report.pgDownQueueStatus = r.status;
       report.pgDownRetryAfter = r.headers.get('retry-after');
       await sleep(PG_DOWN_MS);
@@ -135,7 +135,7 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
   });
 
   it('kaos sonrası API hâlâ aynı süreç (çökmedi)', async () => {
-    expect((await fetch(`${st.api.base}/queue`)).status).toBe(200);
+    expect((await fetch(`${st.api.base}/queue`, { headers: st.op() })).status).toBe(200);
     const log = (await import('node:fs')).readFileSync(join(st.dir, 'api.log'), 'utf8');
     expect(log.match(/Nest application successfully started/g)).toHaveLength(1);
   });

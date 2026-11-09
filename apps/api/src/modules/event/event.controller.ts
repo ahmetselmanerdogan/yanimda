@@ -1,9 +1,12 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
 
+import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { EventService } from './event.service';
 
-/** E-02 kuyruk/üstlen, E-07 kapatma. TODO T-020: OIDC guard; operatör kimliği token'dan. S0: X-Operator-Id başlığı. */
+/** E-02 kuyruk/üstlen, E-07 kapatma. T-020: operatör kimliği token'dan (`sub`); X-Operator-Id kaldırıldı. */
 @Controller()
+@UseGuards(OidcGuard)
+@Roles('OPERATOR', 'SUPERVISOR')
 export class EventController {
   constructor(@Inject(EventService) private readonly events: EventService) {}
   @Get('queue') async queue() {
@@ -19,16 +22,12 @@ export class EventController {
   @Get('events/:id') get(@Param('id') id: string) {
     return this.events.get(id);
   }
-  @Post('events/:id/claim') claim(@Param('id') id: string, @Headers('x-operator-id') op = 'op-dev') {
-    return this.events.claim(id, op);
+  @Post('events/:id/claim') claim(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.events.claim(id, userOf(req).sub);
   }
   @Post('events/:id/close')
   @HttpCode(204)
-  async close(
-    @Param('id') id: string,
-    @Headers('x-operator-id') op = 'op-dev',
-    @Body() body: { outcome: string; note?: string },
-  ) {
-    await this.events.closeByOperator(id, op, body.outcome, body.note);
+  async close(@Param('id') id: string, @Req() req: UserRequest, @Body() body: { outcome: string; note?: string }) {
+    await this.events.closeByOperator(id, userOf(req).sub, body.outcome, body.note);
   }
 }

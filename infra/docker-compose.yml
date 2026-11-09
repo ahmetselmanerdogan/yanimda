@@ -29,10 +29,13 @@ services:
     ports: ['6379:6379']
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
-    command: ['start-dev']
+    # T-020: operations (OTP zorunlu) ve consumers realm'leri açılışta içe aktarılır. Geliştirme kullanıcıları:
+    #   KEYCLOAK_DEV_PASSWORD=... node infra/keycloak/dev-users.mjs
+    command: ['start-dev', '--import-realm']
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes: ['./keycloak:/opt/keycloak/data/import:ro']
     ports: ['8080:8080']
   minio:
     image: minio/minio:RELEASE.2024-10-13T13-34-11Z

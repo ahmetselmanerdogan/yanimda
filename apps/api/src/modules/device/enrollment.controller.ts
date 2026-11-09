@@ -15,7 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { AdminGuard } from '../identity/oidc.guard';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
 import { type DevicePrincipal, EnrollmentService, etagMatches } from './enrollment.service';
 
@@ -81,7 +81,7 @@ export class EnrollmentController {
   /** DELETE /v1/devices/{id} — cihazı kaldır; token'ı iptal olur (401). TODO T-020: FAMILY sahiplik kontrolü. */
   @Delete(':id')
   @HttpCode(204)
-  @UseGuards(AdminTokenGuard)
+  @UseGuards(AdminGuard)
   async revoke(@Param('id') id: string) {
     await this.enrollment.revoke(id);
   }
@@ -94,7 +94,7 @@ export class InviteController {
 
   /** POST /v1/protected-persons/{id}/invite → { code, expiresAt } (6 hane, 15 dk, tek kullanım). */
   @Post(':id/invite')
-  @UseGuards(AdminTokenGuard)
+  @UseGuards(AdminGuard)
   invite(@Param('id') id: string) {
     return this.enrollment.createInvite(id);
   }

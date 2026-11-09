@@ -55,6 +55,7 @@ paths:
     post:
       summary: Cihaz sorusuna cevap (İyiyim / Yardım). A-02, D-09
       operationId: answerPrompt
+      security: [{ deviceToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         content:
@@ -69,13 +70,17 @@ paths:
       security: [{ operatorToken: [] }]
       responses:
         '200':
+          description: Açık olaylar
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
     post:
       summary: Olayı üstlen (kilit). E-02
       operationId: claimEvent
+      security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         '200': { description: Claimed }
@@ -84,6 +89,7 @@ paths:
     post:
       summary: Olayı kapat. E-07
       operationId: closeEvent
+      security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         content:
@@ -104,10 +110,13 @@ paths:
         Koruma durumu sinyallerle ve periyodik taramayla (gece başlangıcı/bitişi, 15 dk sessiz cihaz) güncellenir:
         saat bağlı ve bilekte → PROTECTED_WATCH; değilse gece penceresinde → NIGHT; değilse telefon bağlı →
         PROTECTED_PHONE; hiçbiri → UNPROTECTED. Bağlantı: ONLINE (<15 dk), NO_CONNECTION (<6 saat), LOST.
-        TODO T-020/T-040: FAMILY yalnız kendi kişisini görür.
+        Şimdilik yalnız operasyon rolleri (OPERATOR, SUPERVISOR, ADMIN). TODO T-040: FAMILY yalnız kendi kişisini görür.
       operationId: getProtectionStatus
+      security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '200':
           description: Durum
           content:
@@ -149,12 +158,12 @@ paths:
     post:
       summary: Cihaz davet kodu üret. C-04 (T-040 parçası), T-041
       description: |
-        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. T-020'ye kadar `x-admin-token`
-        ile korunur (sonra FAMILY yalnız kendi kişisine). SMS gönderimi T-040/notify ile gelir.
+        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. Yönetici (OIDC ADMIN veya
+        `x-admin-token`); T-040'ta FAMILY yalnız kendi kişisine. SMS gönderimi T-040/notify ile gelir.
       operationId: createInvite
+      security: [{ operatorToken: [] }, { adminToken: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
       responses:
         '201':
           description: Kod
@@ -280,11 +289,11 @@ paths:
   /devices/{id}:
     delete:
       summary: Cihazı kaldır (token iptal → 401). T-041
-      description: T-020'ye kadar `x-admin-token` ile; sonra FAMILY kendi kişisinin cihazını kaldırır.
+      description: Yönetici (OIDC ADMIN veya `x-admin-token`); T-040'ta FAMILY kendi kişisinin cihazını kaldırır.
       operationId: revokeDevice
+      security: [{ operatorToken: [] }, { adminToken: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
       responses:
         '204': { description: Kaldırıldı }
         '403': { $ref: '#/components/responses/Problem' }
@@ -296,10 +305,9 @@ paths:
         packages/rules/<ülke>.yaml okunur, JSON Schema ve anlamsal kontrollerle (TTS kodları mesaj kataloğunda)
         doğrulanır, chain.procedure_template'e (ülke, sürüm) kaydedilir ve uygulanır. Aynı sürüm farklı içerikle
         veya daha düşük sürüm yüklenemez (409). Geçersiz paket geçerli paketi değiştirmez. Diğer API örnekleri
-        yeni sürümü en geç RULES_REFRESH_MS içinde alır. T-020'ye kadar `x-admin-token` ile korunur.
+        yeni sürümü en geç RULES_REFRESH_MS içinde alır. Yönetici: OIDC ADMIN rolü veya `x-admin-token`.
       operationId: reloadRules
-      parameters:
-        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
+      security: [{ operatorToken: [] }, { adminToken: [] }]
       responses:
         '200':
           description: Yüklendi (changed=false ise aynı sürüm zaten yüklüydü)
@@ -319,7 +327,23 @@ paths:
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }
-    operatorToken: { type: http, scheme: bearer }
+    operatorToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Keycloak `operations` realm erişim token'ı (T-020): aud `yanimda-api`, amr içinde `otp`, realm rolü OPERATOR /
+        SUPERVISOR / ADMIN. Operatör kimliği `sub`. Token yok/geçersiz 401, rol yetmiyor 403.
+    adminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: Betikler/CI için paylaşılan yönetici anahtarı (ADMIN_TOKEN). Bearer gelirse yalnız OIDC denenir.
+    userToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak `consumers` realm erişim token'ı (ELDER, FAMILY).
   responses:
     DeviceToken:
       description: Cihaz token'ı (HS256 JWT, 1 yıl)

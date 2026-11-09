@@ -1,11 +1,11 @@
 import { Controller, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
 
-import { AdminTokenGuard } from './admin-token.guard';
+import { AdminGuard } from '../identity/oidc.guard';
 import { RulesService } from './rules.service';
 
 /** D-02 kural paketi sıcak yükleme (yönetici). */
 @Controller('admin/rules')
-@UseGuards(AdminTokenGuard)
+@UseGuards(AdminGuard)
 export class RulesController {
   constructor(@Inject(RulesService) private readonly rules: RulesService) {}
 
