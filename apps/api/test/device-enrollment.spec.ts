@@ -268,6 +268,13 @@ describe('GET /devices/{id}/config', () => {
     const c = await svc.config(phone);
     expect(c.body.sleepWindow).toMatchObject({ start: '23:00', end: '07:00' });
     expect(c.etag).not.toBe(a.etag);
+    // T-070: kişiye özel (öğrenilmiş / aile) hareketsizlik eşiği cihaza gider, kuralın 15–90 aralığına kırpılır.
+    await h.pg.exec(`UPDATE event.threshold SET inactivity_min = 45 WHERE protected_person_id = '${PERSON}'`);
+    const d = await svc.config(phone);
+    expect(d.body.inactivityThresholdMin).toBe(45);
+    expect(d.etag).not.toBe(c.etag);
+    await h.pg.exec(`UPDATE event.threshold SET inactivity_min = 200 WHERE protected_person_id = '${PERSON}'`);
+    expect((await svc.config(phone)).body.inactivityThresholdMin).toBe(90);
   });
 });
 

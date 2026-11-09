@@ -1,7 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
+import { falseAlarmOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
+import { type FalseAlarmStats, falseAlarmStats } from '../false-alarm/stats';
 import { CLAIM_SLA_SEC } from './sla';
 
 type Rows<T> = { rows: T[] };
@@ -17,6 +19,8 @@ export interface SupervisorDashboard {
     falseAlarmRatio: number;
     claim: { count: number; p50Sec: number | null; p95Sec: number | null; overSlaCount: number };
   };
+  /** T-071 (D-07): kural paketi penceresinde (30 gün) yanlış alarm oranı, nedenler, eşiği aşan kişi sayısı. */
+  falseAlarms: FalseAlarmStats;
 }
 
 const OPERATOR_STATES = sql`('OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH')`;
@@ -25,7 +29,13 @@ const num = (v: unknown) => (v === null || v === undefined ? null : Math.round(N
 /** E-11 / T-025 amir panosu özeti: kuyruk, aktif operatör, son 24 saat sonuçları ve üstlenme SLA'sı. */
 @Injectable()
 export class SupervisorService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  private readonly rules: RulesProvider;
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+  ) {
+    this.rules = rules ?? staticRules(loadRulePack());
+  }
 
   async dashboard(now = new Date()): Promise<SupervisorDashboard> {
     const q = async <T>(s: ReturnType<typeof sql>) => ((await this.db.execute(s)) as unknown as Rows<T>).rows;
@@ -49,6 +59,8 @@ export class SupervisorService {
       SELECT count(*)::int AS n, percentile_cont(0.5) WITHIN GROUP (ORDER BY s) AS p50,
              percentile_cont(0.95) WITHIN GROUP (ORDER BY s) AS p95, count(*) FILTER (WHERE s > ${CLAIM_SLA_SEC})::int AS over
       FROM c`);
+    const fa = falseAlarmOf(this.rules.current());
+    const window = await falseAlarmStats(this.db, now, fa.windowDays, fa.reviewAfter);
     const byOutcome = Object.fromEntries(outcomes.map((o) => [o.outcome ?? 'UNKNOWN', o.n]));
     const real = outcomes.reduce((a, o) => a + o.n - o.tests, 0);
     const falseAlarms = outcomes.find((o) => o.outcome === 'FALSE_ALARM');
@@ -72,6 +84,7 @@ export class SupervisorService {
           overSlaCount: claim?.over ?? 0,
         },
       },
+      falseAlarms: window,
     };
   }
 }

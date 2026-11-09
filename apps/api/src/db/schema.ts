@@ -1,4 +1,15 @@
-import { bigint, boolean, doublePrecision, integer, jsonb, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgSchema,
+  text,
+  time,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 /**
  * Drizzle tablo tanımları. Kaynak gerçek: drizzle/migrations/*.sql (geri alınabilir, X-05).
@@ -308,4 +319,37 @@ export const protectionState = eventSchema.table('protection_state', {
   watchSeenAt: timestamptz('watch_seen_at'),
   phoneSeenAt: timestamptz('phone_seen_at'),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-014 kişiye özel eşikler (0005) + T-070 öğrenme (0011). Saatler kişinin saat diliminde. */
+export const threshold = eventSchema.table('threshold', {
+  protectedPersonId: text('protected_person_id').primaryKey(),
+  sleepStart: time('sleep_start').notNull().default('22:00'),
+  sleepEnd: time('sleep_end').notNull().default('08:00'),
+  inactivityMin: integer('inactivity_min'),
+  sleepSource: text('sleep_source').notNull().default('DEFAULT'),
+  inactivitySource: text('inactivity_source').notNull().default('DEFAULT'),
+  learnedAt: timestamptz('learned_at'),
+  learnedDays: integer('learned_days'),
+  reportSentAt: timestamptz('report_sent_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-071 yanlış alarm (olay başına bir kayıt). */
+export const falseAlarm = eventSchema.table('false_alarm', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  eventType: text('event_type').notNull(),
+  cause: text('cause').notNull(),
+  at: timestamptz('at').notNull().defaultNow(),
+  reviewAt: timestamptz('review_at'),
+});
+
+/** T-071 C-12 aile geri bildirimi. */
+export const familyFeedback = eventSchema.table('family_feedback', {
+  eventId: uuid('event_id').notNull(),
+  subject: text('subject').notNull(),
+  real: boolean('real').notNull(),
+  at: timestamptz('at').notNull().defaultNow(),
 });

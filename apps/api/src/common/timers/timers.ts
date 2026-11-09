@@ -6,6 +6,7 @@
 export const TIMER_KINDS = [
   'prompt-expire', //       cihaz sorusu (düşme) cevapsız → ESCALATED                       (aktif)
   'silent-ask-expire', //   sessiz soru (hareketsizlik) cevapsız → ESCALATED                (aktif)
+  'learning-ask-expire', // öğrenme modu 2. sessiz soru cevapsız → ESCALATED (T-070)       (aktif)
   'watch-off-remind', //    saat çıkarıldı → hatırlatma                                     (T-012/T-014 bağlar)
   'watch-off-operator', //  saat çıkarıldı, takılmadı → operatöre                            (T-012/T-014 bağlar)
   'battery-dead', //        pil bitti → BATTERY_DEAD olayı                                    (T-012 bağlar)
