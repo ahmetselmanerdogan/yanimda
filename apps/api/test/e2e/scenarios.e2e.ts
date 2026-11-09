@@ -25,12 +25,10 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
   const eventOf = async (person: string) => {
     const [row] = await st.query<{ id: string }>('SELECT id FROM event.event WHERE protected_person_id = $1', [person]);
     if (!row) return undefined;
-    return (await fetch(`${st.api.base}/events/${row.id}`, { headers: st.op() })).json() as Promise<{
-      id: string;
-      type: string;
-      state: string;
-      transitions: { to: string }[];
-    }>;
+    const body = (await (await fetch(`${st.api.base}/events/${row.id}`, { headers: st.op() })).json()) as {
+      event: { id: string; type: string; state: string; transitions: { to: string }[] };
+    };
+    return body.event;
   };
   const transitions = (ev: { transitions: { to: string }[] }) => ev.transitions.map((t) => t.to);
   const queueIds = async () =>
@@ -61,7 +59,7 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     expect(n).toBe(3);
 
     const op = st.op();
-    expect((await fetch(`${st.api.base}/events/${ev.id}/claim`, { method: 'POST', headers: op })).status).toBe(201);
+    expect((await fetch(`${st.api.base}/events/${ev.id}/claim`, { method: 'POST', headers: op })).status).toBe(200);
     const close = await fetch(`${st.api.base}/events/${ev.id}/close`, {
       method: 'POST',
       headers: op,

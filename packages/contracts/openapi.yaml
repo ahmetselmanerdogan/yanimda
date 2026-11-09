@@ -76,21 +76,110 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /events/{id}:
+    get:
+      summary: Olay + prosedür zinciri. E-03, T-021
+      operationId: getEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
     post:
-      summary: Olayı üstlen (kilit). E-02
+      summary: Olayı üstlen; zincir oluşur, operatör kilidi başlar (300 sn). E-02, D-04, T-021
+      description: Aynı operatör tekrar üstlenirse aynı sonuç döner. Başka operatördeyse veya olay kuyrukta değilse 409.
       operationId: claimEvent
       security: [{ operatorToken: [] }]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
       responses:
-        '200': { description: Claimed }
-        '409': { description: Başka operatör üstlendi }
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/heartbeat:
+    post:
+      summary: Operatör kilidini uzat (konsol açıkken periyodik). D-04
+      operationId: heartbeatEvent
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          description: Yeni kilit bitişi
+          content:
+            application/json:
+              schema: { type: object, properties: { lockUntil: { type: string, format: date-time } } }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/call:
+    post:
+      summary: Sıradaki adımı ara (arama başlangıcı yazılır). E-04, T-021
+      operationId: callStep
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/script-read:
+    post:
+      summary: Operatör metninin (ör. 112 şablonu) okunduğunu kaydet. E-06, T-024
+      operationId: scriptRead
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/chain/steps/{n}/result:
+    post:
+      summary: Adım sonucu. D-03, T-021
+      description: |
+        Sıra zorunlu: yalnız sıradaki adım (aksi 409). SKIPPED gerekçe (reason) ister. Geçişler:
+        ilk sonuç OPERATOR_ASSIGNED → CONTACT_CHAIN; REACHED + assessment OK → CONFIRMED_OK (kalan adımlar
+        SKIPPED/resolved); REACHED + EMERGENCY → CONFIRMED_EMERGENCY (112 dışı adımlar SKIPPED/emergency);
+        CALL_112 REACHED → DISPATCH; CALL_112 ulaşılamadı → yeni CALL_112 adımı.
+      operationId: stepResult
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+                assessment: { enum: [OK, EMERGENCY], description: Yalnız REACHED ile }
+                note: { type: string, maxLength: 2000 }
+                reason: { type: string, maxLength: 500, description: SKIPPED için zorunlu }
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /events/{id}/escalate-112:
+    post:
+      summary: Doğrudan 112 (Ctrl+1). Gerekçe zorunlu; kalan adımlar SKIPPED(reason=escalate). E-06, T-021
+      operationId: escalate112
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string, minLength: 1, maxLength: 500 } }
+      responses:
+        '200': { $ref: '#/components/responses/EventWithChain' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/close:
     post:
-      summary: Olayı kapat. E-07
+      summary: Olayı kapat; bekleyen adımlar SKIPPED(reason=closed). E-07
+      description: EMERGENCY teyitli (CONFIRMED_EMERGENCY/DISPATCH) olay yalnız EMERGENCY ile, CONFIRMED_OK olay EMERGENCY dışı sonuçla kapanır (aksi 409).
       operationId: closeEvent
       security: [{ operatorToken: [] }]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
       requestBody:
         content:
           application/json:
@@ -103,6 +192,8 @@ paths:
                 followUpAfterHours: { type: integer }
       responses:
         '204': { description: Closed }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
     get:
       summary: Korunan kişinin koruma durumu. D-05, T-014
@@ -344,7 +435,20 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Keycloak `consumers` realm erişim token'ı (ELDER, FAMILY).
+  parameters:
+    EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
   responses:
+    EventWithChain:
+      description: Olay ve zinciri
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [event, chain]
+            properties:
+              event: { type: object, description: 'Olay kaydı: durum, geçişler, lockUntil' }
+              chain: { oneOf: [{ $ref: '#/components/schemas/ChainView' }, { type: 'null' }] }
     DeviceToken:
       description: Cihaz token'ı (HS256 JWT, 1 yıl)
       content:
@@ -373,6 +477,34 @@ components:
         detail: { type: string }
     Signal:
       $ref: './schemas/signal.schema.json'
+    ChainView:
+      type: object
+      required: [procedureVersion, steps, current]
+      properties:
+        procedureVersion: { type: integer }
+        current: { type: [integer, 'null'], description: Sıradaki adım; hepsi bittiyse null }
+        steps: { type: array, items: { $ref: '#/components/schemas/ChainStep' } }
+    ChainStep:
+      type: object
+      required: [n, kind, target, label, timeoutSec, required]
+      properties:
+        n: { type: integer }
+        kind:
+          { type: string, description: 'CALL_WATCH, CALL_PHONE, CALL_CONTACT, CALL_NEIGHBOR, CALL_112, NOTIFY_FAMILY' }
+        target: { enum: [WATCH, ELDER_PHONE, CONTACT, NEIGHBOR, EMERGENCY, FAMILY] }
+        contactIndex: { type: integer }
+        label: { type: string, description: Katalog kodu (O-STEP-*) }
+        script: { type: string, description: Katalog kodu (O-SCRIPT-*) }
+        timeoutSec: { type: integer }
+        required: { type: boolean }
+        calledAt: { type: string, format: date-time }
+        result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+        assessment: { enum: [OK, EMERGENCY] }
+        note: { type: string }
+        reason: { type: string }
+        operatorId: { type: string }
+        completedAt: { type: string, format: date-time }
+        scriptReadAt: { type: string, format: date-time }
     QueueItem:
       type: object
       properties:

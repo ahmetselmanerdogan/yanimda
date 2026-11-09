@@ -94,6 +94,7 @@ export const event = eventSchema.table('event', {
   location: jsonb('location'),
   sourceSignalIds: text('source_signal_ids').array().notNull().default([]),
   isTest: boolean('is_test').notNull().default(false),
+  lockUntil: timestamptz('lock_until'),
 });
 
 export const transition = eventSchema.table('transition', {
@@ -128,6 +129,36 @@ export const procedureTemplate = chainSchema.table('procedure_template', {
   content: jsonb('content').notNull(),
   loadedAt: timestamptz('loaded_at').notNull().defaultNow(),
   loadedBy: text('loaded_by'),
+});
+
+/** T-021 zincir: olay başına bir koşu, adımlar sırayla. */
+export const chainRun = chainSchema.table('chain_run', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  procedureCountry: text('procedure_country').notNull(),
+  procedureVersion: integer('procedure_version').notNull(),
+  rulesVersion: integer('rules_version').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+});
+
+export const chainStep = chainSchema.table('chain_step', {
+  runId: uuid('run_id').notNull(),
+  n: integer('n').notNull(),
+  kind: text('kind').notNull(),
+  target: text('target').notNull(),
+  contactIndex: integer('contact_index'),
+  labelCode: text('label_code').notNull(),
+  scriptCode: text('script_code'),
+  timeoutSec: integer('timeout_sec').notNull(),
+  required: boolean('required').notNull(),
+  calledAt: timestamptz('called_at'),
+  result: text('result'),
+  assessment: text('assessment'),
+  note: text('note'),
+  reason: text('reason'),
+  operatorId: text('operator_id'),
+  completedAt: timestamptz('completed_at'),
+  scriptReadAt: timestamptz('script_read_at'),
 });
 
 export const protectionState = eventSchema.table('protection_state', {

@@ -34,6 +34,8 @@ export interface EventRecord {
   location?: Signal['location'];
   sourceSignalIds: string[];
   isTest: boolean;
+  /** D-04 operatör kilidi bitişi (T-021). */
+  lockUntil?: string;
   transitions: TransitionRecord[];
 }
 
@@ -60,6 +62,7 @@ function toRecord(r: EventRow, transitions: TransitionRecord[] = []): EventRecor
     location: (r.location as Signal['location']) ?? undefined,
     sourceSignalIds: r.sourceSignalIds,
     isTest: r.isTest,
+    lockUntil: iso(r.lockUntil),
     transitions,
   };
 }
@@ -80,6 +83,7 @@ function toRow(e: EventRecord) {
     location: e.location ?? null,
     sourceSignalIds: e.sourceSignalIds,
     isTest: e.isTest,
+    lockUntil: date(e.lockUntil),
   };
 }
 
@@ -182,7 +186,16 @@ export class EventRepository {
     const rows = await this.db
       .select()
       .from(event)
-      .where(inArray(event.state, ['OPERATOR_QUEUE', 'OPERATOR_ASSIGNED']))
+      .where(
+        inArray(event.state, [
+          'OPERATOR_QUEUE',
+          'OPERATOR_ASSIGNED',
+          'CONTACT_CHAIN',
+          'CONFIRMED_OK',
+          'CONFIRMED_EMERGENCY',
+          'DISPATCH',
+        ]),
+      )
       .orderBy(asc(event.priority), asc(event.createdAt));
     return rows.map((r) => toRecord(r));
   }
@@ -224,6 +237,12 @@ export class EventRepository {
       lastSeenAt: new Date(x.last_seen_at),
       batteryPct: x.battery_pct,
     }));
+  }
+
+  /** Operatör kilidi `now`'dan önce dolmuş olaylar (T-021). */
+  async expiredLockIds(now: Date): Promise<string[]> {
+    const rows = await this.db.select({ id: event.id }).from(event).where(lt(event.lockUntil, now));
+    return rows.map((r) => r.id);
   }
 
   /** Cihaz sorusu süresi `before`'dan önce dolmuş, hâlâ DEVICE_PROMPT olan olaylar. */

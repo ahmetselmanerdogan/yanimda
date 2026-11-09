@@ -1,21 +1,63 @@
 {
-  "W-SOS-1": { "channel": "watch", "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak." },
-  "W-FALL-1": { "channel": "watch", "text": "Düşme algılandı. İyi misiniz? İyiyseniz dokunun.", "action": "İyiyim" },
-  "W-FALL-2": { "channel": "watch", "text": "Sizi arıyoruz. Lütfen bekleyin." },
-  "W-INACT-1": { "channel": "watch", "text": "İyi misiniz? Dokunun.", "action": "İyiyim" },
-  "W-BAT-20": { "channel": "watch", "text": "Saatinizi şarja takın." },
-  "W-BAT-10": { "channel": "watch", "text": "Pil çok az. Şarja takın." },
-  "W-CALL-1": { "channel": "watch", "text": "Yanımda arıyor.", "action": "Cevapla" },
-  "P-HOME-OK": { "channel": "phone", "text": "Korunuyorsunuz. Operatörünüz: {operator}." },
-  "P-HOME-PHONE": { "channel": "phone", "text": "Saatiniz bağlı değil. Telefonunuz sizi koruyor." },
-  "P-WATCH-OFF-2H": { "channel": "phone", "text": "Saatinizi takmayı unutmayın." },
-  "P-PERM": { "channel": "phone", "text": "Bir izin eksik. Sorun yok, yardım edeceğiz." },
+  "W-SOS-1": {
+    "channel": "watch",
+    "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak."
+  },
+  "W-FALL-1": {
+    "channel": "watch",
+    "text": "Düşme algılandı. İyi misiniz? İyiyseniz dokunun.",
+    "action": "İyiyim"
+  },
+  "W-FALL-2": {
+    "channel": "watch",
+    "text": "Sizi arıyoruz. Lütfen bekleyin."
+  },
+  "W-INACT-1": {
+    "channel": "watch",
+    "text": "İyi misiniz? Dokunun.",
+    "action": "İyiyim"
+  },
+  "W-BAT-20": {
+    "channel": "watch",
+    "text": "Saatinizi şarja takın."
+  },
+  "W-BAT-10": {
+    "channel": "watch",
+    "text": "Pil çok az. Şarja takın."
+  },
+  "W-CALL-1": {
+    "channel": "watch",
+    "text": "Yanımda arıyor.",
+    "action": "Cevapla"
+  },
+  "P-HOME-OK": {
+    "channel": "phone",
+    "text": "Korunuyorsunuz. Operatörünüz: {operator}."
+  },
+  "P-HOME-PHONE": {
+    "channel": "phone",
+    "text": "Saatiniz bağlı değil. Telefonunuz sizi koruyor."
+  },
+  "P-WATCH-OFF-2H": {
+    "channel": "phone",
+    "text": "Saatinizi takmayı unutmayın."
+  },
+  "P-PERM": {
+    "channel": "phone",
+    "text": "Bir izin eksik. Sorun yok, yardım edeceğiz."
+  },
   "P-HOME-PHONE-ONLY": {
     "channel": "phone",
     "text": "Telefonunuz sizi koruyor. Yardım gerekirse düğmeye basılı tutun."
   },
-  "P-HOME-NIGHT": { "channel": "phone", "text": "Gece modu. Telefonunuz yanınızda kalsın." },
-  "P-HOME-UNPROTECTED": { "channel": "phone", "text": "Bağlantı yok. Koruma şu an çalışmıyor." },
+  "P-HOME-NIGHT": {
+    "channel": "phone",
+    "text": "Gece modu. Telefonunuz yanınızda kalsın."
+  },
+  "P-HOME-UNPROTECTED": {
+    "channel": "phone",
+    "text": "Bağlantı yok. Koruma şu an çalışmıyor."
+  },
   "P-PERM-NOTIF": {
     "channel": "phone",
     "text": "Operatörümüz size ulaşabilsin diye bildirimlere izin verin.",
@@ -36,24 +78,55 @@
     "text": "Adım ve nabız bilgileriniz korumanıza yardım etsin diye Sağlık verilerine izin verin.",
     "action": "İzin ver"
   },
-  "P-PERM-LATER": { "channel": "phone", "text": "Bu izni daha sonra verebilirsiniz.", "action": "Sonra" },
-  "P-PERM-DONE": { "channel": "phone", "text": "Hazırsınız. Yanımda sizi koruyor.", "action": "Başla" },
-  "P-SOS-HOLD": { "channel": "phone", "text": "Yardım için 3 saniye basılı tutun.", "action": "YARDIM" },
-  "P-SOS-SENT": { "channel": "phone", "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak." },
+  "P-PERM-LATER": {
+    "channel": "phone",
+    "text": "Bu izni daha sonra verebilirsiniz.",
+    "action": "Sonra"
+  },
+  "P-PERM-DONE": {
+    "channel": "phone",
+    "text": "Hazırsınız. Yanımda sizi koruyor.",
+    "action": "Başla"
+  },
+  "P-SOS-HOLD": {
+    "channel": "phone",
+    "text": "Yardım için 3 saniye basılı tutun.",
+    "action": "YARDIM"
+  },
+  "P-SOS-SENT": {
+    "channel": "phone",
+    "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak."
+  },
   "P-SOS-QUEUED": {
     "channel": "phone",
     "text": "İnternet yok. Yardım isteğiniz saklandı, bağlanınca hemen gönderilecek."
   },
-  "P-INACT-1": { "channel": "phone", "text": "Bir süredir hareket etmediniz. İyi misiniz?", "action": "İyiyim" },
-  "P-INACT-OK": { "channel": "phone", "text": "Teşekkürler. İyi olduğunuzu ilettik." },
+  "P-INACT-1": {
+    "channel": "phone",
+    "text": "Bir süredir hareket etmediniz. İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "P-INACT-OK": {
+    "channel": "phone",
+    "text": "Teşekkürler. İyi olduğunuzu ilettik."
+  },
   "P-PAIR": {
     "channel": "phone",
     "text": "Aileniz size 6 haneli bir kod gönderdi. Kodu buraya yazın.",
     "action": "Eşleştir"
   },
-  "P-PAIR-WRONG": { "channel": "phone", "text": "Kod doğru değil veya süresi dolmuş. Ailenizden yeni kod isteyin." },
-  "P-PAIR-WAIT": { "channel": "phone", "text": "Çok fazla deneme yapıldı. 15 dakika sonra yeniden deneyin." },
-  "P-PAIR-OFFLINE": { "channel": "phone", "text": "Bağlantı kurulamadı. İnternetinizi kontrol edip yeniden deneyin." },
+  "P-PAIR-WRONG": {
+    "channel": "phone",
+    "text": "Kod doğru değil veya süresi dolmuş. Ailenizden yeni kod isteyin."
+  },
+  "P-PAIR-WAIT": {
+    "channel": "phone",
+    "text": "Çok fazla deneme yapıldı. 15 dakika sonra yeniden deneyin."
+  },
+  "P-PAIR-OFFLINE": {
+    "channel": "phone",
+    "text": "Bağlantı kurulamadı. İnternetinizi kontrol edip yeniden deneyin."
+  },
   "P-PAIR-REMOVED": {
     "channel": "phone",
     "text": "Bu telefonun eşleşmesi kaldırıldı. Ailenizden yeni kod isteyin."
@@ -63,22 +136,122 @@
     "text": "{name} düşmüş olabilir. Operatörümüz arıyor. Sizi bilgilendireceğiz.",
     "action": "Olayı aç"
   },
-  "F-EVT-SOS": { "channel": "family", "text": "{name} yardım istedi. Operatör hatta.", "action": "Olayı aç" },
-  "F-EVT-OK": { "channel": "family", "text": "{name} iyi. Yanlış alarm, saatini iptal etti." },
+  "F-EVT-SOS": {
+    "channel": "family",
+    "text": "{name} yardım istedi. Operatör hatta.",
+    "action": "Olayı aç"
+  },
+  "F-EVT-OK": {
+    "channel": "family",
+    "text": "{name} iyi. Yanlış alarm, saatini iptal etti."
+  },
   "F-EVT-112": {
     "channel": "family",
     "text": "Operatör 112'yi aradı. Ambulans yolda. Adres: {address}",
     "action": "Olayı aç"
   },
-  "F-DAILY": { "channel": "family", "text": "Bugün iyi: {steps} adım, saat {wristHours} saat takılı." },
-  "F-BAT-10": { "channel": "family", "text": "{name}'ın saat pili %10." },
-  "F-WATCH-OFF-4H": { "channel": "family", "text": "Saat 4 saattir takılı değil. Operatör arıyor." },
-  "F-CONN-LOST": { "channel": "family", "text": "6 saattir bağlantı yok. Operatör arıyor." },
-  "F-SUB-PAY": { "channel": "family", "text": "Ödeme alınamadı. Koruma 7 gün daha devam eder.", "action": "Ödeme" },
+  "F-DAILY": {
+    "channel": "family",
+    "text": "Bugün iyi: {steps} adım, saat {wristHours} saat takılı."
+  },
+  "F-BAT-10": {
+    "channel": "family",
+    "text": "{name}'ın saat pili %10."
+  },
+  "F-WATCH-OFF-4H": {
+    "channel": "family",
+    "text": "Saat 4 saattir takılı değil. Operatör arıyor."
+  },
+  "F-CONN-LOST": {
+    "channel": "family",
+    "text": "6 saattir bağlantı yok. Operatör arıyor."
+  },
+  "F-SUB-PAY": {
+    "channel": "family",
+    "text": "Ödeme alınamadı. Koruma 7 gün daha devam eder.",
+    "action": "Ödeme"
+  },
   "F-FOLLOWUP": {
     "channel": "family",
     "text": "Dünkü olayla ilgili operatörümüz {name}'ı aradı: iyi.",
     "action": "Notu oku"
   },
-  "O-NEW-SOS": { "channel": "console", "text": "Yeni SOS: {name}, {age}, {district}", "action": "Üstlen" }
+  "O-NEW-SOS": {
+    "channel": "console",
+    "text": "Yeni SOS: {name}, {age}, {district}",
+    "action": "Üstlen"
+  },
+  "O-STEP-WATCH": {
+    "channel": "console",
+    "text": "Saati ara"
+  },
+  "O-STEP-PHONE": {
+    "channel": "console",
+    "text": "Telefonu ara"
+  },
+  "O-STEP-CONTACT": {
+    "channel": "console",
+    "text": "{n}. yakını ara"
+  },
+  "O-STEP-NEIGHBOR": {
+    "channel": "console",
+    "text": "Komşuyu ara"
+  },
+  "O-STEP-112": {
+    "channel": "console",
+    "text": "112'yi ara"
+  },
+  "O-STEP-NOTIFY": {
+    "channel": "console",
+    "text": "Aileye bildir"
+  },
+  "O-SCRIPT-ELDER": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Sizden bir uyarı aldık. İyi misiniz, yardıma ihtiyacınız var mı?"
+  },
+  "O-SCRIPT-CONTACT": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} için bir uyarı aldık ve kendisine ulaşamadık. Şu an yanında mısınız, ona ulaşabilir misiniz?"
+  },
+  "O-SCRIPT-NEIGHBOR": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda acil yardım servisinden {operator}. Komşunuz {name} için bir uyarı aldık ve ulaşamıyoruz. Kapısını çalıp bakabilir misiniz?"
+  },
+  "O-SCRIPT-112": {
+    "channel": "console",
+    "text": "Yanımda acil yardım servisinden arıyorum. Olay: {type}. Kişi: {name}, {age} yaşında. Adres: {address}. Hastalıklar: {conditions}. İlaçlar: {medications}. Alerjiler: {allergies}. Kapı notu: {doorNote}."
+  },
+  "O-RES-REACHED": {
+    "channel": "console",
+    "text": "Ulaşıldı"
+  },
+  "O-RES-NO_ANSWER": {
+    "channel": "console",
+    "text": "Cevap yok"
+  },
+  "O-RES-BUSY": {
+    "channel": "console",
+    "text": "Meşgul"
+  },
+  "O-RES-WRONG_NUMBER": {
+    "channel": "console",
+    "text": "Yanlış numara"
+  },
+  "O-RES-SKIPPED": {
+    "channel": "console",
+    "text": "Atla"
+  },
+  "O-ASSESS-OK": {
+    "channel": "console",
+    "text": "Kişi iyi"
+  },
+  "O-ASSESS-EMERGENCY": {
+    "channel": "console",
+    "text": "Acil durum"
+  },
+  "O-LOCK-LOST": {
+    "channel": "console",
+    "text": "Olay bırakıldı (operatör kilidi doldu): {type}",
+    "action": "Üstlen"
+  }
 }
