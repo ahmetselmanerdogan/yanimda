@@ -6,6 +6,28 @@
   "properties": {
     "country": { "type": "string", "minLength": 2, "maxLength": 2 },
     "version": { "type": "integer", "minimum": 1 },
+    "learning": {
+      "description": "D-06 öğrenme modu (T-070): süre, günlük işin baktığı geçmiş, en az veri günü, hareketsizlik yüzdeliği",
+      "type": "object",
+      "required": ["days", "historyDays", "minDays", "inactivityPercentile"],
+      "properties": {
+        "days": { "type": "integer", "minimum": 1, "maximum": 180 },
+        "historyDays": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "minDays": { "type": "integer", "minimum": 1 },
+        "inactivityPercentile": { "type": "integer", "minimum": 50, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "falseAlarm": {
+      "description": "D-07 yanlış alarm (T-071): pencere ve eşik görüşmesini tetikleyen tekrar sayısı",
+      "type": "object",
+      "required": ["windowDays", "reviewAfter"],
+      "properties": {
+        "windowDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "reviewAfter": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
     "rules": {
       "type": "array",
       "items": {
@@ -51,6 +73,12 @@
           },
           "activeHours": { "type": "object" },
           "autoVoiceScreening": { "type": "object" },
+          "learningMode": {
+            "description": "Öğrenme modundayken (D-06): operatöre düşmeden önce ek sessiz soru sayısı",
+            "type": "object",
+            "properties": { "extraSilentAsks": { "type": "integer", "minimum": 0, "maximum": 1 } },
+            "additionalProperties": false
+          },
           "suppressIn": { "type": "array", "items": { "enum": ["NIGHT", "PROTECTED_PHONE", "UNPROTECTED"] } },
           "remindAfterMin": { "type": "integer" },
           "operatorAfterMin": { "type": "integer" },

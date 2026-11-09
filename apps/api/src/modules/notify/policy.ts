@@ -71,6 +71,8 @@ const DELIVERY: Record<string, Delivery> = {
   'F-EVT-OK': FEED,
   'F-TEST-QUEUED': FEED,
   'F-DAILY': FEED,
+  'F-LEARN-REPORT': FEED, // T-070 dönem sonu profil raporu
+  'F-FA-REVIEW': INFO, //   T-071 eşik önerisi (operatör arayacak)
 };
 
 /** Aile kodları için teslim biçimi; kişinin kendi cihazına giden kodlar (W-*, P-*) yalnız cihaz push'u. */

@@ -719,6 +719,7 @@ paths:
                           p50Sec: { type: [number, 'null'] }
                           p95Sec: { type: [number, 'null'] }
                           overSlaCount: { type: integer, description: 10 sn hedefini aşan üstlenme }
+                  falseAlarms: { $ref: '#/components/schemas/FalseAlarmStats' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
@@ -796,6 +797,110 @@ paths:
                   smsText: { type: string, description: Katalog S-INVITE }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/learning:
+    get:
+      summary: Öğrenme modu ve kişiye özel eşikler (profil raporu özeti). D-06, T-070
+      description: |
+        Kişi oluşturulunca öğrenme modu kural paketi `learning.days` (30) gün sürer. Günlük iş son `historyDays` (14)
+        günün sinyallerinden uyku penceresini ve hareketsizlik eşiğini (p95, 15–90 dk) öğrenir; aile elle ayarladığı
+        alana (kaynak FAMILY) dokunmaz. Dönem bitince aileye bir kez F-LEARN-REPORT gider. Başka ailenin kişisi 404.
+      operationId: getLearning
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          {
+            description: Özet,
+            content: { application/json: { schema: { $ref: '#/components/schemas/LearningSummary' } } },
+          }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/thresholds:
+    put:
+      summary: Aile eşik ayarı (uyku penceresi, hareketsizlik eşiği). D-06, T-070
+      description: |
+        Verilen alan aile ayarı olur (kaynak FAMILY) ve öğrenme ona dokunmaz. `null` aile ayarını kaldırır
+        (varsayılana döner; öğrenme modundaysa sonraki günlük işte yeniden öğrenilir). inactivityMin kural paketinin
+        INACTIVITY.thresholdMin min–max aralığında (15–90).
+      operationId: setThresholds
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                sleepWindow:
+                  type: [object, 'null']
+                  required: [start, end]
+                  properties:
+                    start: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
+                    end: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
+                inactivityMin: { type: [integer, 'null'], minimum: 15, maximum: 90 }
+      responses:
+        '200':
+          {
+            description: Özet,
+            content: { application/json: { schema: { $ref: '#/components/schemas/LearningSummary' } } },
+          }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/false-alarms:
+    get:
+      summary: Kişinin son 30 gün yanlış alarm oranı. D-07, T-071
+      description: |
+        Yanlış alarm = kişi cihazdan iptal etti (USER_CANCEL), operatör FALSE_ALARM ile kapattı (OPERATOR) veya aile
+        "gerçek değildi" dedi (FAMILY_FEEDBACK); olay başına bir kez, test olayları hariç. Pencerede 3. yanlış alarmda
+        aileye F-EVT-OK + F-FA-REVIEW ve konsolda "eşik görüşmesi" CALLBACK olayı (P4) açılır.
+      operationId: getFalseAlarms
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          description: Oran
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/FalseAlarmStats'
+                  - type: object
+                    required: [protectedPersonId]
+                    properties: { protectedPersonId: { type: string, format: uuid } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /events/{id}/feedback:
+    post:
+      summary: Aile geri bildirimi "Gerçek miydi?". C-12, T-071
+      description: |
+        Yalnız aile (consumers FAMILY) ve yalnız kendi kişisinin kapanmış olayı. Aile üyesi başına olay başına bir cevap
+        (son cevap geçerli). `real: false` olayı FAMILY_FEEDBACK nedeniyle yanlış alarm sayar (zaten sayılıyorsa ilk
+        neden kalır). Başka ailenin olayı 404, açık olay 409, aile dışı 403.
+      operationId: eventFeedback
+      security: [{ userToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [real], properties: { real: { type: boolean } } }
+      responses:
+        '201':
+          description: Kaydedildi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eventId, real, falseAlarm]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  real: { type: boolean }
+                  falseAlarm: { type: boolean, description: Olay yanlış alarm sayılıyor mu }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /devices/enroll:
     post:
       summary: Cihaz kaydı (davet kodu → cihaz token'ı). T-041
@@ -1057,6 +1162,10 @@ components:
         language: { type: string }
         timezone: { type: string }
         status: { enum: [TRIAL, ACTIVE, PAUSED, CANCELED] }
+        learningModeUntil:
+          type: [string, 'null']
+          format: date-time
+          description: D-06 öğrenme modu bitişi (oluşturma + 30 gün). T-070
         address:
           type: [object, 'null']
           properties:
@@ -1077,6 +1186,52 @@ components:
             consentAt: { type: [string, 'null'], format: date-time }
             updatedAt: { type: [string, 'null'], format: date-time }
         createdAt: { type: string, format: date-time }
+    LearningSummary:
+      type: object
+      required: [protectedPersonId, learningMode, sleepWindow, inactivity, learnedAt, learnedDays, reportSentAt]
+      properties:
+        protectedPersonId: { type: string, format: uuid }
+        learningMode:
+          type: object
+          properties:
+            active: { type: boolean }
+            until: { type: [string, 'null'], format: date-time }
+        sleepWindow:
+          type: object
+          description: Kişinin saat diliminde [start, end)
+          properties:
+            timezone: { type: string }
+            start: { type: string }
+            end: { type: string }
+            source: { $ref: '#/components/schemas/ThresholdSource' }
+        inactivity:
+          type: object
+          properties:
+            minutes: { type: [integer, 'null'], description: Geçerli eşik (dk) }
+            source: { $ref: '#/components/schemas/ThresholdSource' }
+            default: { type: [integer, 'null'] }
+            min: { type: [integer, 'null'] }
+            max: { type: [integer, 'null'] }
+        learnedAt: { type: [string, 'null'], format: date-time }
+        learnedDays: { type: [integer, 'null'], description: Son öğrenmede veri olan gün sayısı }
+        reportSentAt: { type: [string, 'null'], format: date-time }
+    ThresholdSource:
+      enum: [DEFAULT, LEARNED, FAMILY]
+    FalseAlarmStats:
+      type: object
+      required: [windowDays, closedEvents, falseAlarms, ratio, byCause, repeatPersons]
+      properties:
+        windowDays: { type: integer }
+        closedEvents: { type: integer, description: Pencerede kapanan olay (test hariç) }
+        falseAlarms: { type: integer }
+        ratio: { type: number, minimum: 0, maximum: 1 }
+        byCause:
+          type: object
+          properties:
+            USER_CANCEL: { type: integer }
+            OPERATOR: { type: integer }
+            FAMILY_FEEDBACK: { type: integer }
+        repeatPersons: { type: integer, description: Pencerede eşik görüşmesi sınırına (3) ulaşan kişi sayısı }
     Medical:
       type: object
       properties:

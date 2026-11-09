@@ -19,6 +19,8 @@ export interface DecideContext {
   pack: RulePack;
   /** Sinyal anı kişinin gece penceresinde mi (yalnız OFF_BODY için gerekir). */
   night: boolean;
+  /** T-070: kişiye özel hareketsizlik eşiği (dk). Kural `learnable` ise paket varsayılanının yerine geçer. */
+  inactivityMin?: number | null;
 }
 
 /** Pil eşikleri (A-06): saat %20 ve %10'da BATTERY gönderir. */
@@ -53,7 +55,7 @@ export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): D
     case 'OFF_BODY':
       return create('WATCH_OFF');
     case 'INACTIVITY': {
-      const threshold = ruleFor(ctx.pack, 'INACTIVITY')?.thresholdMin?.default;
+      const threshold = inactivityThreshold(ctx.pack, ctx.inactivityMin);
       // Değer yoksa eşiği cihaz kendisi aşmıştır (A-04); varsa paketin eşiğiyle karşılaştır (T-070: kişiye özel).
       if (typeof s.value === 'number' && threshold !== undefined && s.value < threshold)
         return { action: 'none', reason: 'eşik altı' };
@@ -82,6 +84,17 @@ export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): D
       return type ? create(type) : { action: 'none', reason: `bilinmeyen sinyal: ${s.kind}` };
     }
   }
+}
+
+/**
+ * Geçerli hareketsizlik eşiği (dk): kural `learnable` ve kişiye özel değer varsa o (kuralın min–max aralığına
+ * kırpılır), yoksa paket varsayılanı. Kural yoksa undefined.
+ */
+export function inactivityThreshold(pack: RulePack, personal?: number | null): number | undefined {
+  const t = ruleFor(pack, 'INACTIVITY')?.thresholdMin;
+  if (!t) return undefined;
+  if (!t.learnable || personal == null) return t.default;
+  return Math.min(t.max ?? personal, Math.max(t.min ?? personal, personal));
 }
 
 export type ConnectionState = 'ONLINE' | 'NO_CONNECTION' | 'LOST';

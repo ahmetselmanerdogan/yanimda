@@ -96,6 +96,8 @@ export const TOPICS = {
   devicePromptAnswered: 'device.prompt.answered',
   /** Amir uyarısı (T-021: operatör kilidi düştü). Konsol amir odasına yayınlar. */
   supervisorAlert: 'supervisor.alert',
+  /** T-071 (D-07): yanlış alarm kaydı (kişi, olay, neden). */
+  eventFalseAlarm: 'event.false_alarm',
 } as const;
 
 /** Bildirim isteği (T-012 üretir, T-053 notify modülü tüketir). Metin değil, katalog kodu taşır. */
@@ -150,5 +152,16 @@ export interface SupervisorAlert {
   eventId: string;
   eventType: EventType;
   operatorId?: string;
+  at: string;
+}
+
+// ---- T-071 yanlış alarm (D-07, C-12) ----
+/** USER_CANCEL: kişi cihazdan iptal etti; OPERATOR: operatör FALSE_ALARM ile kapattı; FAMILY_FEEDBACK: aile "gerçek değildi". */
+export type FalseAlarmCause = 'USER_CANCEL' | 'OPERATOR' | 'FAMILY_FEEDBACK';
+export interface FalseAlarm {
+  protectedPersonId: string;
+  eventId: string;
+  eventType: EventType;
+  cause: FalseAlarmCause;
   at: string;
 }

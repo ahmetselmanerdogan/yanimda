@@ -11,6 +11,11 @@ import { DEFAULT_SLEEP_WINDOW, DEFAULT_TIMEZONE } from './night';
 import { computeProtection, type ProtectionFacts, type SleepWindow } from './protection';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from './rules.loader';
 
+export interface PersonSettings extends SleepWindow {
+  inactivityMin: number | null;
+  learningModeUntil: Date | null;
+}
+
 export interface ProtectionChange {
   protectedPersonId: string;
   from: ProtectionState | null;
@@ -50,17 +55,36 @@ export class ProtectionService {
 
   /** Kişinin gece penceresi: event.threshold (yoksa 22:00–08:00), kişinin saat diliminde. */
   async sleepWindowOf(protectedPersonId: string): Promise<SleepWindow> {
-    const r = (await this.db.execute(sql`
-      SELECT (SELECT timezone FROM profile.protected_person WHERE id::text = ${protectedPersonId}) AS timezone,
-             t.sleep_start::text AS start, t.sleep_end::text AS end
-      FROM (SELECT 1) one LEFT JOIN event.threshold t ON t.protected_person_id = ${protectedPersonId}`)) as unknown as {
-      rows: { timezone: string | null; start: string | null; end: string | null }[];
+    const { timezone, start, end } = await this.settingsOf(protectedPersonId);
+    return { timezone, start, end };
+  }
+
+  /**
+   * Kişiye özel ayarlar: gece penceresi, hareketsizlik eşiği (T-070; yoksa null = kural varsayılanı) ve öğrenme
+   * modu bitişi (profile.protected_person.learning_mode_until). Açık transaction içinden çağrılırken `tx` verilmeli.
+   */
+  async settingsOf(protectedPersonId: string, tx: Pick<Db, 'execute'> = this.db): Promise<PersonSettings> {
+    const r = (await tx.execute(sql`
+      SELECT p.timezone, p.learning_mode_until,
+             t.sleep_start::text AS start, t.sleep_end::text AS end, t.inactivity_min
+      FROM (SELECT 1) one
+      LEFT JOIN profile.protected_person p ON p.id::text = ${protectedPersonId}
+      LEFT JOIN event.threshold t ON t.protected_person_id = ${protectedPersonId}`)) as unknown as {
+      rows: {
+        timezone: string | null;
+        learning_mode_until: Date | string | null;
+        start: string | null;
+        end: string | null;
+        inactivity_min: number | null;
+      }[];
     };
     const row = r.rows[0];
     return {
       timezone: row?.timezone ?? DEFAULT_TIMEZONE,
       start: row?.start?.slice(0, 5) ?? DEFAULT_SLEEP_WINDOW.start,
       end: row?.end?.slice(0, 5) ?? DEFAULT_SLEEP_WINDOW.end,
+      inactivityMin: row?.inactivity_min ?? null,
+      learningModeUntil: row?.learning_mode_until ? new Date(row.learning_mode_until) : null,
     };
   }
 

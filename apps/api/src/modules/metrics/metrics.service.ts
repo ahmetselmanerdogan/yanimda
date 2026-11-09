@@ -16,6 +16,7 @@ import { bus as globalBus, type LocalBus } from '../../common/bus';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { EventService } from '../event/event.service';
+import { falseAlarmStats } from '../false-alarm/stats';
 
 const BUCKETS = [0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600];
 const CONFIRMED: EventState[] = ['CONFIRMED_OK', 'CONFIRMED_EMERGENCY'];
@@ -34,7 +35,7 @@ type Rows<T> = { rows: T[] };
  *    ilk sinyalin alınışı, sorulu olayda yükseltme anı (sorunun bekleme süresi SLA dışıdır)
  *  - operator_claim_seconds: kuyruğa düşüş → üstlenme (hedef 10 sn)
  *  - event_decision_seconds: kuyruğa düşüş → teyit (CONFIRMED_OK / CONFIRMED_EMERGENCY)
- *  - queue_depth (öncelik), false_alarm_ratio (son 24 saat): her okumada veritabanından
+ *  - queue_depth (öncelik), false_alarm_ratio (son 24 saat), false_alarm_ratio_30d (T-071): her okumada veritabanından
  * /metrics iç ağda ayrı portta (METRICS_PORT); genel API'den yayınlanmaz.
  */
 @Injectable()
@@ -104,6 +105,14 @@ export class MetricsService implements OnModuleInit, OnApplicationBootstrap, OnA
         }>;
         const row = r.rows[0];
         this.set(row && row.n ? row.f / row.n : 0);
+      },
+    });
+    new Gauge({
+      name: 'false_alarm_ratio_30d',
+      help: 'T-071: son 30 günde yanlış alarm kaydı / kapanan olay (test hariç; aile geri bildirimi dahil)',
+      registers,
+      async collect() {
+        this.set((await falseAlarmStats(store, new Date(), 30, 3)).ratio);
       },
     });
     collectDefaultMetrics({ register: this.registry, prefix: 'yanimda_api_' });

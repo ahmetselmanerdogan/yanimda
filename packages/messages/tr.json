@@ -176,6 +176,16 @@
     "text": "Dünkü olayla ilgili operatörümüz {name}'ı aradı: iyi.",
     "action": "Notu oku"
   },
+  "F-LEARN-REPORT": {
+    "channel": "family",
+    "text": "{name} için öğrenme dönemi tamamlandı. Uyku saatleri {sleepStart}–{sleepEnd}, hareketsizlik uyarısı {inactivityMin} dakika.",
+    "action": "Raporu aç"
+  },
+  "F-FA-REVIEW": {
+    "channel": "family",
+    "text": "{name}: son {windowDays} günde {count} yanlış alarm oldu. Operatörümüz ayarları gözden geçirmek için arayacak.",
+    "action": "Ayarlar"
+  },
   "F-NAME-UNKNOWN": {
     "channel": "family",
     "text": "Yakınınız"
