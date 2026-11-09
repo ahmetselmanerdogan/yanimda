@@ -57,13 +57,33 @@ async function restore(): Promise<User | null> {
   }
   const user = await userManager.getUser();
   if (user && !user.expired) return user;
-  if (user?.refresh_token) return userManager.signinSilent().catch(() => null);
+  if (user?.refresh_token) return renew();
   return null;
+}
+
+let renewing: Promise<User | null> | undefined;
+
+/**
+ * Tek uçuşlu yenileme: aynı anda birden çok çağrı (API, WS, açılış) tek yenileme isteği paylaşır. Keycloak aynı
+ * yenileme token'ıyla eş zamanlı ikinci isteği 400 ile reddeder.
+ */
+export function renew(): Promise<User | null> {
+  renewing ??= userManager
+    .signinSilent()
+    .catch(() => null)
+    .finally(() => (renewing = undefined));
+  return renewing;
 }
 
 export async function currentToken(): Promise<string | null> {
   const u = await userManager.getUser();
   if (u && !u.expired) return u.access_token;
-  const renewed = await userManager.signinSilent().catch(() => null);
-  return renewed?.access_token ?? null;
+  return (await renew())?.access_token ?? null;
+}
+
+/** Yenileme hatası tek başına çıkış nedeni değildir (eş zamanlı istek); token gerçekten geçersizse true. */
+export async function sessionLost(): Promise<boolean> {
+  const u = await userManager.getUser();
+  if (u && !u.expired) return false;
+  return !(await renew());
 }

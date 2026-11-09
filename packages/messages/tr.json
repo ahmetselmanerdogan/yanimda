@@ -555,5 +555,25 @@
   "O-UI-PRIORITY": {
     "channel": "console",
     "text": "P{n}"
+  },
+  "O-UI-FOLLOWUP-PLAN": {
+    "channel": "console",
+    "text": "Takip araması planla"
+  },
+  "O-UI-FOLLOWUP-HOURS": {
+    "channel": "console",
+    "text": "Kaç saat sonra"
+  },
+  "O-UI-FOLLOWUP-REQUIRED": {
+    "channel": "console",
+    "text": "Acil durumda takip araması zorunludur."
+  },
+  "O-UI-COPY": {
+    "channel": "console",
+    "text": "Kopyala"
+  },
+  "O-UI-COPIED": {
+    "channel": "console",
+    "text": "Kopyalandı"
   }
 }

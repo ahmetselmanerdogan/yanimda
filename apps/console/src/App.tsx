@@ -2,7 +2,7 @@ import type { User } from 'oidc-client-ts';
 import { useEffect, useState } from 'react';
 
 import { Console } from './Console';
-import { OPERATOR_ROLES, restoreSession, rolesOf, userManager } from './lib/auth';
+import { OPERATOR_ROLES, restoreSession, rolesOf, sessionLost, userManager } from './lib/auth';
 import { action, t } from './lib/i18n';
 
 type Phase = { kind: 'loading' } | { kind: 'anonymous'; failed?: boolean } | { kind: 'ready'; user: User };
@@ -16,13 +16,14 @@ export function App() {
       .catch(() => setPhase({ kind: 'anonymous', failed: true }));
     const loaded = (user: User) => setPhase({ kind: 'ready', user });
     const gone = () => setPhase({ kind: 'anonymous' });
+    const renewFailed = () => void sessionLost().then((lost) => lost && gone());
     userManager.events.addUserLoaded(loaded);
     userManager.events.addUserSignedOut(gone);
-    userManager.events.addSilentRenewError(gone);
+    userManager.events.addSilentRenewError(renewFailed);
     return () => {
       userManager.events.removeUserLoaded(loaded);
       userManager.events.removeUserSignedOut(gone);
-      userManager.events.removeSilentRenewError(gone);
+      userManager.events.removeSilentRenewError(renewFailed);
     };
   }, []);
 

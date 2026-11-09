@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { ChainService } from './chain.service';
@@ -14,6 +26,12 @@ export class ChainController {
   @Get(':id')
   get(@Param('id') id: string) {
     return this.chain.get(id);
+  }
+
+  /** GET /v1/events/{id}/script?kind=dispatch112 — 112 şablonu (yalnız olayı yürüten operatör). */
+  @Get(':id/script')
+  script(@Param('id') id: string, @Query('kind') kind: string, @Req() req: UserRequest) {
+    return this.chain.dispatchScript(id, userOf(req).sub, kind);
   }
 
   /** POST /v1/events/{id}/claim — üstlen; zincir oluşur. Başka operatörde 409. */

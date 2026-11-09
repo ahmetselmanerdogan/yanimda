@@ -74,6 +74,8 @@ export const OPERATOR_STATES = new Set<EventState>([
   'CONFIRMED_EMERGENCY',
   'DISPATCH',
 ]);
+export const DEFAULT_FOLLOW_UP_HOURS = 24;
+export const MAX_FOLLOW_UP_HOURS = 168;
 const CLOSE_OUTCOMES = new Set(['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE']);
 /** D-04 operatör kilidi süresi (varsayılan 300 sn); her operatör isteği uzatır. */
 export const operatorLockMs = () => Number(process.env.OPERATOR_LOCK_SEC ?? 300) * 1000;
@@ -87,7 +89,8 @@ export interface OperatorCtx {
   rulesVersion: number;
   transition(to: EventState, note?: string): void;
   publish(topic: string, payload: unknown): void;
-  finish(outcome: string, note?: string): Promise<void>;
+  /** Kapat; followUpAfterHours: takip araması (EMERGENCY'de zorunlu, verilmezse kural varsayılanı). */
+  finish(outcome: string, note?: string, followUpAfterHours?: number): Promise<void>;
 }
 
 const pgCode = (e: unknown) =>
@@ -481,7 +484,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         rulesVersion: this.pack.version,
         transition: (to, note) => this.transition(u, to, 'OPERATOR', operatorId, note),
         publish: (topic, payload) => u.publishes.push({ topic, payload }),
-        finish: (outcome, note) => this.finish(u, operatorId, outcome, note),
+        finish: (outcome, note, hours) => this.finish(u, operatorId, outcome, note, hours),
       };
       return { value: await fn(ctx) };
     });
@@ -500,9 +503,17 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     });
   }
 
-  /** E-07 kapatma: bulunulan duruma göre CONFIRMED_* / DISPATCH üzerinden CLOSED. EMERGENCY → takip zamanlayıcısı. */
-  private async finish(u: Uow, operatorId: string, outcome: string, note?: string) {
+  /**
+   * E-07 kapatma: bulunulan duruma göre CONFIRMED_* / DISPATCH üzerinden CLOSED. Takip araması (T-024): EMERGENCY'de
+   * zorunlu (verilmezse kuralın followUpAfterHours'u, o da yoksa 24 saat); diğer sonuçlarda istenirse.
+   */
+  private async finish(u: Uow, operatorId: string, outcome: string, note?: string, followUpAfterHours?: number) {
     if (!CLOSE_OUTCOMES.has(outcome)) throw new BadRequestException('Geçersiz sonuç');
+    if (
+      followUpAfterHours !== undefined &&
+      (!Number.isInteger(followUpAfterHours) || followUpAfterHours < 1 || followUpAfterHours > MAX_FOLLOW_UP_HOURS)
+    )
+      throw new BadRequestException(`Takip 1–${MAX_FOLLOW_UP_HOURS} saat arası olmalı`);
     const op = (to: EventState, n?: string) => this.transition(u, to, 'OPERATOR', operatorId, n);
     const emergency = outcome === 'EMERGENCY';
     switch (u.ev.state) {
@@ -526,8 +537,19 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     if (u.ev.state === 'CONFIRMED_EMERGENCY') op('DISPATCH');
     u.ev.lockUntil = undefined;
     this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
-    const hours = ruleFor(this.pack, u.ev.type)?.followUpAfterHours;
-    if (emergency && hours) await this.timers.schedule(u.ev.id, 'follow-up', hours * 3600 * 1000); // commit'ten önce
+    const hours = emergency
+      ? (followUpAfterHours ?? ruleFor(this.pack, u.ev.type)?.followUpAfterHours ?? DEFAULT_FOLLOW_UP_HOURS)
+      : followUpAfterHours;
+    if (hours) {
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'OPERATOR',
+        actorId: operatorId,
+        action: 'event.follow_up_planned',
+        entityId: u.ev.id,
+        data: { hours },
+      });
+      await this.timers.schedule(u.ev.id, 'follow-up', hours * 3600 * 1000); // commit'ten önce
+    }
   }
 
   /**

@@ -50,6 +50,13 @@ export interface StepResultBody {
   reason?: string;
 }
 
+export interface DispatchScript {
+  kind: 'dispatch112';
+  code: string;
+  fields: Record<string, string>;
+  text: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -90,8 +97,13 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     result: (id: string, n: number, b: StepResultBody) =>
       req<EventWithChain>('POST', `${ev(id)}/chain/steps/${n}/result`, b),
     escalate: (id: string, reason: string) => req<EventWithChain>('POST', `${ev(id)}/escalate-112`, { reason }),
-    close: (id: string, outcome: CloseOutcome, note?: string) =>
-      req<void>('POST', `${ev(id)}/close`, { outcome, ...(note ? { note } : {}) }),
+    dispatchScript: (id: string) => req<DispatchScript>('GET', `${ev(id)}/script?kind=dispatch112`),
+    close: (id: string, outcome: CloseOutcome, note?: string, followUpAfterHours?: number) =>
+      req<void>('POST', `${ev(id)}/close`, {
+        outcome,
+        ...(note ? { note } : {}),
+        ...(followUpAfterHours ? { followUpAfterHours } : {}),
+      }),
   };
 }
 export type Api = ReturnType<typeof createApi>;

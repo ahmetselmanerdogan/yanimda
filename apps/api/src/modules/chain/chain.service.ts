@@ -7,13 +7,23 @@ import {
   type StepResult,
   TOPICS,
 } from '@yanimda/contracts';
+import { t } from '@yanimda/messages';
+import { sql } from 'drizzle-orm';
 
-import { DB, type Db } from '../../db/client';
+import { DB, type Db, type Tx } from '../../db/client';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
 import { buildSteps, loadProcedures, type ProcedurePack, stepOf } from './procedures';
 
 export const PROCEDURES = Symbol('PROCEDURES');
+
+/** T-024 112 şablon alanları (05 "112 bildirimi"). Bilinmeyen alan katalogdaki "bilinmiyor". */
+export interface DispatchScript {
+  kind: 'dispatch112';
+  code: string;
+  fields: Record<'type' | 'name' | 'age' | 'address' | 'conditions' | 'medications' | 'allergies' | 'doorNote', string>;
+  text: string;
+}
 
 export interface StepResultBody {
   result: StepResult;
@@ -190,18 +200,53 @@ export class ChainService {
 
   /** E-07 kapatma: bekleyen adımlar SKIPPED(reason=closed), olay kapanır. */
   async close(id: string, operatorId: string, body: unknown, now?: Date): Promise<EventWithChain> {
-    const b = (body ?? {}) as { outcome?: unknown; note?: unknown };
+    const b = (body ?? {}) as { outcome?: unknown; note?: unknown; followUpAfterHours?: unknown };
     const note = text(b.note, NOTE_MAX, 'note');
     if (typeof b.outcome !== 'string') throw new BadRequestException('Sonuç zorunlu');
     const outcome = b.outcome;
+    if (b.followUpAfterHours !== undefined && b.followUpAfterHours !== null && typeof b.followUpAfterHours !== 'number')
+      throw new BadRequestException('followUpAfterHours sayı olmalı');
+    const hours = typeof b.followUpAfterHours === 'number' ? b.followUpAfterHours : undefined;
     return this.events.operate(
       id,
       operatorId,
       async (c) => {
         const run = await this.repo.run(c.ev.id, c.tx);
-        await c.finish(outcome, note);
+        await c.finish(outcome, note, hours);
         if (run) await this.skipPending(c, run, operatorId, 'closed');
         return this.result(c, run);
+      },
+      { now },
+    );
+  }
+
+  /**
+   * GET /events/{id}/script?kind=dispatch112 — 112'ye okunacak metin, olay ve kişi bilgisiyle doldurulur. Yalnız olayı
+   * yürüten operatöre (sağlık verisi yalnız olay anında çözülür); erişim audit.log'a yazılır (içerik yazılmaz).
+   * Tıbbi alanlar (hastalık, ilaç, alerji, kapı notu, adres) T-040 profil/sağlık şeması gelene kadar "bilinmiyor";
+   * adres yoksa olay konumu (enlem, boylam).
+   */
+  async dispatchScript(id: string, operatorId: string, kind: unknown, now?: Date): Promise<DispatchScript> {
+    if (kind !== 'dispatch112') throw new BadRequestException('Bilinmeyen şablon');
+    return this.events.operate(
+      id,
+      operatorId,
+      async (c) => {
+        const person = await personOf(c.tx, c.ev.protectedPersonId);
+        const unknown = t('O-UI-UNKNOWN');
+        const loc = c.ev.location;
+        const fields: DispatchScript['fields'] = {
+          type: t(`O-TYPE-${c.ev.type}`),
+          name: person?.displayName ?? unknown,
+          age: person?.birthYear ? String(c.now.getUTCFullYear() - person.birthYear) : unknown,
+          address: loc ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : unknown,
+          conditions: unknown,
+          medications: unknown,
+          allergies: unknown,
+          doorNote: unknown,
+        };
+        await this.repo.audit(c.tx, c.ev.id, operatorId, 'event.script_viewed', { kind });
+        return { kind: 'dispatch112', code: 'O-SCRIPT-112', fields, text: t('O-SCRIPT-112', 'tr', fields) };
       },
       { now },
     );
@@ -275,4 +320,12 @@ export class ChainService {
       ...(reason ? { reason } : {}),
     };
   }
+}
+
+async function personOf(tx: Tx, id: string): Promise<{ displayName: string; birthYear: number | null } | null> {
+  const r = (await tx.execute(
+    sql`SELECT display_name, birth_year FROM profile.protected_person WHERE id::text = ${id}`,
+  )) as unknown as { rows: { display_name: string; birth_year: number | null }[] };
+  const row = r.rows[0];
+  return row ? { displayName: row.display_name, birthYear: row.birth_year } : null;
 }
