@@ -6,6 +6,7 @@ import { DeviceModule } from './modules/device/device.module';
 import { EnrollmentModule } from './modules/device/enrollment.module';
 import { EventModule } from './modules/event/event.module';
 import { FalseAlarmModule } from './modules/false-alarm/false-alarm.module';
+import { FamilyModule } from './modules/family/family.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { LearningModule } from './modules/learning/learning.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
@@ -34,6 +35,7 @@ import { SignalModule } from './modules/signal/signal.module';
     NotifyModule,
     ReportModule,
     LearningModule,
+    FamilyModule,
     FalseAlarmModule,
   ],
 })
