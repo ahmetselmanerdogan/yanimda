@@ -6,8 +6,9 @@ import { v7 as uuidv7 } from 'uuid';
 import { FieldCipher } from '../../common/field-cipher';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, familyMember, medicalSummary, protectedPerson, subscription } from '../../db/schema';
+import { auditLog, event, familyMember, medicalSummary, protectedPerson, subscription } from '../../db/schema';
 import { EnrollmentService } from '../device/enrollment.service';
+import { EventService } from '../event/event.service';
 import { type Actor, listContacts, replaceContacts } from './contacts';
 import { GEOCODER, type Geocoder } from './geocoder';
 
@@ -31,6 +32,8 @@ export interface PersonView {
   address: Address | null;
   doorAccessNote: string | null;
   myRole: 'OWNER' | 'MEMBER' | null;
+  /** F-DAILY günlük bildirimi açık mı (C-07). */
+  dailySummary: boolean;
   medical: { present: boolean; consentAt: string | null; updatedAt: string | null };
   createdAt: string;
 }
@@ -74,6 +77,7 @@ export class ProfileService {
     @Inject(FIELD_CIPHER) private readonly cipher: FieldCipher,
     @Optional() @Inject(EnrollmentService) private readonly enrollment?: Pick<EnrollmentService, 'createInvite'>,
     @Optional() @Inject(GEOCODER) private readonly geocoder?: Geocoder | null,
+    @Optional() @Inject(EventService) private readonly events?: Pick<EventService, 'requestTest'>,
   ) {}
 
   // ---- kişi ----
@@ -148,6 +152,7 @@ export class ProfileService {
         : null,
       doorAccessNote: row.doorAccessNoteEnc ? this.cipher.decrypt(row.doorAccessNoteEnc, ctxDoor(id)) : null,
       myRole: role,
+      dailySummary: row.dailySummaryEnabled,
       medical: {
         present: !!med,
         consentAt: med?.consentAt.toISOString() ?? null,
@@ -248,6 +253,52 @@ export class ProfileService {
     return { ...r, smsText: t('S-INVITE', 'tr', { code: r.code }) };
   }
 
+  // ---- test çağrısı (C-05, T-063) ----
+
+  /** Aile "Test et": TEST olayı açılır, operatör kurulum metniyle arar. Aynı anahtar aynı olayı döner. */
+  async testSos(actor: Actor, id: string, key: string | undefined, now = new Date()) {
+    await this.access(actor, id);
+    if (!this.events) throw new Error('EventService yok');
+    const requestKey = key && /^[A-Za-z0-9_.:-]{8,100}$/.test(key) ? `${actor.id ?? actor.kind}:${key}` : uuidv7();
+    const r = await this.events.requestTest(id, requestKey, now);
+    await this.db.insert(auditLog).values({
+      actorKind: actor.kind,
+      actorId: actor.id ?? null,
+      action: 'profile.test_requested',
+      entityType: 'event',
+      entityId: r.eventId,
+      data: {},
+    });
+    return this.testStatus(actor, id, r.eventId);
+  }
+
+  /** Aile uygulamasında ilerleme: durum, sonuç ve operatör notu (yalnız bu kişinin TEST olayları). */
+  async testStatus(actor: Actor, id: string, eventId: string) {
+    await this.access(actor, id);
+    if (!UUID.test(eventId)) throw new NotFoundException('Test bulunamadı');
+    const [e] = await this.db
+      .select({
+        id: event.id,
+        state: event.state,
+        createdAt: event.createdAt,
+        closedAt: event.closedAt,
+        outcome: event.confirmedOutcome,
+        note: event.closeReason,
+      })
+      .from(event)
+      .where(and(eq(event.id, eventId), eq(event.protectedPersonId, id), eq(event.isTest, true)));
+    if (!e) throw new NotFoundException('Test bulunamadı');
+    return {
+      eventId: e.id,
+      state: e.state,
+      completed: e.state === 'CLOSED',
+      outcome: e.outcome,
+      operatorNote: e.state === 'CLOSED' && e.note ? e.note : null,
+      createdAt: e.createdAt.toISOString(),
+      closedAt: e.closedAt?.toISOString() ?? null,
+    };
+  }
+
   // ---- olay anı (operatör) ----
 
   /**
@@ -325,6 +376,10 @@ export class ProfileService {
       if (y !== null && (!Number.isInteger(y) || (y as number) < 1900 || (y as number) > now.getUTCFullYear()))
         throw new BadRequestException('birthYear geçersiz');
       p.birthYear = y as number | null;
+    }
+    if (b.dailySummary !== undefined) {
+      if (typeof b.dailySummary !== 'boolean') throw new BadRequestException('dailySummary true/false');
+      p.dailySummaryEnabled = b.dailySummary;
     }
     if (b.language !== undefined) p.language = oneOf(b.language, ['tr'] as const, 'language');
     if (b.timezone !== undefined) {

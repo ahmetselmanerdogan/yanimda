@@ -146,6 +146,8 @@ export class RulesService implements RulesProvider {
       types.add(r.type);
       const tts = r.devicePrompt?.tts;
       if (tts && !catalogs.tr[tts]) throw new BadRequestException(`TTS kodu mesaj kataloğunda yok: ${tts}`);
+      if (r.operatorScript && !catalogs.tr[r.operatorScript])
+        throw new BadRequestException(`Operatör metni mesaj kataloğunda yok: ${r.operatorScript}`);
     }
     return pack;
   }

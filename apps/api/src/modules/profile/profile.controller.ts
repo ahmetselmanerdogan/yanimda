@@ -6,6 +6,7 @@ import {
   type ExecutionContext,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   Inject,
   Injectable,
@@ -109,6 +110,18 @@ export class ProfileController {
   @Get(':id/contacts')
   listContacts(@Param('id') id: string, @Req() req: ActorRequest) {
     return this.profile.contacts(actorOf(req), id);
+  }
+
+  /** POST /v1/protected-persons/{id}/test-sos — TEST olayı (C-05). `Idempotency-Key` aynı isteği tekrarlar. */
+  @Post(':id/test-sos')
+  @HttpCode(202)
+  testSos(@Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Req() req: ActorRequest) {
+    return this.profile.testSos(actorOf(req), id, key);
+  }
+
+  @Get(':id/test-sos/:eventId')
+  testStatus(@Param('id') id: string, @Param('eventId') eventId: string, @Req() req: ActorRequest) {
+    return this.profile.testStatus(actorOf(req), id, eventId);
   }
 
   /** POST /v1/protected-persons/{id}/invite → { code, expiresAt, smsText } (6 hane, 15 dk, tek kullanım). */

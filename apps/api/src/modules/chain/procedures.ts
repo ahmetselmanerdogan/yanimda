@@ -44,7 +44,9 @@ export function stepOf(entry: string, n: number, rule: Rule | undefined, proc: P
     target: k.target,
     ...(idx ? { contactIndex: Number(idx) } : {}),
     label: k.label,
-    ...(k.script ? { script: k.script } : {}),
+    ...(k.script
+      ? { script: k.script && rule?.operatorScript && k.target !== 'EMERGENCY' ? rule.operatorScript : k.script }
+      : {}),
     timeoutSec: rule?.stepTimeoutSec?.[kind] ?? k.defaultTimeoutSec,
     required: k.required,
   };
