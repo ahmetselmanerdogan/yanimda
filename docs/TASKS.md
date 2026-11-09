@@ -66,8 +66,8 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-063 Test SOS akışı (C-05)
 
 ## Epik 7 · Öğrenme, yanlış alarm, iOS (S7)
-- [ ] T-070 Öğrenme modu (D-06)
-- [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
+- [x] T-070 Öğrenme modu (D-06)
+- [x] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12) — API; aile ekranı T-061, amir ekranı T-074
 - [ ] T-072 Otomatik sesli ön eleme (D-12)
 - [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. APNs sessiz uyandırma (15 dk). Açık: gerçek APNs anahtarı ve cihazda deneme, pil ölçümü (<%5/24 sa), TestFlight
 - [ ] T-074 Amir panosu (E-11)

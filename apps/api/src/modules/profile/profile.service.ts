@@ -8,6 +8,7 @@ import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, familyMember, medicalSummary, protectedPerson, subscription } from '../../db/schema';
 import { EnrollmentService } from '../device/enrollment.service';
+import { learningOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { type Actor, listContacts, replaceContacts } from './contacts';
 import { GEOCODER, type Geocoder } from './geocoder';
 
@@ -28,6 +29,8 @@ export interface PersonView {
   language: string;
   timezone: string;
   status: string;
+  /** D-06 (T-070): bu ana kadar öğrenme modu; geçmişse null değil ama aktif değil. */
+  learningModeUntil: string | null;
   address: Address | null;
   doorAccessNote: string | null;
   myRole: 'OWNER' | 'MEMBER' | null;
@@ -74,7 +77,11 @@ export class ProfileService {
     @Inject(FIELD_CIPHER) private readonly cipher: FieldCipher,
     @Optional() @Inject(EnrollmentService) private readonly enrollment?: Pick<EnrollmentService, 'createInvite'>,
     @Optional() @Inject(GEOCODER) private readonly geocoder?: Geocoder | null,
-  ) {}
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+  ) {
+    this.rules = rules ?? staticRules(loadRulePack());
+  }
+  private readonly rules: RulesProvider;
 
   // ---- kişi ----
 
@@ -85,10 +92,18 @@ export class ProfileService {
     const patch = await this.patchOf(b, now);
     const id = uuidv7();
     const doorAccessNoteEnc = this.door(id, b.doorAccessNote);
+    // D-06 (T-070): yeni kişi öğrenme modunda başlar (kural paketi `learning.days`, varsayılan 30 gün).
+    const learningModeUntil = new Date(now.getTime() + learningOf(this.rules.current()).days * 86_400_000);
     await this.db.transaction(async (tx) => {
-      await tx
-        .insert(protectedPerson)
-        .values({ id, displayName, ...patch, doorAccessNoteEnc, createdAt: now, updatedAt: now });
+      await tx.insert(protectedPerson).values({
+        id,
+        displayName,
+        ...patch,
+        doorAccessNoteEnc,
+        learningModeUntil,
+        createdAt: now,
+        updatedAt: now,
+      });
       if (actor.kind === 'FAMILY')
         await tx.insert(familyMember).values({
           id: uuidv7(),
@@ -136,6 +151,7 @@ export class ProfileService {
       language: row.language,
       timezone: row.timezone,
       status: row.status,
+      learningModeUntil: row.learningModeUntil?.toISOString() ?? null,
       address: row.addressLine
         ? {
             line: row.addressLine,
@@ -296,6 +312,11 @@ export class ProfileService {
   }
 
   // ---- iç ----
+
+  /** Diğer modüller (T-070/T-071 aile uçları) için erişim denetimi: yoksa veya yetki yoksa 404. */
+  async authorize(actor: Actor, id: string): Promise<void> {
+    await this.access(actor, id);
+  }
 
   /** Erişim: ADMIN her kişiyi; FAMILY yalnız üyesi olduğu kişiyi. Diğer her durum 404. */
   private async access(actor: Actor, id: string): Promise<{ row: Row; role: 'OWNER' | 'MEMBER' | null }> {

@@ -16,6 +16,6 @@ import { FIELD_CIPHER, ProfileService } from './profile.service';
     { provide: FIELD_CIPHER, useFactory: () => FieldCipher.fromEnv() },
     { provide: GEOCODER, useFactory: () => geocoderFromEnv() },
   ],
-  exports: [ProfileService],
+  exports: [ProfileService, ProfileGuard],
 })
 export class ProfileModule {}

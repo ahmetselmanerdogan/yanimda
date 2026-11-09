@@ -21,6 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { device, invite } from '../../db/schema';
+import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
 import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
@@ -95,7 +96,7 @@ export class EnrollmentService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Pick<Redis, 'incr' | 'expire' | 'get'>,
-    @Inject(ProtectionService) private readonly protection: Pick<ProtectionService, 'sleepWindowOf'>,
+    @Inject(ProtectionService) private readonly protection: Pick<ProtectionService, 'settingsOf'>,
     @Optional() @Inject(RULES) rules?: RulesProvider,
     @Optional() @Inject('DEVICE_TOKEN_SECRET') secret?: string,
   ) {
@@ -334,6 +335,7 @@ export class EnrollmentService {
     const fall = ruleFor(pack, 'FALL');
     const inact = ruleFor(pack, 'INACTIVITY');
     const prefix = PHONE_KINDS.includes(p.kind) ? 'P-' : 'W-';
+    const settings = await this.protection.settingsOf(p.protectedPersonId);
     const messages: DeviceConfig['messages'] = {};
     for (const [code, m] of Object.entries(catalogs.tr ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
       if (code.startsWith(prefix)) messages[code] = m.action ? { text: m.text, action: m.action } : { text: m.text };
@@ -343,12 +345,12 @@ export class EnrollmentService {
       protectedPersonId: p.protectedPersonId,
       kind: p.kind,
       rulesVersion: pack.version,
-      sleepWindow: await this.protection.sleepWindowOf(p.protectedPersonId),
+      sleepWindow: { timezone: settings.timezone, start: settings.start, end: settings.end },
       devicePrompt: {
         fallWindowSec: fall?.devicePrompt?.enabled ? (fall.devicePrompt.windowSec ?? null) : null,
         inactivityWindowSec: inact?.devicePrompt?.enabled ? (inact.devicePrompt.windowSec ?? null) : null,
       },
-      inactivityThresholdMin: inact?.thresholdMin?.default ?? null,
+      inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
       messages,
     };
     const etag = `"${createHash('sha256').update(JSON.stringify(body)).digest('base64url').slice(0, 22)}"`;

@@ -1,6 +1,10 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
 version: 1
+# D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
+learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
+# D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
+falseAlarm: { windowDays: 30, reviewAfter: 3 }
 rules:
   - type: SOS
     priority: 1
@@ -23,6 +27,7 @@ rules:
     activeHours: { useSleepWindow: true }
     devicePrompt: { enabled: true, windowSec: 120, silent: true, tts: W-INACT-1 }
     autoVoiceScreening: { enabled: true, phrase: W-INACT-1, acceptIf: ['evet', 'iyiyim'] }
+    learningMode: { extraSilentAsks: 1 }
     chain: [CALL_PHONE, CALL_WATCH, CALL_CONTACT:1, CALL_NEIGHBOR, CALL_112]
     stepTimeoutSec: { CALL_PHONE: 15, CALL_WATCH: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
   - type: WATCH_OFF

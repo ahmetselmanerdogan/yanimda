@@ -13,6 +13,8 @@ import {
 import {
   type EventState,
   type EventType,
+  type FalseAlarm,
+  type FalseAlarmCause,
   type KafkaEnvelope,
   type NotifyRequest,
   type Signal,
@@ -48,6 +50,8 @@ interface EventSource {
   protectedPersonId: string;
   sourceId: string;
   location?: Signal['location'];
+  /** CREATED geçişinin notu (ör. T-071 eşik görüşmesi). */
+  note?: string;
 }
 
 /** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
@@ -64,7 +68,13 @@ interface Uow {
 
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
-const WAIT_TIMERS: TimerKind[] = ['prompt-expire', 'silent-ask-expire', 'watch-off-remind', 'watch-off-operator'];
+const WAIT_TIMERS: TimerKind[] = [
+  'prompt-expire',
+  'silent-ask-expire',
+  'learning-ask-expire',
+  'watch-off-remind',
+  'watch-off-operator',
+];
 
 /** Operatörün elindeki durumlar (kilit, kapatma, zincir). */
 export const OPERATOR_STATES = new Set<EventState>([
@@ -194,7 +204,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
       };
     this.timers.on('prompt-expire', expire('cevap yok'));
-    this.timers.on('silent-ask-expire', expire('cevap yok'));
+    this.timers.on('silent-ask-expire', (job) => this.onSilentAskExpired(job));
+    this.timers.on('learning-ask-expire', expire('2. sessiz soru cevapsız'));
     this.timers.on('watch-off-operator', expire('saat takılmadı'));
     this.timers.on('watch-off-remind', async ({ eventId }) => {
       await this.withEvent(eventId, async (u) => {
@@ -214,6 +225,58 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         location: src.location,
       });
     });
+  }
+
+  /**
+   * Sessiz soru cevapsız. D-06 (T-070): kişi öğrenme modundaysa ve kural `learningMode.extraSilentAsks` veriyorsa
+   * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza ELDER bildirimi, kuralın tts kodu); o da
+   * cevapsızsa yükseltilir. SOS/FALL'da sessiz soru yoktur, değişmez. Otomatik sesli ön eleme T-072'de buraya girer.
+   */
+  private async onSilentAskExpired({ eventId }: TimerJob) {
+    const pack = this.pack;
+    const found = await this.withEvent(eventId, async (u) => {
+      if (u.ev.state !== 'DEVICE_PROMPT') return;
+      const rule = ruleFor(pack, u.ev.type);
+      const extra = rule?.learningMode?.extraSilentAsks ?? 0;
+      const now = new Date();
+      if (extra > 0 && rule?.devicePrompt?.silent && (await this.inLearningMode(u.tx, u.ev.protectedPersonId, now))) {
+        const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
+        u.ev.devicePromptUntil = new Date(now.getTime() + win).toISOString();
+        u.dirty = true;
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'SYSTEM',
+          action: 'event.prompt_repeated',
+          entityId: u.ev.id,
+          data: { reason: 'LEARNING_MODE', ask: 2, windowSec: win / 1000 },
+        });
+        u.publishes.push({
+          topic: TOPICS.eventUpdated,
+          payload: { eventId: u.ev.id, devicePromptUntil: u.ev.devicePromptUntil, reason: 'LEARNING_MODE_REASK' },
+        });
+        if (rule.devicePrompt.tts)
+          await this.notify(u.tx, u.ev.protectedPersonId, [{ code: rule.devicePrompt.tts, audience: 'ELDER' }], {
+            dedupeBase: `learning-ask:${u.ev.id}`,
+            eventId: u.ev.id,
+          });
+        await this.timers.schedule(u.ev.id, 'learning-ask-expire', win); // commit'ten önce (bkz. sınıf notu)
+        return;
+      }
+      this.escalate(u, 'cevap yok');
+    });
+    if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
+  }
+
+  private async inLearningMode(tx: Tx, protectedPersonId: string, now: Date): Promise<boolean> {
+    const until = (await this.protection.settingsOf(protectedPersonId, tx)).learningModeUntil;
+    return !!until && until > now;
+  }
+
+  /**
+   * T-071: kişiye "eşik görüşmesi" CALLBACK olayı (P4) açar. Aynı kaynak için bir kez; kişinin açık olayı varsa ona
+   * eklenir. Yeni olay açıldıysa true.
+   */
+  raiseCallback(protectedPersonId: string, sourceId: string, note: string): Promise<boolean> {
+    return this.create('CALLBACK', { protectedPersonId, sourceId, note });
   }
 
   // ---- Taramalar ----
@@ -277,7 +340,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       const w = await this.protection.sleepWindowOf(s.protectedPersonId);
       night = isInWindow(new Date(s.occurredAt), w.timezone, w.start, w.end);
     }
-    const d = decide(s, { pack: this.pack, night });
+    // T-070: kişiye özel hareketsizlik eşiği (öğrenilmiş veya aile ayarı).
+    const inactivityMin =
+      s.kind === 'INACTIVITY' ? (await this.protection.settingsOf(s.protectedPersonId)).inactivityMin : null;
+    const d = decide(s, { pack: this.pack, night, inactivityMin });
     switch (d.action) {
       case 'answer':
         await this.onUserAnswer(s);
@@ -350,7 +416,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         const now = new Date();
         const u = this.uow(tx, this.newRecord(type, rule, s, now), after, true);
         u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
-        this.transition(u, 'CREATED', 'SYSTEM');
+        this.transition(u, 'CREATED', 'SYSTEM', undefined, s.note);
         if (rule.devicePrompt?.enabled) {
           const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
           u.ev.devicePromptUntil = new Date(now.getTime() + win).toISOString();
@@ -426,7 +492,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY) kapanır.
       if (u.ev.state !== 'DEVICE_PROMPT' || WAITING_TYPES.has(u.ev.type)) return;
       this.transition(u, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
-      this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM');
+      this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM', undefined, 'USER_CANCEL');
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
     });
   }
@@ -657,12 +723,34 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     for (const a of after) await a().catch((e) => this.log.warn(`Commit sonrası iş başarısız: ${safeError(e)}`));
   }
 
-  private close(u: Uow, outcome: string, reason: string, actorKind: 'SYSTEM' | 'OPERATOR', actorId?: string) {
+  /**
+   * Olayı kapatır. FALSE_ALARM (test olayı hariç) aynı transaction'da `event.false_alarm` yayınlar (T-071, D-07):
+   * neden verilmezse operatör kapatması OPERATOR sayılır.
+   */
+  private close(
+    u: Uow,
+    outcome: string,
+    reason: string,
+    actorKind: 'SYSTEM' | 'OPERATOR',
+    actorId?: string,
+    cause?: FalseAlarmCause,
+  ) {
     u.ev.confirmedOutcome = outcome;
     u.ev.closedAt = new Date().toISOString();
     u.ev.closeReason = reason;
     this.transition(u, 'CLOSED', actorKind, actorId, reason);
     u.publishes.push({ topic: TOPICS.eventClosed, payload: u.ev });
+    const why = cause ?? (actorKind === 'OPERATOR' ? 'OPERATOR' : undefined);
+    if (outcome === 'FALSE_ALARM' && why && !u.ev.isTest) {
+      const fa: FalseAlarm = {
+        protectedPersonId: u.ev.protectedPersonId,
+        eventId: u.ev.id,
+        eventType: u.ev.type,
+        cause: why,
+        at: u.ev.closedAt,
+      };
+      u.publishes.push({ topic: TOPICS.eventFalseAlarm, payload: fa });
+    }
   }
 
   private transition(u: Uow, to: EventState, actorKind: ActorKind, actorId?: string, note?: string) {
