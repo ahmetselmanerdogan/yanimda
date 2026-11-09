@@ -3,6 +3,8 @@ import type { ChainStep, EventState, EventType, StepTarget } from '@yanimda/cont
 import {
   type Api,
   ApiError,
+  CALL_ACTIVE,
+  type CallView,
   type CloseOutcome,
   type DispatchScript,
   type EventRecord,
@@ -57,6 +59,8 @@ interface Drill {
   ev: EventRecord;
   steps: ChainStep[];
   person: { displayName: string; age: number };
+  /** T-051 tatbikat araması: "Ara" → çalıyor → (ringMs) görüşme; operatör bitirince "Ulaşıldı" önerilir. */
+  calls: CallView[];
 }
 
 export class TrainingSim {
@@ -65,7 +69,10 @@ export class TrainingSim {
   private seq = 0;
   private timer?: ReturnType<typeof setInterval>;
 
-  constructor(private readonly me = 'egitim') {}
+  constructor(
+    private readonly me = 'egitim',
+    private readonly ringMs = 1500,
+  ) {}
 
   /** Başlangıç olayları + belirli aralıkla yeni olay (0 = kapalı). */
   start(everyMs = 45_000, initial: EventType[] = ['SOS', 'FALL', 'INACTIVITY']) {
@@ -98,7 +105,12 @@ export class TrainingSim {
         { from: 'ESCALATED', to: 'OPERATOR_QUEUE', actorKind: 'SYSTEM', at: now },
       ],
     };
-    const drill = { ev, steps: [], person: { displayName: t('O-UI-TRAINING-PERSON', { n }), age: 70 + (n % 20) } };
+    const drill = {
+      ev,
+      steps: [],
+      calls: [],
+      person: { displayName: t('O-UI-TRAINING-PERSON', { n }), age: 70 + (n % 20) },
+    };
     this.drills.set(id, drill);
     this.emit({ type: 'upsert', item: this.item(drill) });
     return id;
@@ -136,6 +148,8 @@ export class TrainingSim {
       const s = this.current(d, n);
       s.calledAt ??= new Date().toISOString();
       if (d.ev.state === 'OPERATOR_ASSIGNED') this.go(d, 'CONTACT_CHAIN');
+      if (s.target !== 'EMERGENCY' && !d.calls.some((c) => c.stepN === n && CALL_ACTIVE.includes(c.status)))
+        this.ring(d, n);
       return this.changed(d);
     },
     scriptRead: async (id, n) => {
@@ -148,6 +162,7 @@ export class TrainingSim {
       const d = this.mine(id);
       const s = this.current(d, n);
       if (b.result === 'SKIPPED' && !b.reason?.trim()) throw new ApiError(400, 'Atlama gerekçe ister');
+      for (const c of d.calls.filter((x) => x.stepN === n)) this.end(c);
       Object.assign(s, {
         result: b.result,
         assessment: b.assessment,
@@ -197,6 +212,28 @@ export class TrainingSim {
       };
       return { kind: 'dispatch112', code: 'O-SCRIPT-112', fields, text: t('O-SCRIPT-112', fields) };
     },
+    telephonyToken: async () => ({
+      provider: 'fake' as const,
+      identity: this.me,
+      token: 'egitim',
+      ttlSec: 3600,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    }),
+    hold: async (callId, on) => {
+      const c = this.talking(callId);
+      Object.assign(c, { held: on, conference: true });
+      return { ...c };
+    },
+    conference: async (callId) => {
+      const c = this.talking(callId);
+      Object.assign(c, { conference: true, parties: (c.parties ?? 0) + 1 });
+      return { ...c };
+    },
+    hangup: async (callId) => {
+      const c = this.callOf(callId).call;
+      this.end(c);
+      return { ...c };
+    },
     close: async (id, outcome: CloseOutcome) => {
       const d = this.mine(id);
       const emergency = outcome === 'EMERGENCY';
@@ -204,12 +241,58 @@ export class TrainingSim {
         throw new ApiError(409, 'Acil teyitli olay yalnız EMERGENCY ile kapanır');
       if (d.ev.state === 'CONFIRMED_OK' && emergency) throw new ApiError(409, 'Olay iyi olarak teyit edildi');
       this.skipPending(d, 'closed');
+      for (const c of d.calls) this.end(c);
       d.ev.state = 'CLOSED';
       this.emit({ type: 'remove', eventId: d.ev.id });
     },
   };
 
   // ---- iç ----
+  private ring(d: Drill, n: number) {
+    const c: CallView = {
+      id: `${d.ev.id}-arama-${d.calls.length + 1}`,
+      stepN: n,
+      status: 'ringing',
+      answered: false,
+      suggestedResult: null,
+      durationSec: null,
+      recorded: false,
+      conference: false,
+      held: false,
+      parties: 0,
+      error: null,
+      createdAt: new Date().toISOString(),
+    };
+    d.calls.push(c);
+    setTimeout(() => {
+      if (c.status === 'ringing') Object.assign(c, { status: 'in-progress', answered: true });
+    }, this.ringMs);
+  }
+  private end(c: CallView) {
+    if (!CALL_ACTIVE.includes(c.status)) return;
+    const sec = Math.max(0, Math.round((Date.now() - Date.parse(c.createdAt)) / 1000));
+    Object.assign(
+      c,
+      c.answered
+        ? { status: 'completed', suggestedResult: 'REACHED', durationSec: sec, held: false }
+        : { status: 'canceled', suggestedResult: null, held: false },
+    );
+  }
+  private callOf(callId: string): { d: Drill; call: CallView } {
+    for (const d of this.drills.values()) {
+      const call = d.calls.find((c) => c.id === callId);
+      if (call) {
+        if (d.ev.operatorId !== this.me) throw new ApiError(403, 'Arama başka operatörde');
+        return { d, call };
+      }
+    }
+    throw new ApiError(404, 'Arama yok');
+  }
+  private talking(callId: string): CallView {
+    const { call } = this.callOf(callId);
+    if (call.status !== 'in-progress') throw new ApiError(409, 'Görüşme sürmüyor');
+    return call;
+  }
   private get(id: string): Drill {
     const d = this.drills.get(id);
     if (!d) throw new ApiError(404, 'Olay yok');
@@ -248,6 +331,7 @@ export class TrainingSim {
     return {
       event: structuredClone(d.ev),
       chain: d.steps.length ? { procedureVersion: 0, steps: structuredClone(d.steps), current: cur?.n ?? null } : null,
+      calls: structuredClone(d.calls),
     };
   }
   private changed(d: Drill): EventWithChain {

@@ -64,8 +64,20 @@ export interface CallView {
   suggestedResult: 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER' | null;
   durationSec: number | null;
   recorded: boolean;
+  /** T-051: görüşme konferansta, aranan beklemede, konferansa eklenen yakın sayısı. */
+  conference?: boolean;
+  held?: boolean;
+  parties?: number;
   error: string | null;
   createdAt: string;
+}
+/** T-051 `GET /v1/telephony/token`: yazılım telefonu (Twilio Voice) token'ı; sahte sağlayıcıda sahte. */
+export interface VoiceToken {
+  provider: 'twilio' | 'fake';
+  identity: string;
+  token: string;
+  ttlSec: number;
+  expiresAt: string;
 }
 export const CALL_ACTIVE: CallStatus[] = ['queued', 'ringing', 'in-progress'];
 
@@ -120,6 +132,7 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     return (r.status === 204 ? undefined : await r.json()) as T;
   }
   const ev = (id: string) => `/events/${encodeURIComponent(id)}`;
+  const tc = (callId: string) => `/telephony/calls/${encodeURIComponent(callId)}`;
   return {
     queue: () => req<{ items: QueueItem[]; total: number }>('GET', '/queue?limit=200'),
     event: (id: string) => req<EventWithChain>('GET', ev(id)),
@@ -138,6 +151,11 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
         ...(note ? { note } : {}),
         ...(followUpAfterHours ? { followUpAfterHours } : {}),
       }),
+    telephonyToken: () => req<VoiceToken>('GET', '/telephony/token'),
+    hold: (callId: string, on: boolean) => req<CallView>('POST', `${tc(callId)}/hold`, { on }),
+    conference: (callId: string, contactIndex = 1) =>
+      req<CallView>('POST', `${tc(callId)}/conference`, { contactIndex }),
+    hangup: (callId: string) => req<CallView>('POST', `${tc(callId)}/hangup`),
   };
 }
 export type Api = ReturnType<typeof createApi>;
