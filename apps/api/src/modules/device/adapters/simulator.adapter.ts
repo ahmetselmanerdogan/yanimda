@@ -10,6 +10,7 @@ import {
   type RingRequest,
   UnsupportedSignalError,
 } from '../device.types';
+import { simulatorEnabled } from '../simulator-mode';
 
 /**
  * packages/simulator ve kayıtsız cihazlar (geliştirme). Saat gibi davranır, push göndermez.
@@ -24,11 +25,7 @@ export class SimulatorAdapter implements DeviceAdapter {
   private readonly enabled: boolean;
 
   constructor(opts: { enabled?: boolean } = {}) {
-    this.enabled =
-      opts.enabled ??
-      (process.env.SIMULATOR_ENABLED !== undefined
-        ? process.env.SIMULATOR_ENABLED === 'true'
-        : process.env.NODE_ENV !== 'production');
+    this.enabled = opts.enabled ?? simulatorEnabled(); // boş değer = tanımsız (.env.example)
   }
 
   capabilities(): DeviceCapabilities {

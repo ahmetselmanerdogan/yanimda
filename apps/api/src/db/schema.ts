@@ -52,6 +52,28 @@ export const device = deviceSchema.table('device', {
   onWrist: boolean('on_wrist'),
   connectivity: text('connectivity'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
+  // T-041
+  enrolledAt: timestamptz('enrolled_at'),
+  revokedAt: timestamptz('revoked_at'),
+  osVersion: text('os_version'),
+  appVersion: text('app_version'),
+  pushProvider: text('push_provider'),
+  pushToken: text('push_token'),
+  pushSandbox: boolean('push_sandbox'),
+  pushUpdatedAt: timestamptz('push_updated_at'),
+});
+
+export const profileSchema = pgSchema('profile');
+
+/** T-040/T-041 davet kodu: sha256(kod) saklanır; 15 dk, tek kullanım. */
+export const invite = profileSchema.table('invite', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  codeHash: text('code_hash').notNull(),
+  expiresAt: timestamptz('expires_at').notNull(),
+  usedAt: timestamptz('used_at'),
+  usedByDeviceId: uuid('used_by_device_id'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
 export const auditSchema = pgSchema('audit');

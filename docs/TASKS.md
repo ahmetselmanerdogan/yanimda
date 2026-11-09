@@ -45,8 +45,8 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-037 Gelen arama ve otomatik cevap (A-10)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
-- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04)
-- [ ] T-041 /v1/devices/enroll, cihaz token, /config
+- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — davet kodu üretimi T-041 ile geldi (yönetici token'ıyla; SMS ve aile yetkisi açık)
+- [x] T-041 /v1/devices/enroll, cihaz token, /config — aile "cihazı kaldır" T-020'ye kadar yönetici token'ıyla
 - [ ] T-042 phone: davet → 6 ekran kurulum (B-01, B-02)
 - [ ] T-043 phone: köprü ve tampon (B-03)
 - [ ] T-044 phone: ana ekran, foreground service, koruma ve gece modu (B-04, B-05, B-06, B-09)
@@ -69,7 +69,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-070 Öğrenme modu (D-06)
 - [ ] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12)
 - [ ] T-072 Otomatik sesli ön eleme (D-12)
-- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. Açık: davet/kayıt (T-040/T-041), APNs (T-053), CMMotionActivity hareketsizlik, HealthKit
+- [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme). Açık: APNs (T-053), CMMotionActivity hareketsizlik, HealthKit
 - [ ] T-074 Amir panosu (E-11)
 
 ## Epik 8 · Sertleştirme (S8)

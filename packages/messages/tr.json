@@ -39,6 +39,18 @@
     "channel": "phone",
     "text": "İnternet yok. Yardım isteğiniz saklandı, bağlanınca hemen gönderilecek."
   },
+  "P-PAIR": {
+    "channel": "phone",
+    "text": "Aileniz size 6 haneli bir kod gönderdi. Kodu buraya yazın.",
+    "action": "Eşleştir"
+  },
+  "P-PAIR-WRONG": { "channel": "phone", "text": "Kod doğru değil veya süresi dolmuş. Ailenizden yeni kod isteyin." },
+  "P-PAIR-WAIT": { "channel": "phone", "text": "Çok fazla deneme yapıldı. 15 dakika sonra yeniden deneyin." },
+  "P-PAIR-OFFLINE": { "channel": "phone", "text": "Bağlantı kurulamadı. İnternetinizi kontrol edip yeniden deneyin." },
+  "P-PAIR-REMOVED": {
+    "channel": "phone",
+    "text": "Bu telefonun eşleşmesi kaldırıldı. Ailenizden yeni kod isteyin."
+  },
   "F-EVT-FALL": {
     "channel": "family",
     "text": "{name} düşmüş olabilir. Operatörümüz arıyor. Sizi bilgilendireceğiz.",

@@ -27,6 +27,9 @@ paths:
         üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) partiyi 400 ile reddeder.
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
         T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
+        T-041: `Authorization: Bearer <cihaz token>`. Token'lı cihaz yalnız kendi deviceId ve protectedPersonId'si
+        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). Token'sız istek yalnız simülatör açıkken
+        (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
         '202':
           description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)
@@ -39,6 +42,8 @@ paths:
                   accepted: { type: integer, minimum: 0, description: Yeni yazılan sinyal sayısı }
                   duplicates: { type: integer, minimum: 0, description: Daha önce alınmış (yok sayılan) sinyal sayısı }
         '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '503':
           description: Geçici olarak yazılamadı veya aynı sinyal şu an işleniyor; yeniden deneyin
           headers:
@@ -140,6 +145,150 @@ paths:
                       state: { type: string }
                       priority: { type: integer }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/invite:
+    post:
+      summary: Cihaz davet kodu üret. C-04 (T-040 parçası), T-041
+      description: |
+        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. T-020'ye kadar `x-admin-token`
+        ile korunur (sonra FAMILY yalnız kendi kişisine). SMS gönderimi T-040/notify ile gelir.
+      operationId: createInvite
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: Kod
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expiresAt]
+                properties:
+                  code: { type: string, pattern: '^\d{6}$' }
+                  expiresAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /devices/enroll:
+    post:
+      summary: Cihaz kaydı (davet kodu → cihaz token'ı). T-041
+      description: |
+        deviceId istemcide üretilir (UUID, küçük harf) ve sinyallerde aynen kullanılır. Yanıt yolda kaybolursa aynı
+        cihaz aynı kodla kodun süresi içinde yeniden dener ve 200 ile yeni token alır. Yanlış/süresi dolmuş/başka
+        cihazın kullandığı kod 400; kayıtlı deviceId 409; aynı IP'den 15 dk'da 10 hatalı kod 429.
+      operationId: enrollDevice
+      security: [] # davet kodu kimlik doğrular
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inviteCode, deviceId, kind]
+              properties:
+                inviteCode: { type: string, pattern: '^\d{6}$' }
+                deviceId: { type: string, format: uuid }
+                kind: { enum: [WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE] }
+                model: { type: string, maxLength: 100 }
+                osVersion: { type: string, maxLength: 50 }
+                appVersion: { type: string, maxLength: 50 }
+      responses:
+        '201': { $ref: '#/components/responses/DeviceToken' }
+        '200': { $ref: '#/components/responses/DeviceToken' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/token:
+    post:
+      summary: Cihaz token'ını yenile (geçerli token ile). T-041
+      description: Token 1 yıl geçerlidir; istemci `refreshAfter` sonrasında (bitişe 30 gün kala) yeniler.
+      operationId: refreshDeviceToken
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/DeviceToken' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/config:
+    get:
+      summary: Cihaz yapılandırması (eşikler, uyku penceresi, katalog metinleri). T-041
+      operationId: getDeviceConfig
+      security: [{ deviceToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: Yapılandırma
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages]
+                properties:
+                  deviceId: { type: string }
+                  protectedPersonId: { type: string }
+                  kind: { type: string }
+                  rulesVersion: { type: integer }
+                  sleepWindow:
+                    type: object
+                    properties:
+                      timezone: { type: string }
+                      start: { type: string, example: '22:00' }
+                      end: { type: string, example: '08:00' }
+                  devicePrompt:
+                    type: object
+                    properties:
+                      fallWindowSec: { type: [integer, 'null'] }
+                      inactivityWindowSec: { type: [integer, 'null'] }
+                  inactivityThresholdMin: { type: [integer, 'null'] }
+                  messages:
+                    type: object
+                    description: Katalog metinleri (telefon P-*, saat W-*)
+                    additionalProperties:
+                      type: object
+                      required: [text]
+                      properties:
+                        text: { type: string }
+                        action: { type: string }
+        '304': { description: Değişmedi (If-None-Match eşleşti) }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/push-token:
+    put:
+      summary: Push token kaydı (APNS yalnız IOS_PHONE). T-041, T-053 kullanır
+      operationId: putPushToken
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider: { enum: [APNS, FCM] }
+                token: { type: string, maxLength: 4096 }
+                sandbox: { type: boolean, description: APNs geliştirme ortamı }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}:
+    delete:
+      summary: Cihazı kaldır (token iptal → 401). T-041
+      description: T-020'ye kadar `x-admin-token` ile; sonra FAMILY kendi kişisinin cihazını kaldırır.
+      operationId: revokeDevice
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: x-admin-token, in: header, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Kaldırıldı }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /admin/rules/reload:
     post:
       summary: Kural paketini sıcak yükle (yönetici). D-02, T-012
@@ -172,6 +321,19 @@ components:
     deviceToken: { type: http, scheme: bearer }
     operatorToken: { type: http, scheme: bearer }
   responses:
+    DeviceToken:
+      description: Cihaz token'ı (HS256 JWT, 1 yıl)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deviceId, protectedPersonId, token, expiresAt, refreshAfter]
+            properties:
+              deviceId: { type: string, format: uuid }
+              protectedPersonId: { type: string, format: uuid }
+              token: { type: string }
+              expiresAt: { type: string, format: date-time }
+              refreshAfter: { type: string, format: date-time }
     Problem:
       description: RFC 7807
       content:
