@@ -12,6 +12,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { NotifyModule } from './modules/notify/notify.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { QueueModule } from './modules/queue/queue.module';
+import { ReportModule } from './modules/report/report.module';
 import { RulesModule } from './modules/rules/rules.module';
 import { SignalModule } from './modules/signal/signal.module';
 
@@ -31,6 +32,7 @@ import { SignalModule } from './modules/signal/signal.module';
     QueueModule,
     MetricsModule,
     NotifyModule,
+    ReportModule,
     LearningModule,
     FalseAlarmModule,
   ],

@@ -110,8 +110,11 @@ describe('kural tablosu (geçiş → aile bildirim kodu)', () => {
     ['FOLLOW_UP', T('CONTACT_CHAIN', 'CLOSED'), { confirmedOutcome: 'UNREACHABLE' }, null],
     ['FALL', T('CONFIRMED_OK', 'CLOSED'), { confirmedOutcome: 'OK' }, null],
     ['FALL', T('DEVICE_PROMPT', 'ESCALATED'), {}, null],
-    ['FALL', T('ESCALATED', 'OPERATOR_QUEUE'), { isTest: true }, null], // test olayı aileye gitmez
-    ['SOS', T('CONFIRMED_EMERGENCY', 'DISPATCH'), { isTest: true }, null],
+    // T-063 test olayı: yalnız test kodları, acil bildirim yok
+    ['TEST', T('CREATED', 'OPERATOR_QUEUE'), { isTest: true }, 'F-TEST-QUEUED'],
+    ['TEST', T('OPERATOR_ASSIGNED', 'OPERATOR_QUEUE'), { isTest: true }, null],
+    ['TEST', T('CONTACT_CHAIN', 'CLOSED'), { isTest: true, confirmedOutcome: 'TEST' }, 'F-TEST-DONE'],
+    ['TEST', T('CONTACT_CHAIN', 'DISPATCH'), { isTest: true }, null],
   ] as const)('%s %j %j → %s', (type, t, extra, code) => {
     expect(familyNoticeFor(ev(type, extra), t)).toBe(code);
   });

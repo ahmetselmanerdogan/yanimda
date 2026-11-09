@@ -9,7 +9,7 @@ import type { EventState, EventType } from '@yanimda/contracts';
  *  - DISPATCH (112'ye ulaşıldı) → F-EVT-112
  *  - Kişi saatten iptal etti (CANCELLED_BY_USER → CLOSED), FALL/SOS → F-EVT-OK
  *  - Takip araması iyi kapandı (FOLLOW_UP, OK) → F-FOLLOWUP
- * Test olayları aileye bildirilmez.
+ * Test olayları (T-063) yalnız "test" kodlarıyla: kuyruğa düşünce F-TEST-QUEUED, kapanınca F-TEST-DONE.
  */
 export interface EventFacts {
   id: string;
@@ -32,7 +32,10 @@ const QUEUE_CODE: Partial<Record<EventType, string>> = {
 const REQUEUE_FROM = new Set<EventState>(['OPERATOR_ASSIGNED', 'CONTACT_CHAIN']);
 
 export function familyNoticeFor(ev: EventFacts, t: TransitionFacts): string | null {
-  if (ev.isTest) return null;
+  if (ev.isTest) {
+    if (t.to === 'OPERATOR_QUEUE' && !(t.from && REQUEUE_FROM.has(t.from))) return 'F-TEST-QUEUED';
+    return t.to === 'CLOSED' ? 'F-TEST-DONE' : null;
+  }
   if (t.to === 'OPERATOR_QUEUE' && !(t.from && REQUEUE_FROM.has(t.from))) return QUEUE_CODE[ev.type] ?? null;
   if (t.to === 'DISPATCH') return 'F-EVT-112';
   if (t.to === 'CLOSED' && t.from === 'CANCELLED_BY_USER' && (ev.type === 'FALL' || ev.type === 'SOS'))
@@ -64,7 +67,9 @@ const DELIVERY: Record<string, Delivery> = {
   'F-BAT-10': INFO,
   'F-FOLLOWUP': INFO,
   'F-SUB-PAY': INFO,
+  'F-TEST-DONE': INFO,
   'F-EVT-OK': FEED,
+  'F-TEST-QUEUED': FEED,
   'F-DAILY': FEED,
   'F-LEARN-REPORT': FEED, // T-070 dönem sonu profil raporu
   'F-FA-REVIEW': INFO, //   T-071 eşik önerisi (operatör arayacak)

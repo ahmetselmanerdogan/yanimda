@@ -17,6 +17,8 @@ export interface Rule {
   remindAfterMin?: number;
   operatorAfterMin?: number;
   afterHours?: number;
+  /** Kişi/yakın aramalarında operatör metni (112 hariç), ör. TEST → O-SCRIPT-TEST (T-063). */
+  operatorScript?: string;
   /** D-06: öğrenme modunda operatöre düşmeden önce ek sessiz soru (yalnız sessiz soru olan kurallar). */
   learningMode?: { extraSilentAsks?: number };
 }

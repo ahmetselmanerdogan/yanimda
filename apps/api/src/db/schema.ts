@@ -32,6 +32,20 @@ export const signal = signalSchema.table('signal', {
   receivedAt: timestamptz('received_at').notNull().defaultNow(),
 });
 
+/** T-062 günlük özet (kişinin yerel günü). */
+export const dailySummary = signalSchema.table('daily_summary', {
+  protectedPersonId: text('protected_person_id').notNull(),
+  day: text('day').notNull(),
+  steps: integer('steps'),
+  hrMin: integer('hr_min'),
+  hrAvg: integer('hr_avg'),
+  hrMax: integer('hr_max'),
+  wristMinutes: integer('wrist_minutes').notNull().default(0),
+  restStart: timestamptz('rest_start'),
+  restEnd: timestamptz('rest_end'),
+  computedAt: timestamptz('computed_at').notNull().defaultNow(),
+});
+
 export const outbox = eventSchema.table('outbox', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   topic: text('topic').notNull(),
@@ -95,6 +109,7 @@ export const protectedPerson = profileSchema.table('protected_person', {
   lng: doublePrecision('lng'),
   geocodedAt: timestamptz('geocoded_at'),
   doorAccessNoteEnc: text('door_access_note_enc'),
+  dailySummaryEnabled: boolean('daily_summary_enabled').notNull().default(true),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });

@@ -54,6 +54,7 @@ rules:
   - type: TEST
     priority: 4
     chain: [CALL_WATCH, CALL_PHONE]
+    operatorScript: O-SCRIPT-TEST
   - type: FOLLOW_UP
     priority: 4
     chain: [CALL_PHONE, CALL_CONTACT:1]
