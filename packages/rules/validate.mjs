@@ -38,9 +38,12 @@ for (const f of yamls.filter((f) => !f.startsWith('procedures.'))) {
   const proc = procedures.get(doc.country);
   if (!proc) fail(`${f}: ${doc.country} için procedures.*.yaml yok`);
   else
-    for (const r of doc.rules)
+    for (const r of doc.rules) {
       for (const step of r.chain)
         if (!proc.steps[step.split(':')[0]]) fail(`${f}: ${r.type} zincirindeki ${step} prosedürde tanımlı değil`);
+      if (r.operatorScript && !catalog[r.operatorScript])
+        fail(`${f}: ${r.type} → ${r.operatorScript} mesaj kataloğunda yok`);
+    }
   console.log(`${f}: ok (${doc.rules.length} kural)`);
 }
 process.exit(failed ? 1 : 0);

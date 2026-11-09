@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -19,6 +21,7 @@ import {
   type SupervisorAlert,
   TOPICS,
 } from '@yanimda/contracts';
+import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus } from '../../common/bus';
@@ -75,6 +78,8 @@ export const OPERATOR_STATES = new Set<EventState>([
   'DISPATCH',
 ]);
 export const DEFAULT_FOLLOW_UP_HOURS = 24;
+/** T-063: aynı kişi için iki test arası en az. */
+export const TEST_COOLDOWN_MS = 10 * 60_000;
 export const MAX_FOLLOW_UP_HOURS = 168;
 const CLOSE_OUTCOMES = new Set(['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE']);
 /** D-04 operatör kilidi süresi (varsayılan 300 sn); her operatör isteği uzatır. */
@@ -329,6 +334,36 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         sourceId: `watch-off-morning:${c.protectedPersonId}:${c.at.toISOString().slice(0, 10)}`,
       });
     }
+  }
+
+  /**
+   * T-063 (C-05) test çağrısı: aile/yönetici isteğiyle TEST olayı (P4, isTest, 112'siz; operatör kurulum metniyle
+   * arar). Aynı istek anahtarı aynı olayı döner. Açık olay varsa 409; 10 dk içinde ikinci test 429.
+   */
+  async requestTest(protectedPersonId: string, requestKey: string, now = new Date()): Promise<{ eventId: string }> {
+    const sourceId = `test-sos:${requestKey}`;
+    const find = async () => {
+      const r = (await this.db.execute(sql`
+        SELECT id FROM event.event WHERE ${sourceId} = ANY(source_signal_ids) LIMIT 1`)) as unknown as {
+        rows: { id: string }[];
+      };
+      return r.rows[0]?.id;
+    };
+    const same = await find();
+    if (same) return { eventId: same };
+    const r = (await this.db.execute(sql`
+      SELECT count(*) FILTER (WHERE state <> 'CLOSED')::int AS open,
+             count(*) FILTER (WHERE type = 'TEST' AND created_at > ${new Date(now.getTime() - TEST_COOLDOWN_MS)})::int AS recent
+      FROM event.event WHERE protected_person_id = ${protectedPersonId}`)) as unknown as {
+      rows: { open: number; recent: number }[];
+    };
+    const { open, recent } = r.rows[0] ?? { open: 0, recent: 0 };
+    if (open) throw new ConflictException('Açık olay var; test şimdi başlatılamaz');
+    if (recent) throw new HttpException('Son 10 dakikada test yapıldı', HttpStatus.TOO_MANY_REQUESTS);
+    await this.create('TEST', { protectedPersonId, sourceId });
+    const id = await find();
+    if (!id) throw new ConflictException('Test olayı açılamadı');
+    return { eventId: id };
   }
 
   /** Olay açar veya kişinin açık olayına ekler. Yeni olay açıldıysa true. */

@@ -2,13 +2,14 @@ import { Module } from '@nestjs/common';
 
 import { FieldCipher } from '../../common/field-cipher';
 import { EnrollmentModule } from '../device/enrollment.module';
+import { EventModule } from '../event/event.module';
 import { GEOCODER, geocoderFromEnv } from './geocoder';
 import { ProfileController, ProfileGuard } from './profile.controller';
 import { FIELD_CIPHER, ProfileService } from './profile.service';
 
 /** T-040 profil + sağlık (health.medical_summary). Davet kodu EnrollmentService'ten (T-041). */
 @Module({
-  imports: [EnrollmentModule],
+  imports: [EnrollmentModule, EventModule],
   controllers: [ProfileController],
   providers: [
     ProfileService,
@@ -16,6 +17,6 @@ import { FIELD_CIPHER, ProfileService } from './profile.service';
     { provide: FIELD_CIPHER, useFactory: () => FieldCipher.fromEnv() },
     { provide: GEOCODER, useFactory: () => geocoderFromEnv() },
   ],
-  exports: [ProfileService],
+  exports: [ProfileService, ProfileGuard],
 })
 export class ProfileModule {}

@@ -184,6 +184,14 @@
     "channel": "family",
     "text": "konum bilinmiyor"
   },
+  "F-TEST-QUEUED": {
+    "channel": "family",
+    "text": "Test: {name} için test çağrısı operatörümüze ulaştı."
+  },
+  "F-TEST-DONE": {
+    "channel": "family",
+    "text": "Test tamamlandı. {name} için koruma çalışıyor."
+  },
   "O-NEW-SOS": {
     "channel": "console",
     "text": "Yeni SOS: {name}, {age}, {district}",
@@ -220,6 +228,10 @@
   "O-SCRIPT-CONTACT": {
     "channel": "console",
     "text": "Merhaba, ben Yanımda'dan {operator}. {name} için bir uyarı aldık ve kendisine ulaşamadık. Şu an yanında mısınız, ona ulaşabilir misiniz?"
+  },
+  "O-SCRIPT-TEST": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Bu bir test çağrısı: saatinizin ve telefonunuzun bize ulaştığını kontrol ediyoruz. Sesimi iyi duyuyor musunuz? Yardım düğmesini nasıl kullanacağınızı birlikte deneyelim mi?"
   },
   "O-SCRIPT-NEIGHBOR": {
     "channel": "console",

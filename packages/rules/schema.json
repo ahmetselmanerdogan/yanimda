@@ -64,7 +64,12 @@
           },
           "stepTimeoutSec": { "type": "object", "additionalProperties": { "type": "integer" } },
           "silenceIsEmergencySec": { "type": "integer" },
-          "followUpAfterHours": { "type": "integer" }
+          "followUpAfterHours": { "type": "integer" },
+          "operatorScript": {
+            "type": "string",
+            "pattern": "^O-SCRIPT-[A-Z0-9-]+$",
+            "description": "Bu olay tipinde kişi/yakın aramalarında operatör metni (112 hariç); ör. TEST → kurulum görüşmesi"
+          }
         },
         "additionalProperties": false
       }
