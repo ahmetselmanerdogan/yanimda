@@ -265,6 +265,46 @@ paths:
         '204': { description: Closed }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /supervisor/dashboard:
+    get:
+      summary: Amir özeti — kuyruk, işlemdeki olay, aktif operatör, son 24 saat sonuçları ve üstlenme SLA. E-09, T-025
+      description: Prometheus metrikleri ayrıca API'nin iç ağdaki METRICS_PORT'unda `/metrics` (genel API'de yok).
+      operationId: supervisorDashboard
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Özet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  at: { type: string, format: date-time }
+                  queue:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        priority: { type: integer }
+                        waiting: { type: integer }
+                        oldestWaitSec: { type: [integer, 'null'] }
+                  inProgress: { type: integer }
+                  activeOperators: { type: integer }
+                  last24h:
+                    type: object
+                    properties:
+                      closed: { type: integer }
+                      byOutcome: { type: object, additionalProperties: { type: integer } }
+                      falseAlarmRatio: { type: number }
+                      claim:
+                        type: object
+                        properties:
+                          count: { type: integer }
+                          p50Sec: { type: [number, 'null'] }
+                          p95Sec: { type: [number, 'null'] }
+                          overSlaCount: { type: integer, description: 10 sn hedefini aşan üstlenme }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
     get:
       summary: Korunan kişinin koruma durumu. D-05, T-014

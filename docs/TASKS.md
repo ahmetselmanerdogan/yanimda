@@ -31,7 +31,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-022 GET /v1/queue + WebSocket; claim (E-02)
 - [x] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10) — tıbbi özet T-040'ı bekliyor; 04 dokümanı okunamadı, düzen görev kitabından
 - [x] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06) — tıbbi alanlar T-040'ı bekliyor
-- [ ] T-025 SLA sayaçları ve metrikler (E-09, D-11)
+- [x] T-025 SLA sayaçları ve metrikler (E-09, D-11)
 - [ ] T-026 Playwright e2e
 
 ## Epik 3 · Wear OS saat (S3) — repo: yanimda-android
