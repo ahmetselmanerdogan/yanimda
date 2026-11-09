@@ -139,6 +139,44 @@ export const contact = profileSchema.table('contact', {
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
+export const notifySchema = pgSchema('notify');
+
+/** T-053 aile/kişi uygulamasının push token'ı. */
+export const pushTarget = notifySchema.table('push_target', {
+  id: uuid('id').primaryKey(),
+  subject: text('subject').notNull(),
+  platform: text('platform').notNull(),
+  token: text('token').notNull(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-053 bildirim (alıcı × kanal). Metin ve numara yok: kod + alıcı kimliği. */
+export const notification = notifySchema.table('notification', {
+  id: uuid('id').primaryKey(),
+  dedupeKey: text('dedupe_key').notNull(),
+  code: text('code').notNull(),
+  audience: text('audience').notNull(),
+  urgency: text('urgency').notNull(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  eventId: uuid('event_id'),
+  channel: text('channel').notNull(),
+  recipientKind: text('recipient_kind').notNull(),
+  recipientId: text('recipient_id').notNull(),
+  vars: jsonb('vars'),
+  status: text('status').notNull().default('queued'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamptz('next_attempt_at').notNull().defaultNow(),
+  leaseUntil: timestamptz('lease_until'),
+  fallbackAt: timestamptz('fallback_at'),
+  fallbackDone: boolean('fallback_done').notNull().default(false),
+  fallbackOf: uuid('fallback_of'),
+  providerId: text('provider_id'),
+  error: text('error'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  sentAt: timestamptz('sent_at'),
+  deliveredAt: timestamptz('delivered_at'),
+});
+
 export const telephonySchema = pgSchema('telephony');
 
 /** T-050 CPaaS araması. Numara tutulmaz (contact_id). */

@@ -36,7 +36,8 @@ export interface CpaasProvider {
   hangup(providerCallId: string): Promise<void>;
   fetchRecording(recordingId: string): Promise<Buffer>;
   deleteRecording(recordingId: string): Promise<void>;
-  sendSms(to: string, body: string): Promise<{ providerId: string }>;
+  /** statusCallback: teslim raporu webhook'u (T-053). */
+  sendSms(to: string, body: string, statusCallback?: string): Promise<{ providerId: string }>;
   /** Metni okuyup kapatan arama (D-08 sesli bildirim). */
   ttsCall(to: string, text: string): Promise<{ providerCallId: string }>;
   /** Webhook imzası (Twilio X-Twilio-Signature şeması). */

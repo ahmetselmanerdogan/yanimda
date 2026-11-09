@@ -71,12 +71,10 @@ export class TwilioProvider implements CpaasProvider {
     if (!r.ok && r.status !== 404) throw new Error(`Twilio kayıt silinemedi: HTTP ${r.status}`);
   }
 
-  async sendSms(to: string, text: string) {
-    const j = (await this.req(
-      'POST',
-      '/Messages.json',
-      new URLSearchParams({ To: to, From: this.cfg.from, Body: text }),
-    )) as {
+  async sendSms(to: string, text: string, statusCallback?: string) {
+    const p = new URLSearchParams({ To: to, From: this.cfg.from, Body: text });
+    if (statusCallback) p.set('StatusCallback', statusCallback);
+    const j = (await this.req('POST', '/Messages.json', p)) as {
       sid: string;
     };
     return { providerId: j.sid };

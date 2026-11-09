@@ -100,7 +100,9 @@ export class FakeProvider implements CpaasProvider {
     return { providerId: `SMfake${randomUUID()}` };
   }
 
-  async ttsCall() {
+  readonly tts: { to: string; text: string }[] = [];
+  async ttsCall(to: string, text: string) {
+    this.tts.push({ to, text });
     return { providerCallId: `CAfake${randomUUID()}` };
   }
 

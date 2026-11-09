@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { safeError } from '../../common/safe-error';
 import type { Db } from '../../db/client';
 import { device } from '../../db/schema';
+import type { FcmClient, FcmMessage } from '../notify/fcm-client';
 import type { ApnsClient, ApnsRequest } from './apns/apns-client';
 import { type PushMessage, type PushPort, RecordingPush } from './push.port';
 
@@ -15,7 +16,7 @@ export const IOS_PROMPT_CATEGORY = 'yanimda.inactivity';
 
 /**
  * PushPort'un gerçek uygulaması: cihazın push sağlayıcısını ve token'ını (T-041 `PUT /devices/{id}/push-token`)
- * okur, APNs'e yönlendirir. FCM T-053'ün kalan kısmında; o zamana kadar FCM cihazlarına giden mesajlar kaydedilir.
+ * okur, APNs'e veya FCM'e (T-053) yönlendirir; sağlayıcısı yapılandırılmamış mesajlar kaydedilir.
  * Geçersiz token (uygulama silindi) cihaz kaydından temizlenir. Log'da token ve kişi bilgisi yok.
  */
 export class DevicePush implements PushPort {
@@ -27,6 +28,7 @@ export class DevicePush implements PushPort {
     private readonly db: Db,
     private readonly apns: Pick<ApnsClient, 'send'> | null,
     private readonly clock: () => Date = () => new Date(),
+    private readonly fcm: Pick<FcmClient, 'send'> | null = null,
   ) {}
 
   async send(msg: PushMessage): Promise<void> {
@@ -39,6 +41,7 @@ export class DevicePush implements PushPort {
       .from(device)
       .where(eq(device.id, msg.deviceId));
     if (!row?.token || !row.provider) return 'no-token';
+    if (row.provider === 'FCM' && this.fcm) return this.viaFcm(msg, row.token);
     if (row.provider !== 'APNS' || !this.apns) {
       await this.recorded.send(msg);
       return 'unconfigured';
@@ -56,17 +59,30 @@ export class DevicePush implements PushPort {
       case 'ok':
         return 'sent';
       case 'invalid-token':
-        // Uygulama silinmiş veya token başka uygulamanın: bir daha gönderme. Uygulama açılınca yenisini kaydeder.
-        await this.db
-          .update(device)
-          .set({ pushToken: null, pushUpdatedAt: this.clock() })
-          .where(eq(device.id, msg.deviceId));
-        this.log.log(`APNs token geçersiz (${res.reason}); cihaz kaydından silindi`);
-        return 'invalid-token';
+        return this.dropToken(msg.deviceId, `APNs ${res.reason}`);
       default:
         this.log.warn(`APNs ${res.status}: ${res.reason}`);
         return res.status;
     }
+  }
+
+  /** FCM (Android saat/telefon): veri mesajı; NOTICE ve PROMPT ayrıca görünür bildirim. */
+  private async viaFcm(msg: PushMessage, token: string): Promise<PushOutcome> {
+    const m: FcmMessage = { token, data: msg.data, priority: msg.priority, ttlSec: msg.ttlSec };
+    if (msg.data.type === 'NOTICE' && msg.data.code) m.body = t(msg.data.code);
+    if (msg.data.type === 'WAKE') m.collapseKey = 'wake';
+    const res = await this.fcm!.send(m);
+    if (res.status === 'ok') return 'sent';
+    if (res.status === 'invalid-token') return this.dropToken(msg.deviceId, `FCM ${res.reason}`);
+    this.log.warn(`FCM ${res.status}: ${res.reason}`);
+    return res.status;
+  }
+
+  private async dropToken(deviceId: string, why: string): Promise<PushOutcome> {
+    // Uygulama silinmiş veya token başka uygulamanın: bir daha gönderme. Uygulama açılınca yenisini kaydeder.
+    await this.db.update(device).set({ pushToken: null, pushUpdatedAt: this.clock() }).where(eq(device.id, deviceId));
+    this.log.log(`Push token geçersiz (${why}); cihaz kaydından silindi`);
+    return 'invalid-token';
   }
 
   /** PushMessage → APNs isteği. WAKE: sessiz (content-available); PROMPT: "İyiyim" eylemli uyarı. RING: telefonda arama ile. */
@@ -82,6 +98,16 @@ export class DevicePush implements PushPort {
         expiration,
         collapseId: 'wake', // birikenlerden yalnız sonuncusu teslim edilir
         payload: { aps: { 'content-available': 1 }, type: 'WAKE' },
+      };
+    if (type === 'NOTICE' && msg.data.code)
+      return {
+        token,
+        sandbox,
+        pushType: 'alert',
+        priority: 10,
+        expiration,
+        collapseId: msg.data.code,
+        payload: { aps: { alert: { body: t(msg.data.code) }, sound: 'default' }, type: 'NOTICE', code: msg.data.code },
       };
     if (type === 'PROMPT' && msg.data.tts)
       return {

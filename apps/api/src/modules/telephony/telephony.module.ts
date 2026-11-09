@@ -48,6 +48,6 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
     },
   ],
   controllers: [CpaasWebhookController],
-  exports: [TelephonyService],
+  exports: [TelephonyService, CPAAS],
 })
 export class TelephonyModule {}

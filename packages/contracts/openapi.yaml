@@ -475,6 +475,64 @@ paths:
               { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ContactView' } } } },
           }
         '404': { $ref: '#/components/responses/Problem' }
+  /me/push-target:
+    put:
+      summary: Aile/kişi uygulamasının push token'ı (FCM). D-08, T-053
+      description: Aynı token başka hesaba geçmişse taşınır. Geçersiz token (FCM UNREGISTERED) ilk gönderimde silinir.
+      operationId: setPushTarget
+      security: [{ userToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [platform, token]
+              properties:
+                platform: { enum: [FCM] }
+                token: { type: string, minLength: 20, maxLength: 4096 }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Push token'ını kaldır (çıkış). T-053
+      operationId: deletePushTarget
+      security: [{ userToken: [] }]
+      parameters: [{ name: token, in: query, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Kaldırıldı }
+  /notifications/{id}/ack:
+    post:
+      summary: Bildirim gösterildi (teslim onayı). D-08, T-053
+      description: |
+        Push veri alanındaki `notificationId` ile. Bilgi bildirimlerinde 10 sn içinde onay gelmezse ilk yakına SMS
+        gönderilir; onay bunu iptal eder. Başka hesabın bildirimi 404.
+      operationId: ackNotification
+      security: [{ userToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Teslim edildi }
+        '404': { $ref: '#/components/responses/Problem' }
+  /webhooks/notify/sms:
+    post:
+      summary: CPaaS SMS teslim raporu (Twilio StatusCallback). T-053
+      description: İmzalı (X-Twilio-Signature, CPAAS_WEBHOOK_BASE + yol); bozuksa 403. Durum geri gitmez.
+      operationId: smsStatusWebhook
+      parameters: [{ name: 'n', in: query, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                MessageSid: { type: string }
+                MessageStatus: { enum: [queued, sent, delivered, undelivered, failed] }
+                ErrorCode: { type: string }
+      responses:
+        '200': { description: TwiML, content: { text/xml: { schema: { type: string } } } }
+        '403': { $ref: '#/components/responses/Problem' }
   /supervisor/dashboard:
     get:
       summary: Amir özeti — kuyruk, işlemdeki olay, aktif operatör, son 24 saat sonuçları ve üstlenme SLA. E-09, T-025

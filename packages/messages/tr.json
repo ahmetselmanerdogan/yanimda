@@ -176,6 +176,14 @@
     "text": "Dünkü olayla ilgili operatörümüz {name}'ı aradı: iyi.",
     "action": "Notu oku"
   },
+  "F-NAME-UNKNOWN": {
+    "channel": "family",
+    "text": "Yakınınız"
+  },
+  "F-ADDRESS-UNKNOWN": {
+    "channel": "family",
+    "text": "konum bilinmiyor"
+  },
   "O-NEW-SOS": {
     "channel": "console",
     "text": "Yeni SOS: {name}, {age}, {district}",
