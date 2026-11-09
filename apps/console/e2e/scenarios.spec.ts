@@ -4,8 +4,8 @@ import { login, newEvent, rowIds, sendSignal } from './support';
 
 /**
  * T-026 konsol senaryoları (01 S3–S6), gerçek Keycloak + API. API kuralları hızlandırılmış koşmalı
- * (STACK_TIME_SCALE=0.1 → düşme penceresi 6 sn). Telefon araması T-050'ye kadar yok: "Ara" yalnız arama
- * başlangıcını kaydeder; S5'in sahte CPaaS ayağı telefoni modülüyle eklenecek.
+ * (STACK_TIME_SCALE=0.1 → düşme penceresi 6 sn). S5 sahte CPaaS ile (T-050): ADMIN_TOKEN verilirse kişinin numarası
+ * yüklenir, "Ara" gerçek arama akışını (çalıyor → görüşme → bitti → kayıt) yürütür, öneri onaylanır.
  */
 const PROMPT_WAIT_MS = Number(process.env.E2E_PROMPT_WAIT_MS ?? 20_000);
 
@@ -67,12 +67,27 @@ test.describe('senaryolar', () => {
     expect((await rowIds(page)).filter((x) => !before.includes(x))).toEqual([]);
   });
 
-  test('S5 SOS, kişi konuşabiliyor → ara, ulaşıldı + kişi iyi → kapat', async ({ page }) => {
+  test('S5 SOS, kişi konuşabiliyor → ara (sahte CPaaS), öneri ulaşıldı + kişi iyi → kapat', async ({ page }) => {
     const before = await rowIds(page);
-    await sendSignal(page, 'SOS');
+    const person = `pp_pw_s5_${Date.now()}`;
+    const admin = process.env.ADMIN_TOKEN;
+    if (admin) {
+      const r = await page.request.put(`/v1/protected-persons/${person}/contacts`, {
+        headers: { 'x-admin-token': admin },
+        data: [{ role: 'WATCH', phone: '+905550000007' }],
+      });
+      expect(r.status()).toBe(200);
+    }
+    await sendSignal(page, 'SOS', person);
     const id = await claimNew(page, before);
     await page.keyboard.press('a');
     await expect(page.locator('.step.current')).toContainText('Aranıyor');
+    if (admin) {
+      const line = page.locator('.call-line');
+      await expect(line).toContainText('Görüşme bitti', { timeout: 30_000 });
+      await expect(line).toContainText('Kayıt alındı', { timeout: 15_000 });
+      await expect(line.getByRole('button', { name: /Öneri: Ulaşıldı/ })).toBeVisible();
+    }
     await page.keyboard.press('1');
     await expect(page.getByRole('group', { name: 'Ulaşıldı. Kişinin durumu?' })).toBeVisible();
     await page.keyboard.press('1'); // kişi iyi

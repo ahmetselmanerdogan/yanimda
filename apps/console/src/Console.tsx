@@ -3,7 +3,14 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { EventCard } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
 import { QueueList } from './components/Queue';
-import { ApiError, type CloseOutcome, type DispatchScript, type EventWithChain, type StepResultBody } from './lib/api';
+import {
+  ApiError,
+  CALL_ACTIVE,
+  type CloseOutcome,
+  type DispatchScript,
+  type EventWithChain,
+  type StepResultBody,
+} from './lib/api';
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
@@ -132,6 +139,16 @@ export function Console({
   useEffect(() => {
     if (selected && itemKey) void load(selected);
   }, [itemKey, selected, load]);
+
+  // T-050: süren arama varken durum webhook'larla değişir; kısa aralıkla yenile.
+  const callActive = !!detail?.calls?.some(
+    (c) => CALL_ACTIVE.includes(c.status) || (c.status === 'completed' && c.answered && !c.recorded),
+  );
+  useEffect(() => {
+    if (!callActive || !selected) return;
+    const id = setInterval(() => void load(selected), 1500);
+    return () => clearInterval(id);
+  }, [callActive, selected, load]);
 
   useEffect(() => {
     if (!mine || !selected) return;

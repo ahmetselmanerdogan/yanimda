@@ -73,7 +73,7 @@ export async function createHarness(bus: LocalBus = globalBus): Promise<Harness>
       bus.clear();
       await pg.exec(
         // audit.log append-only'dir (TRUNCATE reddedilir); testler kendi olay kimliğiyle süzer.
-        'TRUNCATE chain.chain_step, chain.chain_run, signal.signal, event.outbox, event.outbox_dlq, event.outbox_lease, event.protection_state, event.threshold, event.transition, event.event, profile.invite, device.device, profile.protected_person RESTART IDENTITY CASCADE',
+        'TRUNCATE telephony.call, profile.contact, chain.chain_step, chain.chain_run, signal.signal, event.outbox, event.outbox_dlq, event.outbox_lease, event.protection_state, event.threshold, event.transition, event.event, profile.invite, device.device, profile.protected_person RESTART IDENTITY CASCADE',
       );
     },
     close: async () => {

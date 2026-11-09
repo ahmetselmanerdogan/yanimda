@@ -583,5 +583,57 @@
   "O-UI-TRAINING-PERSON": {
     "channel": "console",
     "text": "Tatbikat kişisi {n}"
+  },
+  "V-CALL-RECORDED": {
+    "channel": "voice",
+    "text": "Bu görüşme kaydedilmektedir."
+  },
+  "O-CALL-queued": {
+    "channel": "console",
+    "text": "Arama başlatılıyor"
+  },
+  "O-CALL-ringing": {
+    "channel": "console",
+    "text": "Çalıyor"
+  },
+  "O-CALL-in-progress": {
+    "channel": "console",
+    "text": "Görüşülüyor"
+  },
+  "O-CALL-completed": {
+    "channel": "console",
+    "text": "Görüşme bitti"
+  },
+  "O-CALL-busy": {
+    "channel": "console",
+    "text": "Meşgul"
+  },
+  "O-CALL-no-answer": {
+    "channel": "console",
+    "text": "Cevap vermedi"
+  },
+  "O-CALL-failed": {
+    "channel": "console",
+    "text": "Arama başarısız"
+  },
+  "O-CALL-canceled": {
+    "channel": "console",
+    "text": "Arama iptal"
+  },
+  "O-CALL-SUGGEST": {
+    "channel": "console",
+    "text": "Öneri: {result}"
+  },
+  "O-CALL-RECORDED": {
+    "channel": "console",
+    "text": "Kayıt alındı"
+  },
+  "O-CALL-MANUAL": {
+    "channel": "console",
+    "text": "Bu adım masa telefonundan aranır; sonucu girin."
+  },
+  "O-CALL-DURATION": {
+    "channel": "console",
+    "text": "{sec} sn"
   }
 }
