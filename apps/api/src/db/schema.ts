@@ -76,6 +76,39 @@ export const invite = profileSchema.table('invite', {
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
+/** T-050 aranacak numaralar (asgari; tam profil T-040). */
+export const contact = profileSchema.table('contact', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  role: text('role').notNull(),
+  priority: integer('priority').notNull().default(1),
+  displayName: text('display_name'),
+  phoneE164: text('phone_e164').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+});
+
+export const telephonySchema = pgSchema('telephony');
+
+/** T-050 CPaaS araması. Numara tutulmaz (contact_id). */
+export const call = telephonySchema.table('call', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  stepN: integer('step_n').notNull(),
+  operatorId: text('operator_id').notNull(),
+  contactId: uuid('contact_id'),
+  provider: text('provider').notNull(),
+  providerCallId: text('provider_call_id'),
+  status: text('status').notNull().default('queued'),
+  answered: boolean('answered').notNull().default(false),
+  suggestedResult: text('suggested_result'),
+  durationSec: integer('duration_sec'),
+  recordingRef: text('recording_ref'),
+  recordingProviderId: text('recording_provider_id'),
+  error: text('error'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
 export const auditSchema = pgSchema('audit');
 
 export const event = eventSchema.table('event', {

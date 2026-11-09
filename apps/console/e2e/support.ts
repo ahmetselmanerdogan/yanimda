@@ -17,18 +17,32 @@ const env = (k: string) => {
   return v;
 };
 
-/** Konsola gerçek Keycloak akışıyla gir: kullanıcı adı/parola, ardından OTP. */
+export const AUTH_STATE = 'test-results/.auth/operator.json';
+
+/**
+ * Konsola gerçek Keycloak akışıyla gir. Keycloak oturumu (SSO çerezi) global kurulumda bir kez açılır; testler
+ * yalnız "Giriş yap" ile döner. Oturum yoksa kullanıcı adı/parola ve OTP girilir (aynı OTP iki kez kullanılamaz).
+ */
 export async function login(page: Page, username = 'operator1') {
   await page.goto('/');
   await page.getByRole('button', { name: 'Giriş yap' }).click();
-  await page.locator('#username').fill(username);
+  const form = page.locator('#username');
+  const live = page.locator('.conn');
+  await expect(form.or(live)).toBeVisible({ timeout: 15_000 });
+  if (await live.isVisible()) return expect(live).toHaveText('Canlı', { timeout: 15_000 });
+  await form.fill(username);
   await page.locator('#password').fill(env('KEYCLOAK_DEV_PASSWORD'));
   await page.locator('#kc-login').click();
-  // Aynı kod iki kez kullanılamaz: pencerenin son 3 sn'sindeysek bir sonrakini bekle.
-  if (Date.now() % 30_000 > 27_000) await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 200);
-  await page.locator('#otp').fill(totp(env('KEYCLOAK_DEV_OTP_SECRET')));
-  await page.locator('#kc-login').click();
-  await expect(page.getByRole('status')).toHaveText('Canlı', { timeout: 15_000 });
+  // Aynı kod iki kez kullanılamaz (Keycloak tekrarı reddeder): reddedilirse sonraki pencerenin koduyla bir kez daha.
+  const otp = page.locator('#otp');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt || Date.now() % 30_000 > 27_000) await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 300);
+    await otp.fill(totp(env('KEYCLOAK_DEV_OTP_SECRET')));
+    await page.locator('#kc-login').click();
+    await expect(otp.or(live)).toBeVisible({ timeout: 15_000 });
+    if (await live.isVisible()) break;
+  }
+  await expect(live).toHaveText('Canlı', { timeout: 15_000 });
 }
 
 /** Simülatör gibi sinyal gönder (aynı köken /v1 proxy'si; API simülatör modunda token'sız sinyal kabul eder). */

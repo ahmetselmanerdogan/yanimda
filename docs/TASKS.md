@@ -26,13 +26,13 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-016 Entegrasyon (S3/S4/S7, gerçek süreçler), kaos (Redis 30 sn, Postgres 10 sn), k6 duman; raporlar docs/test-reports/. Not: Docker yok → Testcontainers yerine redis-server + PGlite sunucusu; gerçek TimescaleDB koşumu açık
 
 ## Epik 2 · Konsol çekirdek (S2)
-- [x] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01) — konsol PKCE girişi T-023 ile
+- [x] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01)
 - [x] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi (D-03, D-04) — kilit Redis yerine olay satırında (lock_until); 05 metinleri katalogda, gözden geçirilmeli
 - [x] T-022 GET /v1/queue + WebSocket; claim (E-02)
 - [x] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10) — tıbbi özet T-040'ı bekliyor; 04 dokümanı okunamadı, düzen görev kitabından
 - [x] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06) — tıbbi alanlar T-040'ı bekliyor
 - [x] T-025 SLA sayaçları ve metrikler (E-09, D-11)
-- [ ] T-026 Playwright e2e
+- [x] T-026 Playwright e2e — S3/S4/S5/S6 + eğitim modu; S5'in sahte CPaaS ayağı T-050 ile
 
 ## Epik 3 · Wear OS saat (S3) — repo: yanimda-android
 - [ ] T-030 Proje: Compose for Wear, Health Services, test modu
@@ -53,7 +53,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-045 Uçtan uca cihaz testi <5 sn
 
 ## Epik 5 · Telefoni ve bildirim (S5)
-- [ ] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05)
+- [x] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05) — Twilio sandbox'ta gerçek arama hesap bekliyor; operatör ucu T-051'e kadar masa hattı
 - [ ] T-051 Konsol WebRTC softphone
 - [ ] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü
 - [ ] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08) — başladı: APNs istemcisi, cihaz push yönlendirmesi, iPhone sessiz uyandırma. Açık: FCM, SMS, sesli, aile bildirimleri, yedeklilik

@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
+import { type CallView, TelephonyService } from '../telephony/telephony.service';
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
 import { buildSteps, loadProcedures, type ProcedurePack, stepOf } from './procedures';
 
@@ -34,6 +35,8 @@ export interface StepResultBody {
 export interface EventWithChain {
   event: EventRecord;
   chain: ChainView | null;
+  /** T-050 CPaaS aramaları (numarasız özet). */
+  calls: CallView[];
 }
 
 const NOTE_MAX = 2000;
@@ -65,6 +68,7 @@ export class ChainService {
     @Inject(DB) private readonly db: Db,
     @Inject(EventService) private readonly events: EventService,
     @Optional() @Inject(PROCEDURES) proc?: ProcedurePack,
+    @Optional() @Inject(TelephonyService) private readonly telephony?: TelephonyService,
   ) {
     this.repo = new ChainRepository(db);
     this.proc = proc ?? loadProcedures();
@@ -73,7 +77,7 @@ export class ChainService {
   async get(id: string): Promise<EventWithChain> {
     const event = await this.events.get(id);
     const run = await this.repo.run(id);
-    return { event, chain: run ? view(run) : null };
+    return { event, chain: run ? view(run) : null, calls: (await this.telephony?.callsFor(id)) ?? [] };
   }
 
   claim(id: string, operatorId: string, now?: Date): Promise<EventWithChain> {
@@ -88,9 +92,13 @@ export class ChainService {
     return this.events.operate(id, operatorId, async (c) => ({ lockUntil: c.ev.lockUntil }), { now });
   }
 
-  /** "Ara" (A): sıradaki adımın arama başlangıcı. İlk arama olayı CONTACT_CHAIN'e taşır. */
-  call(id: string, n: number, operatorId: string, now?: Date): Promise<EventWithChain> {
-    return this.events.operate(
+  /**
+   * "Ara" (A): sıradaki adımın arama başlangıcı; ilk arama olayı CONTACT_CHAIN'e taşır. Telefoni açıksa ve adımın
+   * numarası kayıtlıysa (112 hariç: masa hattından, T-052) CPaaS araması commit'ten sonra başlatılır (T-050).
+   */
+  async call(id: string, n: number, operatorId: string, now?: Date): Promise<EventWithChain> {
+    let plan: { callId: string; fresh: boolean; timeoutSec: number } | null = null;
+    const res = await this.events.operate(
       id,
       operatorId,
       async (c) => {
@@ -102,10 +110,21 @@ export class ChainService {
           await this.repo.updateStep(c.tx, run.id, step);
         }
         if (c.ev.state === 'OPERATOR_ASSIGNED') c.transition('CONTACT_CHAIN');
+        const p = await this.telephony?.prepare(c.tx, {
+          eventId: c.ev.id,
+          personId: c.ev.protectedPersonId,
+          step,
+          operatorId,
+        });
+        if (p) plan = { ...p, timeoutSec: step.timeoutSec };
         return this.result(c, run);
       },
       { now },
     );
+    const started = plan as { callId: string; fresh: boolean; timeoutSec: number } | null;
+    if (!started?.fresh || !this.telephony) return res;
+    await this.telephony.dial(started.callId, started.timeoutSec);
+    return { ...res, calls: await this.telephony.callsFor(id) };
   }
 
   /** Okunan operatör metni (ör. 112 şablonu) için zaman damgası (T-024). */
@@ -254,8 +273,8 @@ export class ChainService {
 
   // ---- iç ----
 
-  private result(c: OperatorCtx, run: Run | null): EventWithChain {
-    return { event: c.ev, chain: run ? view(run) : null };
+  private async result(c: OperatorCtx, run: Run | null): Promise<EventWithChain> {
+    return { event: c.ev, chain: run ? view(run) : null, calls: (await this.telephony?.callsFor(c.ev.id, c.tx)) ?? [] };
   }
 
   private async ensureRun(c: OperatorCtx): Promise<Run> {

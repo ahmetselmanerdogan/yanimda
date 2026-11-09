@@ -417,3 +417,41 @@ button.ok kbd {
 .hours input {
   width: 72px;
 }
+
+.badge-training {
+  background: var(--attention);
+  color: #1a1a1a;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.layout.training .topbar {
+  border-bottom: 2px solid var(--attention);
+}
+
+.call-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.call-line.active::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--safe);
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+button.suggest {
+  border-color: #8ab4ff;
+}

@@ -1,14 +1,30 @@
 import type { User } from 'oidc-client-ts';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { Console } from './Console';
 import { OPERATOR_ROLES, restoreSession, rolesOf, sessionLost, userManager } from './lib/auth';
+import { realBackend } from './lib/backend';
 import { action, t } from './lib/i18n';
+import { trainingRequested } from './lib/training-flag';
 
 type Phase = { kind: 'loading' } | { kind: 'anonymous'; failed?: boolean } | { kind: 'ready'; user: User };
 
+/** Eğitim modu (?training=1, T-026): üretim derlemesinde modül hiç yoktur. */
+const TrainingApp = import.meta.env.PROD ? null : lazy(() => import('./TrainingApp'));
+
 export function App() {
+  if (TrainingApp && trainingRequested())
+    return (
+      <Suspense fallback={null}>
+        <TrainingApp />
+      </Suspense>
+    );
+  return <LiveApp />;
+}
+
+function LiveApp() {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  const [backend] = useState(realBackend);
 
   useEffect(() => {
     restoreSession()
@@ -60,5 +76,12 @@ export function App() {
         </button>
       </main>
     );
-  return <Console user={phase.user} onLogout={logout} />;
+  const p = phase.user.profile;
+  return (
+    <Console
+      operator={{ sub: p.sub, name: String(p.name ?? p.preferred_username ?? '') }}
+      backend={backend}
+      onLogout={logout}
+    />
+  );
 }

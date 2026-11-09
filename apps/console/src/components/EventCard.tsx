@@ -1,7 +1,7 @@
 import type { ChainStep } from '@yanimda/contracts';
 import type { RefObject } from 'react';
 
-import type { DispatchScript, EventWithChain, QueueItem } from '../lib/api';
+import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, type QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 import type { Mode } from '../lib/keys';
 import { clock, slaOf } from '../lib/sla';
@@ -34,6 +34,26 @@ interface Props {
 }
 
 const stepLabel = (s: ChainStep) => t(s.label, { n: s.contactIndex });
+const KEY_OF: Record<string, string> = { REACHED: '1', NO_ANSWER: '2', BUSY: '3', WRONG_NUMBER: '4' };
+
+/** T-050: adımın son CPaaS araması — durum, süre, kayıt, sonuç önerisi (operatör onaylar). */
+function CallStatusLine({ call, onApply }: { call: CallView; onApply(r: CallView['suggestedResult']): void }) {
+  const active = CALL_ACTIVE.includes(call.status);
+  return (
+    <div className={`call-line${active ? ' active' : ''}`} role="status" aria-live="polite">
+      <span>{t(`O-CALL-${call.status}`)}</span>
+      {call.durationSec !== null && <span className="muted">{t('O-CALL-DURATION', { sec: call.durationSec })}</span>}
+      {call.recorded && <span className="muted">{t('O-CALL-RECORDED')}</span>}
+      {call.suggestedResult && (
+        <button type="button" className="suggest" onClick={() => onApply(call.suggestedResult)}>
+          {t('O-CALL-SUGGEST', { result: t(`O-RES-${call.suggestedResult}`) })}{' '}
+          <kbd>{KEY_OF[call.suggestedResult]}</kbd>
+        </button>
+      )}
+    </div>
+  );
+}
+
 const RESULT_KEYS: [string, 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER'][] = [
   ['1', 'REACHED'],
   ['2', 'NO_ANSWER'],
@@ -48,6 +68,7 @@ export function EventCard(p: Props) {
   const chain = detail?.chain ?? null;
   const mine = (ev?.operatorId ?? item.lockedBy) === me;
   const current = chain?.steps.find((s) => s.n === chain.current) ?? null;
+  const call = current ? (detail?.calls ?? []).filter((c) => c.stepN === current.n).at(-1) : undefined;
   const firstCalled = chain?.steps.find((s) => s.calledAt)?.calledAt;
   const sla = slaOf(item, ev, firstCalled, now);
   const state = ev?.state ?? item.state;
@@ -122,6 +143,8 @@ export function EventCard(p: Props) {
               {t('O-RES-SKIPPED')} <kbd>5</kbd>
             </button>
           </div>
+          {call && <CallStatusLine call={call} onApply={(r) => r && p.onResult(r)} />}
+          {current.kind === 'CALL_112' && <p className="muted small">{t('O-CALL-MANUAL')}</p>}
           {p.mode === 'assess' && (
             <div className="row assess" role="group" aria-label={t('O-UI-ASSESS')}>
               <span>{t('O-UI-ASSESS')}</span>

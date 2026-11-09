@@ -1,22 +1,19 @@
-import type { User } from 'oidc-client-ts';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { EventCard } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
 import { QueueList } from './components/Queue';
 import {
   ApiError,
+  CALL_ACTIVE,
   type CloseOutcome,
-  createApi,
   type DispatchScript,
   type EventWithChain,
-  queueSocketUrl,
   type StepResultBody,
 } from './lib/api';
-import { currentToken, userManager } from './lib/auth';
+import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
-import { QueueSocket } from './lib/live';
 import { keepSelection, queueReducer } from './lib/queue';
 import { alertSound } from './lib/sound';
 
@@ -30,10 +27,25 @@ const isEditing = (el: Element | null) =>
     (el.tagName === 'INPUT' && (el as HTMLInputElement).type !== 'radio'));
 
 /** T-023 operatör konsolu: düzen 04 "Operatör konsolu" (üst bar, kuyruk, olay kartı, kişi paneli, telefon barı). */
-export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
-  const me = user.profile.sub;
-  const operatorName = (user.profile.name ?? user.profile.preferred_username ?? '') as string;
-  const api = useMemo(() => createApi(currentToken), []);
+export interface Operator {
+  sub: string;
+  name: string;
+}
+
+export function Console({
+  operator,
+  backend,
+  training = false,
+  onLogout,
+}: {
+  operator: Operator;
+  backend: Backend;
+  training?: boolean;
+  onLogout(): void;
+}) {
+  const me = operator.sub;
+  const operatorName = operator.name;
+  const api = backend.api;
 
   const [queue, dispatch] = useReducer(queueReducer, { items: [] });
   const [selected, setSelected] = useState<string | null>(null);
@@ -67,24 +79,19 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
   }, [need112, api]);
 
   // ---- canlı kuyruk ----
-  useEffect(() => {
-    const sock = new QueueSocket(queueSocketUrl(), currentToken, {
-      onStatus: setOnline,
-      onMessage: (m) => {
-        if (m.type === 'snapshot') dispatch({ type: 'snapshot', items: m.items });
-        else if (m.type === 'upsert') dispatch({ type: 'upsert', item: m.item });
-        else if (m.type === 'remove') dispatch({ type: 'remove', eventId: m.eventId });
-        else if (m.type === 'alert') setFlash(t(m.alert.code, { type: t(`O-TYPE-${m.alert.eventType}`) }));
-      },
-    });
-    sock.start();
-    const renewed = () => void sock.reauth();
-    userManager.events.addUserLoaded(renewed);
-    return () => {
-      userManager.events.removeUserLoaded(renewed);
-      sock.stop();
-    };
-  }, []);
+  useEffect(
+    () =>
+      backend.connect({
+        onStatus: setOnline,
+        onMessage: (m) => {
+          if (m.type === 'snapshot') dispatch({ type: 'snapshot', items: m.items });
+          else if (m.type === 'upsert') dispatch({ type: 'upsert', item: m.item });
+          else if (m.type === 'remove') dispatch({ type: 'remove', eventId: m.eventId });
+          else if (m.type === 'alert') setFlash(t(m.alert.code, { type: t(`O-TYPE-${m.alert.eventType}`) }));
+        },
+      }),
+    [backend],
+  );
 
   useEffect(() => {
     if (!queue.arrived) return;
@@ -132,6 +139,16 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
   useEffect(() => {
     if (selected && itemKey) void load(selected);
   }, [itemKey, selected, load]);
+
+  // T-050: süren arama varken durum webhook'larla değişir; kısa aralıkla yenile.
+  const callActive = !!detail?.calls?.some(
+    (c) => CALL_ACTIVE.includes(c.status) || (c.status === 'completed' && c.answered && !c.recorded),
+  );
+  useEffect(() => {
+    if (!callActive || !selected) return;
+    const id = setInterval(() => void load(selected), 1500);
+    return () => clearInterval(id);
+  }, [callActive, selected, load]);
 
   useEffect(() => {
     if (!mine || !selected) return;
@@ -273,8 +290,15 @@ export function Console({ user, onLogout }: { user: User; onLogout(): void }) {
   };
 
   return (
-    <div className="layout">
-      <TopBar operator={operatorName} online={online} count={queue.items.length} flash={flash} onLogout={onLogout} />
+    <div className={`layout${training ? ' training' : ''}`}>
+      <TopBar
+        training={training}
+        operator={operatorName}
+        online={online}
+        count={queue.items.length}
+        flash={flash}
+        onLogout={onLogout}
+      />
       <QueueList items={queue.items} selected={selected} me={me} now={now} onSelect={setSelected} />
       <main className="center">
         {error && (

@@ -6,6 +6,7 @@ import { action, t } from '../lib/i18n';
 
 /** Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08). */
 export function TopBar(p: {
+  training?: boolean;
   operator: string;
   online: boolean;
   count: number;
@@ -15,6 +16,7 @@ export function TopBar(p: {
   return (
     <header className={`topbar${p.flash ? ' flash' : ''}`}>
       <span className="brand">{t('O-UI-TITLE')}</span>
+      {p.training && <span className="badge-training">{t('O-UI-TRAINING')}</span>}
       <span className={`conn ${p.online ? 'on' : 'off'}`} role="status">
         {p.online ? t('O-UI-ONLINE') : t('O-UI-OFFLINE')}
       </span>

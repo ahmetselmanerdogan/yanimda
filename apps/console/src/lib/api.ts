@@ -37,9 +37,26 @@ export interface EventRecord {
   transitions: Transition[];
 }
 
+export type CallStatus =
+  'queued' | 'ringing' | 'in-progress' | 'completed' | 'busy' | 'no-answer' | 'failed' | 'canceled';
+/** T-050 CPaaS araması (numarasız). */
+export interface CallView {
+  id: string;
+  stepN: number;
+  status: CallStatus;
+  answered: boolean;
+  suggestedResult: 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER' | null;
+  durationSec: number | null;
+  recorded: boolean;
+  error: string | null;
+  createdAt: string;
+}
+export const CALL_ACTIVE: CallStatus[] = ['queued', 'ringing', 'in-progress'];
+
 export interface EventWithChain {
   event: EventRecord;
   chain: ChainView | null;
+  calls?: CallView[];
 }
 
 export type CloseOutcome = 'OK' | 'EMERGENCY' | 'FALSE_ALARM' | 'TEST' | 'UNREACHABLE';

@@ -7,6 +7,8 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: 'e2e',
+  globalSetup: './e2e/global-setup.ts',
+  workers: 1, // tek operatör hesabı, ortak kuyruk
   timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
@@ -18,6 +20,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     viewport: { width: 1280, height: 800 },
     locale: 'tr-TR',
+    storageState: 'test-results/.auth/operator.json',
   },
   webServer: process.env.CONSOLE_URL
     ? undefined

@@ -179,7 +179,11 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/chain/steps/{n}/call:
     post:
-      summary: Sıradaki adımı ara (arama başlangıcı yazılır). E-04, T-021
+      summary: Sıradaki adımı ara. E-04, T-021, T-050
+      description: |
+        Arama başlangıcı yazılır. Telefoni açıksa ve adımın numarası kayıtlıysa CPaaS araması başlar (operatör ucu →
+        aranan; iki kanallı kayıt, arananın duyduğu kayıt anonsu). 112 adımı masa hattından elle (T-052). Süren aramada
+        tekrar çağrı yeni arama açmaz. Durum `calls[]`'ta; son durumda `suggestedResult` operatöre önerilir.
       operationId: callStep
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
@@ -265,6 +269,55 @@ paths:
         '204': { description: Closed }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /webhooks/cpaas/{kind}:
+    post:
+      summary: CPaaS geri çağrıları (Twilio uyumlu). E-05, T-050
+      description: |
+        Herkese açık; yalnız imzalı istek (X-Twilio-Signature: base64(HMAC-SHA1(token, CPAAS_WEBHOOK_BASE + yol +
+        sıralı parametreler))). Bozuk imza 403. kind: status (aranan bacak), dial (bağlantı sonucu), agent (operatör
+        bacağı), recording (kayıt hazır → S3, sağlayıcıdan silinir), announce (arananın duyduğu kayıt anonsu).
+      operationId: cpaasWebhook
+      security: []
+      parameters:
+        - { name: kind, in: path, required: true, schema: { enum: [status, dial, agent, recording, announce] } }
+        - { name: call, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200':
+          description: TwiML
+          content: { text/xml: { schema: { type: string } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/contacts:
+    put:
+      summary: Aranacak numaraları değiştir (asgari; tam profil T-040). T-050
+      description: Yönetici. Numaralar yalnız arama anında okunur; log, audit ve arama kaydına yazılmaz.
+      operationId: setContacts
+      security: [{ operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                required: [role, phone]
+                properties:
+                  role: { enum: [ELDER, WATCH, CONTACT, NEIGHBOR] }
+                  priority: { type: integer, minimum: 1, description: CONTACT sırası (CALL_CONTACT:n) }
+                  displayName: { type: string, maxLength: 100 }
+                  phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
+      responses:
+        '200': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /supervisor/dashboard:
     get:
       summary: Amir özeti — kuyruk, işlemdeki olay, aktif operatör, son 24 saat sonuçları ve üstlenme SLA. E-09, T-025
@@ -560,6 +613,7 @@ components:
             properties:
               event: { type: object, description: 'Olay kaydı: durum, geçişler, lockUntil' }
               chain: { oneOf: [{ $ref: '#/components/schemas/ChainView' }, { type: 'null' }] }
+              calls: { type: array, items: { $ref: '#/components/schemas/CallView' } }
     DeviceToken:
       description: Cihaz token'ı (HS256 JWT, 1 yıl)
       content:
@@ -588,6 +642,19 @@ components:
         detail: { type: string }
     Signal:
       $ref: './schemas/signal.schema.json'
+    CallView:
+      type: object
+      description: T-050 CPaaS araması (numara içermez)
+      properties:
+        id: { type: string, format: uuid }
+        stepN: { type: integer }
+        status: { enum: [queued, ringing, in-progress, completed, busy, no-answer, failed, canceled] }
+        answered: { type: boolean }
+        suggestedResult: { oneOf: [{ enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER] }, { type: 'null' }] }
+        durationSec: { type: [integer, 'null'] }
+        recorded: { type: boolean }
+        error: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
     ChainView:
       type: object
       required: [procedureVersion, steps, current]
