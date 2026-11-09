@@ -86,16 +86,3 @@ export class EnrollmentController {
     await this.enrollment.revoke(id);
   }
 }
-
-/** T-040 parçası: davet kodu. TODO T-020/T-040: FAMILY yalnız kendi kişisine davet üretir; SMS katalog metniyle. */
-@Controller('protected-persons')
-export class InviteController {
-  constructor(@Inject(EnrollmentService) private readonly enrollment: EnrollmentService) {}
-
-  /** POST /v1/protected-persons/{id}/invite → { code, expiresAt } (6 hane, 15 dk, tek kullanım). */
-  @Post(':id/invite')
-  @UseGuards(AdminGuard)
-  invite(@Param('id') id: string) {
-    return this.enrollment.createInvite(id);
-  }
-}

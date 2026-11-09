@@ -117,12 +117,31 @@ paths:
         '200': { $ref: '#/components/responses/EventWithChain' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /events/{id}/person:
+    get:
+      summary: Olay anında kişi kartı — adres, kapı notu, tıbbi özet. E-03, T-040
+      description: |
+        Yalnız olayı yürüten operatöre (aksi 409). Sağlık verisi yalnız burada (ve 112 şablonunda) çözülür; her
+        çözüm audit.log'a `health.medical_viewed` (operatör, olay; içerik yok). Profil yoksa (simülatör kimliği) null.
+      operationId: getEventPerson
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          description: Kişi kartı
+          content:
+            application/json:
+              schema: { oneOf: [{ $ref: '#/components/schemas/PersonCard' }, { type: 'null' }] }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/script:
     get:
       summary: 112 şablonu — olay ve kişi bilgisiyle doldurulmuş metin. E-06, T-024
       description: |
         Yalnız olayı yürüten operatöre (aksi 409); erişim audit.log'a yazılır (içerik yazılmaz). Bilinmeyen alan
-        "bilinmiyor"; adres yoksa olay konumu. Tıbbi alanlar T-040 sağlık şemasıyla dolacak.
+        "bilinmiyor". Adres: kayıtlı adres + olay konumu (yoksa kayıtlı konum). Tıbbi alanlar ve kapı notu T-040
+        şifreli profilden bu istek anında çözülür (`health.medical_viewed`).
       operationId: getDispatchScript
       security: [{ operatorToken: [] }]
       parameters:
@@ -292,12 +311,132 @@ paths:
           content: { text/xml: { schema: { type: string } } }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons:
+    post:
+      summary: Korunan kişi oluştur. C-02, T-040
+      description: |
+        Aile (FAMILY) oluşturursa sahibi (OWNER) olur; deneme aboneliği açılır. Adres GOOGLE_GEOCODING_KEY varsa
+        konumlanır (lat/lng verilirse o kullanılır). Kapı notu AES-256-GCM ile şifreli saklanır.
+      operationId: createProtectedPerson
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/PersonInput' }
+                - type: object
+                  required: [displayName]
+                  properties:
+                    relation: { type: string, maxLength: 50, description: Ailenin kişiye yakınlığı (ör. Kızı) }
+      responses:
+        '201':
+          {
+            description: Oluşturuldu,
+            content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } },
+          }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Kişiler — aile yalnız kendi kişilerini, yönetici hepsini görür. C-02, T-040
+      operationId: listProtectedPersons
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Sayfa
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/PersonView' } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+  /protected-persons/{id}:
+    get:
+      summary: Kişi. Başka ailenin kişisi 404. C-02, T-040
+      operationId: getProtectedPerson
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          { description: Kişi, content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Kişiyi güncelle (verilen alanlar). Adres değişirse yeniden konumlanır; doorAccessNote null siler. T-040
+      operationId: updateProtectedPerson
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PersonInput' } } }
+      responses:
+        '200':
+          { description: Kişi, content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/medical:
+    put:
+      summary: Tıbbi özet (şifreli). Rıza zamanı zorunlu. C-03, T-040
+      description: |
+        Tek şifreli kayıt olarak saklanır (AES-256-GCM, FIELD_ENC_KEYS). İçerik aileye de geri okunmaz (yalnız
+        var/yok ve rıza zamanı); olay anında olayı yürüten operatöre çözülür. audit.log'a içerik yazılmaz.
+      operationId: setMedical
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/Medical' }
+                - type: object
+                  required: [consentAt]
+                  properties:
+                    consentAt:
+                      {
+                        type: string,
+                        format: date-time,
+                        description: Kişinin/vasinin rıza verdiği an (gelecekte olamaz),
+                      }
+      responses:
+        '200':
+          description: Kaydedildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  present: { type: boolean }
+                  consentAt: { type: string, format: date-time }
+                  updatedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Rıza geri alındı — tıbbi özeti sil. C-03, T-040
+      operationId: deleteMedical
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '204': { description: Silindi }
+        '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/contacts:
     put:
-      summary: Aranacak numaraları değiştir (asgari; tam profil T-040). T-050
-      description: Yönetici. Numaralar yalnız arama anında okunur; log, audit ve arama kaydına yazılmaz.
+      summary: Zincirin arayacağı numaraları değiştir. C-03, T-040 (T-050)
+      description: |
+        Liste bütün olarak değişir. CONTACT sıralı 1–5 (öncelik verilmezse liste sırası); ELDER, WATCH, NEIGHBOR en
+        çok birer. Aile yalnız kendi kişisine; yönetici simülatör kimliklerine de yazabilir. Numaralar yalnız arama
+        anında okunur; log, audit ve arama kaydına yazılmaz.
       operationId: setContacts
-      security: [{ operatorToken: [] }, { adminToken: [] }]
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
@@ -305,19 +444,37 @@ paths:
           application/json:
             schema:
               type: array
-              maxItems: 20
+              maxItems: 8
               items:
                 type: object
                 required: [role, phone]
                 properties:
                   role: { enum: [ELDER, WATCH, CONTACT, NEIGHBOR] }
-                  priority: { type: integer, minimum: 1, description: CONTACT sırası (CALL_CONTACT:n) }
+                  priority: { type: integer, minimum: 1, maximum: 5, description: CONTACT sırası (CALL_CONTACT:n) }
                   displayName: { type: string, maxLength: 100 }
                   phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
       responses:
-        '200': { description: Kaydedildi }
+        '200':
+          {
+            description: Kaydedildi,
+            content: { application/json: { schema: { type: object, properties: { count: { type: integer } } } } },
+          }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Numaralar (tam numara geri verilmez, son 2 hane). T-040
+      operationId: listContacts
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          {
+            description: Liste,
+            content:
+              { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ContactView' } } } },
+          }
+        '404': { $ref: '#/components/responses/Problem' }
   /supervisor/dashboard:
     get:
       summary: Amir özeti — kuyruk, işlemdeki olay, aktif operatör, son 24 saat sonuçları ve üstlenme SLA. E-09, T-025
@@ -411,12 +568,12 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/invite:
     post:
-      summary: Cihaz davet kodu üret. C-04 (T-040 parçası), T-041
+      summary: Cihaz davet kodu üret. C-02, T-040 / T-041
       description: |
-        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. Yönetici (OIDC ADMIN veya
-        `x-admin-token`); T-040'ta FAMILY yalnız kendi kişisine. SMS gönderimi T-040/notify ile gelir.
+        6 haneli kod, 15 dk geçerli, tek kullanımlık. Yalnız sha256 özeti saklanır. Aile yalnız kendi kişisine;
+        yönetici (OIDC ADMIN veya `x-admin-token`) hepsine. `smsText` katalogdan (S-INVITE); SMS gönderimi T-053.
       operationId: createInvite
-      security: [{ operatorToken: [] }, { adminToken: [] }]
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
@@ -426,10 +583,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [code, expiresAt]
+                required: [code, expiresAt, smsText]
                 properties:
                   code: { type: string, pattern: '^\d{6}$' }
                   expiresAt: { type: string, format: date-time }
+                  smsText: { type: string, description: Katalog S-INVITE }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /devices/enroll:
@@ -602,6 +760,7 @@ components:
   parameters:
     EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    PersonId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
     EventWithChain:
       description: Olay ve zinciri
@@ -633,6 +792,82 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    PersonInput:
+      type: object
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        birthYear: { type: [integer, 'null'], minimum: 1900 }
+        language: { enum: [tr] }
+        timezone: { type: string, description: IANA saat dilimi }
+        address:
+          type: [object, 'null']
+          required: [line, city]
+          properties:
+            line: { type: string, maxLength: 200 }
+            district: { type: string, maxLength: 60 }
+            city: { type: string, maxLength: 60 }
+            postalCode: { type: string, maxLength: 10 }
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
+        doorAccessNote: { type: [string, 'null'], maxLength: 500, description: Şifreli saklanır }
+    PersonView:
+      type: object
+      required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        birthYear: { type: [integer, 'null'] }
+        language: { type: string }
+        timezone: { type: string }
+        status: { enum: [TRIAL, ACTIVE, PAUSED, CANCELED] }
+        address:
+          type: [object, 'null']
+          properties:
+            line: { type: string }
+            district: { type: [string, 'null'] }
+            city: { type: string }
+            postalCode: { type: [string, 'null'] }
+            lat: { type: [number, 'null'] }
+            lng: { type: [number, 'null'] }
+        doorAccessNote: { type: [string, 'null'] }
+        myRole: { enum: [OWNER, MEMBER, null] }
+        medical:
+          type: object
+          description: Yalnız var/yok ve rıza zamanı; içerik geri okunmaz.
+          properties:
+            present: { type: boolean }
+            consentAt: { type: [string, 'null'], format: date-time }
+            updatedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    Medical:
+      type: object
+      properties:
+        conditions: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        medications: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        allergies: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        bloodType: { enum: ['0+', '0-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', null] }
+        notes: { type: [string, 'null'], maxLength: 1000 }
+    PersonCard:
+      type: object
+      required: [displayName, age, address, location, doorAccessNote, medical]
+      properties:
+        displayName: { type: string }
+        age: { type: [integer, 'null'] }
+        address: { type: [string, 'null'] }
+        location:
+          type: [object, 'null']
+          properties: { lat: { type: number }, lng: { type: number } }
+        doorAccessNote: { type: [string, 'null'] }
+        medical: { oneOf: [{ $ref: '#/components/schemas/Medical' }, { type: 'null' }] }
+    ContactView:
+      type: object
+      required: [id, role, priority, displayName, phoneLast2]
+      properties:
+        id: { type: string, format: uuid }
+        role: { enum: [ELDER, WATCH, CONTACT, NEIGHBOR] }
+        priority: { type: integer }
+        displayName: { type: [string, 'null'] }
+        phoneLast2: { type: string, pattern: '^\d{2}$' }
     Problem:
       type: object
       properties:

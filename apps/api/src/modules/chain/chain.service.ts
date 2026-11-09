@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
+import { type EventPersonCard, ProfileService } from '../profile/profile.service';
 import { type CallView, TelephonyService } from '../telephony/telephony.service';
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
 import { buildSteps, loadProcedures, type ProcedurePack, stepOf } from './procedures';
@@ -69,6 +70,7 @@ export class ChainService {
     @Inject(EventService) private readonly events: EventService,
     @Optional() @Inject(PROCEDURES) proc?: ProcedurePack,
     @Optional() @Inject(TelephonyService) private readonly telephony?: TelephonyService,
+    @Optional() @Inject(ProfileService) private readonly profile?: ProfileService,
   ) {
     this.repo = new ChainRepository(db);
     this.proc = proc ?? loadProcedures();
@@ -251,18 +253,22 @@ export class ChainService {
       id,
       operatorId,
       async (c) => {
-        const person = await personOf(c.tx, c.ev.protectedPersonId);
+        const card = await this.cardOf(c, operatorId, 'dispatch112');
+        const basic = card ? null : await personOf(c.tx, c.ev.protectedPersonId);
         const unknown = t('O-UI-UNKNOWN');
-        const loc = c.ev.location;
+        const join = (xs: string[] | undefined) => (xs?.length ? xs.join(', ') : unknown);
+        const loc = c.ev.location ?? card?.location ?? null;
+        const coords = loc ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : null;
+        const age = card ? card.age : basic?.birthYear ? c.now.getUTCFullYear() - basic.birthYear : null;
         const fields: DispatchScript['fields'] = {
           type: t(`O-TYPE-${c.ev.type}`),
-          name: person?.displayName ?? unknown,
-          age: person?.birthYear ? String(c.now.getUTCFullYear() - person.birthYear) : unknown,
-          address: loc ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : unknown,
-          conditions: unknown,
-          medications: unknown,
-          allergies: unknown,
-          doorNote: unknown,
+          name: (card ?? basic)?.displayName ?? unknown,
+          age: age !== null ? String(age) : unknown,
+          address: (card?.address && coords ? `${card.address} (${coords})` : (card?.address ?? coords)) ?? unknown,
+          conditions: join(card?.medical?.conditions),
+          medications: join(card?.medical?.medications),
+          allergies: join(card?.medical?.allergies),
+          doorNote: card?.doorAccessNote ?? unknown,
         };
         await this.repo.audit(c.tx, c.ev.id, operatorId, 'event.script_viewed', { kind });
         return { kind: 'dispatch112', code: 'O-SCRIPT-112', fields, text: t('O-SCRIPT-112', 'tr', fields) };
@@ -271,7 +277,20 @@ export class ChainService {
     );
   }
 
+  /**
+   * GET /v1/events/{id}/person — olayı yürüten operatöre kişi kartı (adres, kapı notu, tıbbi özet). Sağlık verisi
+   * yalnız burada ve 112 şablonunda çözülür; her çözüm denetim kaydına yazılır. Profil yoksa null.
+   */
+  async personCard(id: string, operatorId: string, now?: Date): Promise<EventPersonCard | null> {
+    return this.events.operate(id, operatorId, (c) => this.cardOf(c, operatorId, 'event_card'), { now });
+  }
+
   // ---- iç ----
+
+  private async cardOf(c: OperatorCtx, operatorId: string, purpose: string) {
+    if (!this.profile) return null;
+    return this.profile.eventCard(c.tx, c.ev.protectedPersonId, { eventId: c.ev.id, operatorId, purpose }, c.now);
+  }
 
   private async result(c: OperatorCtx, run: Run | null): Promise<EventWithChain> {
     return { event: c.ev, chain: run ? view(run) : null, calls: (await this.telephony?.callsFor(c.ev.id, c.tx)) ?? [] };

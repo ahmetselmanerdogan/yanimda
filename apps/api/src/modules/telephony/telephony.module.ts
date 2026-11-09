@@ -3,7 +3,7 @@ import { Logger, Module } from '@nestjs/common';
 import type { CpaasProvider } from './cpaas';
 import { FakeProvider } from './fake-cpaas';
 import { type RecordingStore, s3ConfigFromEnv, S3RecordingStore } from './recording-store';
-import { ContactsController, CpaasWebhookController } from './telephony.controller';
+import { CpaasWebhookController } from './telephony.controller';
 import { CPAAS, RECORDINGS, TelephonyService } from './telephony.service';
 import { twilioConfigFromEnv, TwilioProvider } from './twilio';
 
@@ -47,7 +47,7 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
       },
     },
   ],
-  controllers: [CpaasWebhookController, ContactsController],
+  controllers: [CpaasWebhookController],
   exports: [TelephonyService],
 })
 export class TelephonyModule {}

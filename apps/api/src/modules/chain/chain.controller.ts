@@ -28,6 +28,12 @@ export class ChainController {
     return this.chain.get(id);
   }
 
+  /** GET /v1/events/{id}/person — kişi kartı + tıbbi özet (yalnız olayı yürüten operatör; T-040). */
+  @Get(':id/person')
+  person(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.chain.personCard(id, userOf(req).sub);
+  }
+
   /** GET /v1/events/{id}/script?kind=dispatch112 — 112 şablonu (yalnız olayı yürüten operatör). */
   @Get(':id/script')
   script(@Param('id') id: string, @Query('kind') kind: string, @Req() req: UserRequest) {

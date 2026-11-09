@@ -7,6 +7,7 @@ import {
   type DispatchScript,
   type EventRecord,
   type EventWithChain,
+  type PersonCard,
   type QueueItem,
   type StepResultBody,
 } from './api';
@@ -174,6 +175,11 @@ export class TrainingSim {
       if (d.ev.state === 'OPERATOR_ASSIGNED' || d.ev.state === 'CONTACT_CHAIN') this.go(d, 'CONFIRMED_EMERGENCY');
       this.toEmergency(d, 'escalate', reason);
       return this.changed(d);
+    },
+    // Eğitim kişileri kurgudur: tıbbi özet yok (operatör "kayıtlı değil" görmeyi de öğrenir).
+    personCard: async (id): Promise<PersonCard | null> => {
+      const d = this.mine(id);
+      return { ...d.person, address: null, location: d.ev.location ?? null, doorAccessNote: null, medical: null };
     },
     dispatchScript: async (id): Promise<DispatchScript> => {
       const d = this.mine(id);

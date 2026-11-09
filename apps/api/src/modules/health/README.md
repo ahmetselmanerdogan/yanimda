@@ -1,3 +1,4 @@
-# health modülü
+# health şeması
 
-Henüz uygulanmadı. Sorumluluk ve görevler için docs/03-teknik-mimari.md "Servis haritası" ve docs/TASKS.md'ye bakın.
+`health.medical_summary` (T-040): kişi başına tek şifreli tıbbi özet. Kod `modules/profile/profile.service.ts`'te
+(`setMedical`, `deleteMedical`, `eventCard`). Kural: yalnız olay anında çözülür, log'a yazılmaz.

@@ -9,6 +9,7 @@ import {
   type CloseOutcome,
   type DispatchScript,
   type EventWithChain,
+  type PersonCard,
   type StepResultBody,
 } from './lib/api';
 import type { Backend } from './lib/backend';
@@ -77,6 +78,17 @@ export function Console({
       .then((d) => selectedRef.current === need112 && setDispatchScript(d))
       .catch(() => undefined); // metin katalogdan "bilinmiyor" alanlarıyla gösterilir
   }, [need112, api]);
+
+  // T-040 kişi kartı (tıbbi özet): yalnız olay bendeyken, olay başına bir kez.
+  const [card, setCard] = useState<{ id: string; card: PersonCard | null } | null>(null);
+  const needCard = mine ? selected : null;
+  useEffect(() => {
+    if (!needCard || card?.id === needCard) return;
+    api
+      .personCard(needCard)
+      .then((c) => selectedRef.current === needCard && setCard({ id: needCard, card: c }))
+      .catch(() => undefined);
+  }, [needCard, card?.id, api]);
 
   // ---- canlı kuyruk ----
   useEffect(
@@ -336,7 +348,7 @@ export function Console({
           <p className="muted pad">{t('O-UI-NO-SELECTION')}</p>
         )}
       </main>
-      <PersonPanel item={item} />
+      <PersonPanel item={item} card={card && card.id === selected ? card.card : undefined} mine={mine} />
       <PhoneBar />
       {mode === 'close' && mine && (
         <ClosePanel

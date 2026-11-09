@@ -37,6 +37,22 @@ export interface EventRecord {
   transitions: Transition[];
 }
 
+/** T-040 olay anında kişi kartı: yalnız olayı yürüten operatöre; tıbbi özet burada çözülür (sunucu audit'e yazar). */
+export interface PersonCard {
+  displayName: string;
+  age: number | null;
+  address: string | null;
+  location: { lat: number; lng: number } | null;
+  doorAccessNote: string | null;
+  medical: {
+    conditions: string[];
+    medications: string[];
+    allergies: string[];
+    bloodType: string | null;
+    notes: string | null;
+  } | null;
+}
+
 export type CallStatus =
   'queued' | 'ringing' | 'in-progress' | 'completed' | 'busy' | 'no-answer' | 'failed' | 'canceled';
 /** T-050 CPaaS araması (numarasız). */
@@ -115,6 +131,7 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       req<EventWithChain>('POST', `${ev(id)}/chain/steps/${n}/result`, b),
     escalate: (id: string, reason: string) => req<EventWithChain>('POST', `${ev(id)}/escalate-112`, { reason }),
     dispatchScript: (id: string) => req<DispatchScript>('GET', `${ev(id)}/script?kind=dispatch112`),
+    personCard: (id: string) => req<PersonCard | null>('GET', `${ev(id)}/person`),
     close: (id: string, outcome: CloseOutcome, note?: string, followUpAfterHours?: number) =>
       req<void>('POST', `${ev(id)}/close`, {
         outcome,

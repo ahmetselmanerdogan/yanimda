@@ -1,7 +1,7 @@
 import type { ChainStep } from '@yanimda/contracts';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CloseOutcome, DispatchScript, QueueItem } from '../lib/api';
+import type { CloseOutcome, DispatchScript, PersonCard, QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 
 /** Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08). */
@@ -38,8 +38,20 @@ export function TopBar(p: {
  * Kişi paneli (260 px). Tıbbi özet yalnız olay açıkken gelir (T-040 sağlık şeması bağlanınca); kişisel bilgi
  * kopyalanamaz (user-select: none + kopyalama denemesinde uyarı).
  */
-export function PersonPanel({ item }: { item: QueueItem | null }) {
+/**
+ * Kişi paneli. Tıbbi özet, adres ve kapı notu yalnız olay operatörde iken sunucudan gelir (T-040; her açılış audit'e
+ * yazılır). Kopyalama engelli (E-03).
+ */
+export function PersonPanel({ item, card, mine }: { item: QueueItem | null; card?: PersonCard | null; mine: boolean }) {
   const [warn, setWarn] = useState(false);
+  const med = card?.medical;
+  const listRow = (code: string, xs: string[] | undefined) =>
+    xs && xs.length > 0 ? (
+      <>
+        <dt>{t(code)}</dt>
+        <dd>{xs.join(', ')}</dd>
+      </>
+    ) : null;
   return (
     <aside
       className="person no-copy"
@@ -58,8 +70,46 @@ export function PersonPanel({ item }: { item: QueueItem | null }) {
       ) : (
         <p className="muted">{t('O-UI-PERSON-UNKNOWN')}</p>
       )}
+      {card && (card.address || card.doorAccessNote) && (
+        <dl className="person-facts">
+          {card.address && (
+            <>
+              <dt>{t('O-UI-ADDRESS')}</dt>
+              <dd>{card.address}</dd>
+            </>
+          )}
+          {card.doorAccessNote && (
+            <>
+              <dt>{t('O-UI-DOOR-NOTE')}</dt>
+              <dd>{card.doorAccessNote}</dd>
+            </>
+          )}
+        </dl>
+      )}
       <h3>{t('O-UI-MEDICAL')}</h3>
-      <p className="muted">{t('O-UI-MEDICAL-NONE')}</p>
+      {!mine || card === undefined ? (
+        <p className="muted">{t(mine ? 'O-UI-MEDICAL-NONE' : 'O-UI-MEDICAL-LOCKED')}</p>
+      ) : med ? (
+        <dl className="medical" data-testid="medical">
+          {listRow('O-UI-CONDITIONS', med.conditions)}
+          {listRow('O-UI-MEDICATIONS', med.medications)}
+          {listRow('O-UI-ALLERGIES', med.allergies)}
+          {med.bloodType && (
+            <>
+              <dt>{t('O-UI-BLOOD-TYPE')}</dt>
+              <dd>{med.bloodType}</dd>
+            </>
+          )}
+          {med.notes && (
+            <>
+              <dt>{t('O-UI-MEDICAL-NOTES')}</dt>
+              <dd>{med.notes}</dd>
+            </>
+          )}
+        </dl>
+      ) : (
+        <p className="muted">{t('O-UI-MEDICAL-NONE')}</p>
+      )}
       {warn && (
         <p className="warn" role="alert">
           {t('O-UI-COPY-BLOCKED')}

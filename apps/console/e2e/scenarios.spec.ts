@@ -118,6 +118,52 @@ test.describe('senaryolar', () => {
     await close.getByRole('button', { name: 'Kapat' }).click();
     await expect(page.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
   });
+  test('T-040 kişi kartı: tıbbi özet yalnız olay üstlenilince, adres ve kapı notuyla görünür', async ({ page }) => {
+    const admin = process.env.ADMIN_TOKEN;
+    test.skip(!admin, 'ADMIN_TOKEN gerekli (kişi profili yönetici ucuyla yüklenir)');
+    const headers = { 'x-admin-token': admin! };
+    const created = await page.request.post('/v1/protected-persons', {
+      headers,
+      data: {
+        displayName: 'Ayşe Yılmaz',
+        birthYear: 1945,
+        address: { line: 'Bağdat Cd. No:1', district: 'Kadıköy', city: 'İstanbul', lat: 40.96, lng: 29.06 },
+        doorAccessNote: 'Anahtar saksıda',
+      },
+    });
+    expect(created.status()).toBe(201);
+    const person = (await created.json()).id as string;
+    const med = await page.request.put(`/v1/protected-persons/${person}/medical`, {
+      headers,
+      data: {
+        consentAt: new Date(Date.now() - 60_000).toISOString(),
+        conditions: ['Hipertansiyon'],
+        medications: ['Metformin 1000 mg'],
+        allergies: ['Penisilin'],
+        bloodType: 'A+',
+      },
+    });
+    expect(med.status()).toBe(200);
+
+    const before = await rowIds(page);
+    await sendSignal(page, 'SOS', person);
+    const id = await newEvent(page, before);
+    await page.locator(`.queue-row[data-event-id="${id}"]`).click();
+    const panel = page.locator('aside.person');
+    await expect(panel).toContainText('Tıbbi özet olayı üstlenince görünür.');
+    await expect(panel).not.toContainText('Penisilin');
+    await page.locator('main').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.state')).toHaveText('Üstlenildi');
+    const medical = panel.getByTestId('medical');
+    await expect(medical).toContainText('Penisilin');
+    await expect(medical).toContainText('Metformin 1000 mg');
+    await expect(medical).toContainText('A+');
+    await expect(panel).toContainText('Bağdat Cd. No:1, Kadıköy, İstanbul');
+    await expect(panel).toContainText('Anahtar saksıda');
+    await closeWith(page, 'Yanlış alarm');
+    await expect(page.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
+  });
 });
 
 test('eğitim modu: giriş ve ağ isteği yok, sahte olaylar yürütülür', async ({ page }) => {

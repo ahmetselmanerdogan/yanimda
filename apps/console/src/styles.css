@@ -347,6 +347,24 @@ h3 {
   background: var(--surface);
   overflow: auto;
 }
+.person-facts,
+.medical {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 10px;
+  margin: 8px 0;
+}
+.person-facts dt,
+.medical dt {
+  color: var(--muted);
+}
+.person-facts dd,
+.medical dd {
+  margin: 0;
+}
+.medical dd {
+  font-weight: 600;
+}
 .no-copy {
   user-select: none;
   -webkit-user-select: none;

@@ -64,6 +64,58 @@ export const device = deviceSchema.table('device', {
 });
 
 export const profileSchema = pgSchema('profile');
+export const healthSchema = pgSchema('health');
+
+/** T-040 korunan kişi (0001 + 0009). Kapı notu şifreli (`v1:` FieldCipher). */
+export const protectedPerson = profileSchema.table('protected_person', {
+  id: uuid('id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  birthYear: integer('birth_year'),
+  language: text('language').notNull().default('tr'),
+  countryCode: text('country_code').notNull().default('TR'),
+  timezone: text('timezone').notNull().default('Europe/Istanbul'),
+  status: text('status').notNull().default('TRIAL'),
+  learningModeUntil: timestamptz('learning_mode_until'),
+  addressLine: text('address_line'),
+  district: text('district'),
+  city: text('city'),
+  postalCode: text('postal_code'),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  geocodedAt: timestamptz('geocoded_at'),
+  doorAccessNoteEnc: text('door_access_note_enc'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-040 aile hesabı ↔ kişi (sahiplik). `subject` = consumers realm `sub`. */
+export const familyMember = profileSchema.table('family_member', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  subject: text('subject').notNull(),
+  role: text('role').notNull(),
+  relation: text('relation'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+});
+
+/** T-040 tıbbi özet: tek şifreli JSON; rıza zamanı zorunlu. */
+export const medicalSummary = healthSchema.table('medical_summary', {
+  protectedPersonId: uuid('protected_person_id').primaryKey(),
+  ciphertext: text('ciphertext').notNull(),
+  consentAt: timestamptz('consent_at').notNull(),
+  consentBy: text('consent_by').notNull(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+export const subscription = profileSchema.table('subscription', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  plan: text('plan').notNull(),
+  status: text('status').notNull(),
+  startedAt: timestamptz('started_at').notNull().defaultNow(),
+  renewsAt: timestamptz('renews_at'),
+  canceledAt: timestamptz('canceled_at'),
+});
 
 /** T-040/T-041 davet kodu: sha256(kod) saklanır; 15 dk, tek kullanım. */
 export const invite = profileSchema.table('invite', {

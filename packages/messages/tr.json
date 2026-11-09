@@ -398,6 +398,38 @@
     "channel": "console",
     "text": "Tıbbi bilgi kayıtlı değil."
   },
+  "O-UI-ADDRESS": {
+    "channel": "console",
+    "text": "Adres"
+  },
+  "O-UI-DOOR-NOTE": {
+    "channel": "console",
+    "text": "Kapı notu"
+  },
+  "O-UI-CONDITIONS": {
+    "channel": "console",
+    "text": "Hastalıklar"
+  },
+  "O-UI-MEDICATIONS": {
+    "channel": "console",
+    "text": "İlaçlar"
+  },
+  "O-UI-ALLERGIES": {
+    "channel": "console",
+    "text": "Alerjiler"
+  },
+  "O-UI-BLOOD-TYPE": {
+    "channel": "console",
+    "text": "Kan grubu"
+  },
+  "O-UI-MEDICAL-NOTES": {
+    "channel": "console",
+    "text": "Not"
+  },
+  "O-UI-MEDICAL-LOCKED": {
+    "channel": "console",
+    "text": "Tıbbi özet olayı üstlenince görünür."
+  },
   "O-UI-COPY-BLOCKED": {
     "channel": "console",
     "text": "Kişisel ve tıbbi bilgiler kopyalanamaz."
@@ -635,5 +667,9 @@
   "O-CALL-DURATION": {
     "channel": "console",
     "text": "{sec} sn"
+  },
+  "S-INVITE": {
+    "channel": "sms",
+    "text": "Yanımda davet kodunuz: {code}. Uygulamayı açıp bu kodu girin. Kod 15 dakika geçerlidir."
   }
 }

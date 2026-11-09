@@ -29,8 +29,8 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-020 identity: Keycloak realm'leri, OIDC guard, roller, MFA (E-01)
 - [x] T-021 chain: prosedür şablonu (05 → JSON), chain_run/step, operatör kilidi (D-03, D-04) — kilit Redis yerine olay satırında (lock_until); 05 metinleri katalogda, gözden geçirilmeli
 - [x] T-022 GET /v1/queue + WebSocket; claim (E-02)
-- [x] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10) — tıbbi özet T-040'ı bekliyor; 04 dokümanı okunamadı, düzen görev kitabından
-- [x] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06) — tıbbi alanlar T-040'ı bekliyor
+- [x] T-023 Konsol UI: 04 düzeni, QueueRow, EventCard, StepRow, ScriptPanel, kısayollar (E-03, E-04, E-08, E-10) — tıbbi özet T-040 ile bağlandı; 04 dokümanı okunamadı, düzen görev kitabından
+- [x] T-024 Kapatma + takip planlama (E-07); 112 şablonu (E-06) — tıbbi alanlar T-040 ile doluyor
 - [x] T-025 SLA sayaçları ve metrikler (E-09, D-11)
 - [x] T-026 Playwright e2e — S3/S4/S5/S6 + eğitim modu; S5'in sahte CPaaS ayağı T-050 ile
 
@@ -45,7 +45,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-037 Gelen arama ve otomatik cevap (A-10)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
-- [ ] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — davet kodu üretimi T-041 ile geldi (yönetici token'ıyla; SMS ve aile yetkisi açık)
+- [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti açık
 - [x] T-041 /v1/devices/enroll, cihaz token, /config — aile "cihazı kaldır" T-020'ye kadar yönetici token'ıyla
 - [ ] T-042 phone: davet → 6 ekran kurulum (B-01, B-02)
 - [ ] T-043 phone: köprü ve tampon (B-03)

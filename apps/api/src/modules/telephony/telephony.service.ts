@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type ChainStep, TOPICS } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, call, contact } from '../../db/schema';
+import { type ContactInput, type ContactRole, replaceContacts } from '../profile/contacts';
 import { type CpaasProvider, EMPTY_TWIML, sayTwiml, type WebhookUrls } from './cpaas';
 import type { RecordingStore } from './recording-store';
 
@@ -34,13 +35,7 @@ export interface CallView {
   createdAt: string;
 }
 
-export type ContactRole = 'ELDER' | 'WATCH' | 'CONTACT' | 'NEIGHBOR';
-export interface ContactInput {
-  role: ContactRole;
-  priority?: number;
-  displayName?: string;
-  phone: string;
-}
+export type { ContactInput, ContactRole };
 
 const RANK: Record<CallStatus, number> = {
   queued: 0,
@@ -53,7 +48,6 @@ const RANK: Record<CallStatus, number> = {
   canceled: 3,
 };
 const ACTIVE: CallStatus[] = ['queued', 'ringing', 'in-progress'];
-const E164 = /^\+[1-9]\d{6,14}$/;
 /** Adım hedefi → rehber rolü. 112 (EMERGENCY) masa sabit hattından elle (T-052); aile bildirimi arama değil. */
 const ROLE_OF: Partial<Record<ChainStep['target'], ContactRole>> = {
   WATCH: 'WATCH',
@@ -145,36 +139,9 @@ export class TelephonyService {
 
   // ---- rehber (asgari; tam profil T-040) ----
 
-  async setContacts(personId: string, input: unknown): Promise<{ count: number }> {
-    if (!Array.isArray(input) || input.length > 20) throw new BadRequestException('En fazla 20 numara');
-    const rows = input.map((x: Partial<ContactInput>, i) => {
-      if (!x || !['ELDER', 'WATCH', 'CONTACT', 'NEIGHBOR'].includes(x.role as string))
-        throw new BadRequestException(`#${i}: rol geçersiz`);
-      if (typeof x.phone !== 'string' || !E164.test(x.phone))
-        throw new BadRequestException(`#${i}: numara E.164 olmalı`);
-      const priority = x.priority ?? 1;
-      if (!Number.isInteger(priority) || priority < 1) throw new BadRequestException(`#${i}: öncelik geçersiz`);
-      return {
-        id: uuidv7(),
-        protectedPersonId: personId,
-        role: x.role as ContactRole,
-        priority,
-        displayName: typeof x.displayName === 'string' ? x.displayName.slice(0, 100) : null,
-        phoneE164: x.phone,
-      };
-    });
-    await this.db.transaction(async (tx) => {
-      await tx.delete(contact).where(eq(contact.protectedPersonId, personId));
-      if (rows.length) await tx.insert(contact).values(rows);
-      await tx.insert(auditLog).values({
-        actorKind: 'OPERATOR',
-        action: 'profile.contacts_set',
-        entityType: 'protected_person',
-        entityId: personId,
-        data: { count: rows.length },
-      });
-    });
-    return { count: rows.length };
+  /** Yönetici betikleri ve testler için (aile/yönetici HTTP ucu T-040 ProfileController). */
+  setContacts(personId: string, input: unknown): Promise<{ count: number }> {
+    return replaceContacts(this.db, personId, input, { kind: 'ADMIN' });
   }
 
   private async contactFor(q: Db | Tx, personId: string, step: ChainStep) {
