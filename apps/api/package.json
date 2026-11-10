@@ -38,7 +38,7 @@
     "@electric-sql/pglite": "^0.5.15",
     "@electric-sql/pglite-socket": "0",
     "@types/ioredis-mock": "^8.2.8",
-    "@types/node": "^22.7.0",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.12",
