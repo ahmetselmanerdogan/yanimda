@@ -1,0 +1,87 @@
+{{- /* Statik web uygulamaları (Caddy file_server, :8080, root değil, salt okunur kök). */ -}}
+{{- $root := . -}}
+{{- $apps := list -}}
+{{- if .Values.console.enabled }}{{ $apps = append $apps (dict "component" "console" "v" .Values.console) }}{{ end -}}
+{{- if .Values.familyWeb.enabled }}{{ $apps = append $apps (dict "component" "family-web" "v" .Values.familyWeb) }}{{ end -}}
+{{- range $app := $apps }}
+{{- $ctx := dict "root" $root "component" $app.component }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $app.v.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "yanimda.imagePullSecrets" $root | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml $root.Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: web
+          image: {{ include "yanimda.image" $app.v.image | quote }}
+          imagePullPolicy: {{ $app.v.image.pullPolicy }}
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+          resources:
+            {{- toYaml $app.v.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if and $app.v.pdb (gt (int $app.v.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: {{ $app.v.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

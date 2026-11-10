@@ -4,6 +4,7 @@ import type { RefObject } from 'react';
 import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, type QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 import type { Mode } from '../lib/keys';
+import { canTakeOver } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
 import { ScriptPanel } from './Panels';
 
@@ -116,7 +117,16 @@ export function EventCard(p: Props) {
           </button>
         </div>
       )}
-      {!mine && item.lockedBy && <p className="muted">{t('O-UI-LOCKED-BY')}</p>}
+      {!mine && canTakeOver(item, me, now) ? (
+        <div className="claim">
+          <p>{t('O-UI-TAKEOVER')}</p>
+          <button type="button" className="primary" onClick={p.onClaim} disabled={p.busy}>
+            {action('O-UI-TAKEOVER')} <kbd>Enter</kbd>
+          </button>
+        </div>
+      ) : (
+        !mine && item.lockedBy && <p className="muted">{t('O-UI-LOCKED-BY')}</p>
+      )}
 
       {chain && (
         <section aria-labelledby="steps-title">

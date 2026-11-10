@@ -1,0 +1,8 @@
+# cp blackbox-http.yml.example blackbox-http.yml ve alan adını ortamınıza göre değiştirin (2xx beklenir).
+- targets:
+    - https://console.staging.yanimda.example/
+    - https://auth.staging.yanimda.example/realms/consumers/.well-known/openid-configuration
+    - https://auth.staging.yanimda.example/realms/operations/.well-known/openid-configuration
+    - https://status.staging.yanimda.example/
+  labels:
+    env: staging

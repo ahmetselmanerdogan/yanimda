@@ -99,6 +99,10 @@ paths:
   /events/{id}/unclaim:
     post:
       summary: Amir — üstlenmeyi geri al; olay kuyruğa döner, zincir kaldığı yerden sürer. E-02, T-022
+      description: |
+        OPERATOR_ASSIGNED / CONTACT_CHAIN → OPERATOR_QUEUE. Teyitli olay (CONFIRMED_OK, CONFIRMED_EMERGENCY, DISPATCH)
+        kuyruğa dönemez: durumu korunur, operatörsüz bırakılır (audit `event.released`); ilk üstlenen devralır.
+        Diğer durumlarda 409.
       operationId: unclaimEvent
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }]
@@ -178,7 +182,12 @@ paths:
   /events/{id}/claim:
     post:
       summary: Olayı üstlen; zincir oluşur, operatör kilidi başlar (300 sn). E-02, D-04, T-021
-      description: Aynı operatör tekrar üstlenirse aynı sonuç döner. Başka operatördeyse veya olay kuyrukta değilse 409.
+      description: |
+        Aynı operatör tekrar üstlenirse aynı sonuç döner. Operatördeki olayın (teyitli dahil) kilidi dolmuşsa veya amir
+        bırakmışsa başka operatör devralır: durum değişmez, kilit yeni operatörde başlar, audit `event.taken_over` ve
+        `event.updated {reason: TAKEN_OVER}`. Olay alarm olmayan türden alarma yükseltildiyse (TEST'e SOS gibi) zincir
+        bu çağrıda yeniden planlanır: bekleyen adımlar `SKIPPED (upgraded)`, yeni türün adımları (112 dahil) eklenir.
+        Kilidi taze başka operatördeyse veya olay kuyrukta değilse 409.
       operationId: claimEvent
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }]

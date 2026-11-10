@@ -1,0 +1,202 @@
+# T-083 uyarı kuralları. severity: critical → PagerDuty + Telegram + e-posta; warning → Telegram + e-posta.
+# Eşikler başlangıç değeridir; staging'de 7 gün gözlemden sonra ayarlanır.
+groups:
+  - name: yanimda-sla
+    rules:
+      # Kuyruk gecikmesi: gerçek (TEST olmayan) olay operatör kuyruğunda 20 sn'den uzun bekliyor (hedef üstlenme 10 sn).
+      - alert: QueueWaitTooLong
+        expr: yanimda_queue_oldest_waiting_seconds > 20
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: Operatör kuyruğunda olay {{ $value | humanizeDuration }} bekliyor
+          runbook: infra/README.md (İzleme)
+      - alert: QueueDepthHigh
+        expr: yanimda_queue_waiting > 5
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: Kuyrukta {{ $value }} gerçek olay bekliyor
+      - alert: SignalToScreenSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(signal_to_screen_seconds_bucket[15m]))) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: signal_to_screen p95 {{ $value | humanize }} sn (> 5 sn)
+      - alert: OperatorClaimSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(operator_claim_seconds_bucket[30m]))) > 10
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Üstlenme p95 {{ $value | humanize }} sn (hedef 10 sn)
+
+  - name: yanimda-outbox
+    rules:
+      # Outbox birikimi: işçi teslim edemiyor (kira sahibi öldü, abone hata veriyor veya veritabanı yavaş).
+      - alert: OutboxBacklog
+        expr: yanimda_outbox_pending > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Outbox'ta {{ $value }} işlenmemiş satır
+      - alert: OutboxStalled
+        expr: yanimda_outbox_oldest_pending_seconds > 60
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: En eski outbox satırı {{ $value | humanizeDuration }} bekliyor (olay kaybı riski değil, gecikme)
+      # Core DLQ: sinyal/olay/bildirim satırı teslim edilemedi → olay kaybı riski; elle yeniden oynatılmalı.
+      - alert: OutboxDeadLetters
+        expr: yanimda_outbox_dlq_count - (yanimda_outbox_dlq_count offset 15m) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Son 15 dk'da outbox_dlq'ya {{ $value }} satır taşındı (sinyal/olay kaybı riski)
+          runbook: infra/README.md (Outbox DLQ)
+      - alert: OutboxSideStalled
+        expr: yanimda_outbox_side_oldest_pending_seconds > 600
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Kritik olmayan abone kuyruğu {{ $value | humanizeDuration }} gecikmede (SLA metriği / fatura)
+      - alert: OutboxSideDeadLetters
+        expr: yanimda_outbox_side_dead - (yanimda_outbox_side_dead offset 15m) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: Son 15 dk'da {{ $value }} side satırı teslim edilemedi (event.outbox_side dead_at)
+      - alert: OutboxWorkerDown
+        expr: up{job="worker"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Outbox işçisi kazınamıyor (API_OUTBOX_WORKER=off ise olaylar ilerlemez)
+
+  - name: yanimda-cpaas
+    rules:
+      - alert: CpaasErrorRateHigh
+        expr: yanimda_cpaas_failed_15m / clamp_min(yanimda_cpaas_calls_15m, 1) > 0.2 and yanimda_cpaas_calls_15m >= 5
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: CPaaS arama hata oranı {{ $value | humanizePercentage }} (son 15 dk)
+      - alert: NotificationErrorRateHigh
+        expr: yanimda_notify_failed_15m / clamp_min(yanimda_notify_total_15m, 1) > 0.2 and yanimda_notify_total_15m >= 10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.channel }} bildirim hata oranı {{ $value | humanizePercentage }}'
+
+  - name: yanimda-infra
+    rules:
+      - alert: ApiInstanceDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: API kopyası {{ $labels.instance }} kazınamıyor
+      - alert: ApiAllInstancesDown
+        expr: sum(up{job="api"}) == 0 or absent(up{job="api"})
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Hiçbir API kopyası ayakta değil
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: Dış uç erişilemiyor {{ $labels.instance }}
+      - alert: TlsCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.instance }} sertifikası 14 günden az (Caddy yenileyemiyor mu?)'
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Yönetilen Postgres'e bağlanılamıyor
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Yönetilen Redis'e bağlanılamıyor
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.mountpoint }} boş alan %15 altında'
+      - alert: DiskSpaceCritical
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.mountpoint }} boş alan %5 altında'
+      - alert: DiskWillFillIn24h
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 24 * 3600) < 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.mountpoint }} 24 saat içinde dolacak'
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: VPS boş bellek %10 altında
+
+  - name: yanimda-synthetic
+    rules:
+      # Kabul: staging'de 7 gün kesintisiz sentetik. 3 ardışık tur (15 dk) başarısız → sayfa.
+      - alert: SyntheticFailing
+        expr: synthetic_success == 0
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: Sentetik TEST SOS turu başarısız (oidc/api/token/test_sos alt kontrollerine bakın)
+      - alert: SyntheticStale
+        expr: time() - synthetic_last_run_timestamp > 900 or absent(synthetic_last_run_timestamp)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Sentetik sonda 15 dk'dır çalışmadı
+      - alert: SyntheticBlocked
+        expr: synthetic_blocked == 1
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: Tüm sentetik kişilerde açık TEST olayı var (operatör kapatmıyor; README "Sentetik")
+      - alert: SyntheticSlow
+        expr: synthetic_signal_to_queue_seconds > 10
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Sentetik test → kuyruk {{ $value | humanize }} sn
+
+  - name: yanimda-backup
+    rules:
+      - alert: BackupStale
+        expr: time() - backup_last_success_timestamp_seconds > 26 * 3600 or absent(backup_last_success_timestamp_seconds)
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: 26 saattir başarılı günlük döküm yok
+      - alert: RestoreDrillFailed
+        expr: restore_drill_success == 0
+        labels: { severity: critical }
+        annotations:
+          summary: Haftalık geri yükleme tatbikatı başarısız
+      - alert: RestoreDrillStale
+        expr: time() - restore_drill_last_run_timestamp_seconds > 8 * 86400 or absent(restore_drill_last_run_timestamp_seconds)
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: 8 gündür geri yükleme tatbikatı çalışmadı
+      - alert: RestoreDrillTooSlow
+        expr: restore_drill_duration_seconds > 3600
+        labels: { severity: critical }
+        annotations:
+          summary: Geri yükleme tatbikatı {{ $value | humanizeDuration }} sürdü (kabul < 1 saat)

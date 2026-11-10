@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { EventRecord, QueueItem } from './api';
 import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
-import { keepSelection, queueReducer } from './queue';
+import { canTakeOver, keepSelection, queueReducer } from './queue';
 import { clock, slaOf } from './sla';
 
 const item = (id: string, priority: number, createdAt: string, state = 'OPERATOR_QUEUE'): QueueItem =>
@@ -163,5 +163,22 @@ describe('katalog', () => {
       ...['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE'].map((x) => `O-OUT-${x}`),
     ];
     expect(codes.filter((c) => !(c in catalog))).toEqual([]);
+  });
+});
+
+describe('devralma (inceleme bulgusu 2)', () => {
+  const held = (state: string, lockedBy: string | null, lockUntil: string | null) =>
+    ({ ...item('e', 1, '2026-11-10T10:00:00Z', state), lockedBy, lockUntil }) as QueueItem;
+  const now = Date.parse('2026-11-10T10:10:00Z');
+
+  it('kilidi dolmuş başka operatördeki (teyitli dahil) olay devralınır', () => {
+    expect(canTakeOver(held('CONFIRMED_EMERGENCY', 'op-1', '2026-11-10T10:05:00Z'), 'op-2', now)).toBe(true);
+    expect(canTakeOver(held('CONFIRMED_OK', null, null), 'op-2', now)).toBe(true); // amir bıraktı
+  });
+
+  it('kilidi taze, benim veya kuyruktaki olay devralınmaz', () => {
+    expect(canTakeOver(held('CONTACT_CHAIN', 'op-1', '2026-11-10T10:12:00Z'), 'op-2', now)).toBe(false);
+    expect(canTakeOver(held('CONTACT_CHAIN', 'op-2', '2026-11-10T10:05:00Z'), 'op-2', now)).toBe(false);
+    expect(canTakeOver(held('OPERATOR_QUEUE', null, null), 'op-2', now)).toBe(false);
   });
 });

@@ -1,0 +1,4 @@
+# Ortama özgü ve gizli dosyalar
+secrets/*
+!secrets/README.md
+targets/*.yml

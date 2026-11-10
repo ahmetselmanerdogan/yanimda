@@ -1,0 +1,12 @@
+# BuildKit: bu Dockerfile için kök .dockerignore yerine geçer (kökteki "infra" dışlamasından yalnız konsol Caddyfile hariç).
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+.git
+.husky
+.github
+docs
+*.log
+infra/*
+!infra/console/Caddyfile

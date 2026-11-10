@@ -36,7 +36,10 @@ export default tseslint.config(
   {
     // k6 betikleri (Go içinde çalışan JS): k6 globalleri, ES modülü
     files: ['infra/k6/**/*.js'],
-    languageOptions: { sourceType: 'module', globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' } },
+    languageOptions: {
+      sourceType: 'module',
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly', open: 'readonly' },
+    },
     rules: { 'no-console': 'off', '@typescript-eslint/no-require-imports': 'off' },
   },
   prettier,

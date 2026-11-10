@@ -49,7 +49,8 @@ export class FieldCipher {
     const key = kid ? this.keys.get(kid) : undefined;
     if (v !== 'v1' || !key || !data) throw new Error('Şifreli alan çözülemedi');
     const raw = Buffer.from(data, 'base64');
-    const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12));
+    // Semgrep gcm-no-tag-length (T-081): kısa etiketle sahte şifreli metin kabul edilmesin
+    const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12), { authTagLength: 16 });
     d.setAAD(Buffer.from(context));
     d.setAuthTag(raw.subarray(12, 28));
     return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8');

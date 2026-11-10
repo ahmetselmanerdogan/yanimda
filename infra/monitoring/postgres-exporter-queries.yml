@@ -1,0 +1,86 @@
+# T-083 iş metrikleri (postgres_exporter --extend.query-path). Uygulamada karşılığı olmayanlar için (README "Takip"):
+# outbox birikimi, kuyrukta en uzun bekleme (test olayları hariç), CPaaS ve bildirim hata oranları.
+# Kullanıcı: salt okunur yanimda_monitor (README "İzleme kullanıcısı"). Sorgular yalnız sayım döndürür, PII yok.
+yanimda_outbox:
+  query: |
+    SELECT count(*) AS pending,
+           COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0) AS oldest_pending_seconds
+    FROM event.outbox WHERE processed_at IS NULL
+  metrics:
+    - pending:
+        usage: GAUGE
+        description: İşlenmemiş outbox satırı
+    - oldest_pending_seconds:
+        usage: GAUGE
+        description: En eski işlenmemiş outbox satırının yaşı (sn)
+
+yanimda_outbox_dlq:
+  query: SELECT count(*) AS count FROM event.outbox_dlq
+  metrics:
+    - count:
+        usage: GAUGE
+        description: outbox_dlq satır sayısı (5 denemede teslim edilemeyen)
+
+# İnceleme bulgusu 3: kritik olmayan aboneler (SLA metriği, faturalama, yanlış alarm kaydı) ayrı şeritte (0020).
+# Side birikimi SOS'u geciktirmez; yalnız istatistik/fatura gecikir. dead = abone başına DLQ.
+yanimda_outbox_side:
+  query: |
+    SELECT count(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL) AS pending,
+           COALESCE(EXTRACT(EPOCH FROM now() - min(created_at) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL)), 0)
+             AS oldest_pending_seconds,
+           count(*) FILTER (WHERE dead_at IS NOT NULL) AS dead
+    FROM event.outbox_side
+  metrics:
+    - pending:
+        usage: GAUGE
+        description: Teslim bekleyen side satırı
+    - oldest_pending_seconds:
+        usage: GAUGE
+        description: En eski bekleyen side satırının yaşı (sn)
+    - dead:
+        usage: GAUGE
+        description: 5 denemede teslim edilemeyen side satırı (abone DLQ)
+
+yanimda_queue:
+  query: |
+    SELECT count(*) AS waiting,
+           COALESCE(EXTRACT(EPOCH FROM now() - min(COALESCE(escalated_at, created_at))), 0) AS oldest_waiting_seconds
+    FROM event.event WHERE state = 'OPERATOR_QUEUE' AND NOT is_test
+  metrics:
+    - waiting:
+        usage: GAUGE
+        description: Operatör kuyruğunda bekleyen gerçek olay (TEST hariç)
+    - oldest_waiting_seconds:
+        usage: GAUGE
+        description: Kuyrukta en uzun bekleyen gerçek olayın yaşı (yükseltmeden beri, sn)
+
+yanimda_cpaas:
+  query: |
+    SELECT count(*) AS calls_15m,
+           count(*) FILTER (WHERE status = 'failed') AS failed_15m
+    FROM telephony.call WHERE created_at > now() - interval '15 minutes'
+  metrics:
+    - calls_15m:
+        usage: GAUGE
+        description: Son 15 dk CPaaS araması
+    - failed_15m:
+        usage: GAUGE
+        description: Son 15 dk sağlayıcı hatasıyla biten arama (busy/no-answer hariç)
+
+yanimda_notify:
+  query: |
+    SELECT channel,
+           count(*) AS total_15m,
+           count(*) FILTER (WHERE status = 'failed') AS failed_15m
+    FROM notify.notification WHERE created_at > now() - interval '15 minutes'
+    GROUP BY channel
+  metrics:
+    - channel:
+        usage: LABEL
+        description: Kanal (PUSH/SMS …)
+    - total_15m:
+        usage: GAUGE
+        description: Son 15 dk bildirim
+    - failed_15m:
+        usage: GAUGE
+        description: Son 15 dk başarısız bildirim

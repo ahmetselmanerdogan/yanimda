@@ -1,0 +1,16 @@
+Yanımda {{ .Chart.AppVersion }} kuruldu ({{ .Release.Namespace }}/{{ .Release.Name }}).
+
+Genel adresler:
+{{- if .Values.api.enabled }}
+  API:      https://api.{{ .Values.global.domain }}/v1
+{{- end }}
+{{- if .Values.console.enabled }}
+  Konsol:   https://console.{{ .Values.global.domain }}
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+  Keycloak: https://auth.{{ .Values.global.domain }}
+{{- end }}
+
+Gerekli Secret'lar (değerler bu chart'ta YOK; External Secrets / SOPS):
+  {{ .Values.api.existingSecret }}{{ if .Values.keycloak.enabled }}, {{ .Values.keycloak.existingSecret }}{{ end }}{{ if .Values.timescaledb.enabled }}, {{ .Values.timescaledb.existingSecret }}{{ end }}{{ if .Values.redis.enabled }}, {{ .Values.redis.existingSecret }}{{ end }}{{ if .Values.minio.enabled }}, {{ .Values.minio.existingSecret }}{{ end }}{{ if .Values.synthetic.enabled }}, {{ .Values.synthetic.existingSecret }}{{ end }}
+Ayrıntı: infra/README.md "Helm".

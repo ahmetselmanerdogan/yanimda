@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  # infra/grafana/konsol.json (T-025) kap açılışında ${DS_PROMETHEUS} → prometheus çevrilip buraya yazılır.
+  - name: yanimda
+    folder: Yanımda
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

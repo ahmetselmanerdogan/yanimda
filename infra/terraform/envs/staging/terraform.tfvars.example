@@ -1,0 +1,7 @@
+# cp terraform.tfvars.example terraform.tfvars  (terraform.tfvars git'e girmez)
+# Sırlar burada DEĞİL: export TF_VAR_db_password=... TF_VAR_db_app_password=... TF_VAR_redis_password=... (sır yöneticisinden)
+region       = "tr-west-1"
+ssh_key_pair = "yanimda-ops"
+admin_cidrs  = ["203.0.113.10/32"]
+dns_zone     = "staging.yanimda.example"
+db_version   = "16"

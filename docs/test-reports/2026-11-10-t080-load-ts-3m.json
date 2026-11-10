@@ -1,0 +1,83 @@
+{
+  "task": "T-080",
+  "startedAt": "2026-11-10T01:30:10.155Z",
+  "duration": "3m",
+  "database": "external (LOAD_DATABASE_URL)",
+  "k6": {
+    "exitCode": 0,
+    "signalToScreenMs": {
+      "p(95)": 1009.05,
+      "p(99)": 1014,
+      "max": 1015,
+      "avg": 851.0041666666667,
+      "min": 123,
+      "med": 896.5,
+      "p(90)": 972.1,
+      "thresholds": {
+        "p(95)<5000": false
+      }
+    },
+    "operatorClaimMs": {
+      "p(99)": 141.78,
+      "max": 142,
+      "avg": 69.08333333333333,
+      "min": 25,
+      "med": 59.5,
+      "p(90)": 137,
+      "p(95)": 140.9
+    },
+    "signalsPostMs": {
+      "avg": 31.724822911020404,
+      "min": 0.14599,
+      "med": 19.212143,
+      "p(90)": 57.892423400000006,
+      "p(95)": 80.93243359999998,
+      "p(99)": 260.6254145199999,
+      "max": 592.263782,
+      "thresholds": {
+        "p(95)<300": false
+      }
+    },
+    "httpReqs": 1249,
+    "httpFailedRate": 0,
+    "wsErrors": 0,
+    "claimOkRate": 1,
+    "eventsSent": 18,
+    "eventsClosed": 12,
+    "signalsAccepted": 1225,
+    "signalsDuplicates": 0
+  },
+  "db": {
+    "signalRows": 1225,
+    "signalKeys": 1225,
+    "eventsByState": [
+      {
+        "state": "CLOSED",
+        "n": 18
+      }
+    ],
+    "eventsInDb": 18,
+    "outboxDlq": 0
+  },
+  "loss": {
+    "signals": 0,
+    "duplicates": 0,
+    "events": 0
+  },
+  "queueSettleMs": 17,
+  "outboxBacklog": {
+    "samples": 24,
+    "maxPending": 8,
+    "maxOldestSec": 1
+  },
+  "apiMetrics": {
+    "signalToScreenP95LeSec": {
+      "count": 12,
+      "quantileLeSec": 2
+    },
+    "operatorClaimP95LeSec": {
+      "count": 12,
+      "quantileLeSec": 20
+    }
+  }
+}

@@ -175,6 +175,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     this.unsub = bus.subscribe<{ protectedPersonId: string; isTest?: boolean; createdAt?: string }>(
       TOPICS.eventCreated,
       (e) => this.onEventCreated(e.payload, new Date(e.occurredAt)).then(() => undefined),
+      { lane: 'side', name: 'billing.trial' },
     );
   }
 
