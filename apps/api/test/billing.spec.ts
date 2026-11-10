@@ -7,6 +7,7 @@ import { type BillingConfig, BillingService } from '../src/modules/billing/billi
 import { FakeConsumerAccounts, KeycloakConsumerAccounts } from '../src/modules/billing/consumer-accounts';
 import {
   effective,
+  endsTrial,
   GRACE_DAYS,
   onFirstEvent,
   onPaymentEvent,
@@ -70,6 +71,13 @@ describe('yaşam döngüsü (saf)', () => {
     expect(effective(f, plus(31))).toMatchObject({ status: 'PAYMENT_PENDING', protectionActive: true });
     expect(effective(f, plus(38))).toMatchObject({ status: 'SUSPENDED', protectionActive: false });
     expect(effective(null, T0)).toMatchObject({ status: null, protectionActive: true });
+  });
+
+  it('denemeyi yalnız gerçek alarm bitirir', () => {
+    expect(['SOS', 'FALL', 'INACTIVITY'].every(endsTrial)).toBe(true);
+    expect(
+      ['BATTERY_LOW', 'CONNECTION_LOST', 'WATCH_OFF', 'CALLBACK', 'FOLLOW_UP', 'TEST', undefined].some(endsTrial),
+    ).toBe(false);
   });
 
   it('ilk olay denemeyi bitirir; ikinci olay ve bitmiş deneme dokunulmaz', () => {
@@ -517,9 +525,10 @@ describe('ödeme ve webhook', () => {
 describe('deneme, bekleme, askı', () => {
   it('ilk gerçek olay denemeyi bitirir → PAST_DUE + F-SUB-PAY → 7 gün sonra askı + F-SUB-SUSPENDED, cihazda koruma kapalı', async () => {
     const r = await billing.signup(signupBody(), 'i', T0);
-    expect(await billing.onEventCreated({ protectedPersonId: r.protectedPersonId, isTest: true }, plus(2))).toBe(false);
-    expect(await billing.onEventCreated({ protectedPersonId: r.protectedPersonId }, plus(3))).toBe(true);
-    expect(await billing.onEventCreated({ protectedPersonId: r.protectedPersonId }, plus(4))).toBe(false);
+    const pp = r.protectedPersonId;
+    expect(await billing.onEventCreated({ protectedPersonId: pp, type: 'SOS', isTest: true }, plus(2))).toBe(false);
+    expect(await billing.onEventCreated({ protectedPersonId: pp, type: 'SOS' }, plus(3))).toBe(true);
+    expect(await billing.onEventCreated({ protectedPersonId: pp, type: 'FALL' }, plus(4))).toBe(false);
 
     expect(await billing.sweep(plus(3, new Date(T0.getTime() + 1000)))).toBe(1);
     expect(await outboxCodes()).toEqual(['F-SUB-PAY']);
@@ -544,6 +553,55 @@ describe('deneme, bekleme, askı', () => {
       plus(12),
     );
     expect(await billing.view(r.subscriptionId, plus(12))).toMatchObject({ status: 'ACTIVE', protectionActive: true });
+  });
+
+  it('sistem olayları (pil, bağlantı, saat çıkarıldı, geri arama, takip) denemeyi bitirmez (inceleme bulgusu 5)', async () => {
+    const r = await billing.signup(signupBody(), 'i', T0);
+    for (const type of [
+      'BATTERY_LOW',
+      'BATTERY_DEAD',
+      'CONNECTION_LOST',
+      'WATCH_OFF',
+      'CALLBACK',
+      'FOLLOW_UP',
+      undefined,
+    ])
+      expect(await billing.onEventCreated({ protectedPersonId: r.protectedPersonId, type }, plus(2))).toBe(false);
+    expect(await billing.sweep(plus(3))).toBe(0);
+    expect((await billing.view(r.subscriptionId, plus(3))).effectiveStatus).toBe('TRIAL');
+    expect(await billing.onEventCreated({ protectedPersonId: r.protectedPersonId, type: 'INACTIVITY' }, plus(4))).toBe(
+      true,
+    );
+  });
+
+  it('süren olay varken tarama ertelenir: acil durumun ortasında F-SUB-PAY / askı gitmez (inceleme bulgusu 5)', async () => {
+    const r = await billing.signup(signupBody(), 'i', T0);
+    const pp = r.protectedPersonId;
+    expect(await billing.onEventCreated({ protectedPersonId: pp, type: 'SOS' }, plus(3))).toBe(true);
+    const ev = '01960000-0000-7000-8000-000000000001';
+    await h.pg.query(
+      `INSERT INTO event.event (id, protected_person_id, type, priority, state, created_at, source_signal_ids, is_test)
+       VALUES ($1, $2, 'SOS', 1, 'CONTACT_CHAIN', $3, '{}', false)`,
+      [ev, pp, plus(3)],
+    );
+    expect(await billing.sweep(plus(3, new Date(T0.getTime() + 60_000)))).toBe(0);
+    expect(await outboxCodes()).toEqual([]);
+    // Test olayı açıkken ertelenmez; gerçek olay kapanınca işlenir.
+    await h.pg.query("UPDATE event.event SET state = 'CLOSED', closed_at = $2 WHERE id = $1", [ev, plus(3)]);
+    expect(await billing.sweep(plus(3, new Date(T0.getTime() + 120_000)))).toBe(1);
+    expect(await outboxCodes()).toEqual(['F-SUB-PAY']);
+
+    // Bekleme biterken yine süren olay varsa askı ertelenir.
+    const ev2 = '01960000-0000-7000-8000-000000000002';
+    await h.pg.query(
+      `INSERT INTO event.event (id, protected_person_id, type, priority, state, created_at, source_signal_ids, is_test)
+       VALUES ($1, $2, 'FALL', 1, 'OPERATOR_QUEUE', $3, '{}', false)`,
+      [ev2, pp, plus(10)],
+    );
+    expect(await billing.sweep(plus(11))).toBe(0);
+    await h.pg.query("UPDATE event.event SET state = 'CLOSED', closed_at = $2 WHERE id = $1", [ev2, plus(11)]);
+    expect(await billing.sweep(plus(11))).toBe(1);
+    expect(await outboxCodes()).toEqual(['F-SUB-PAY', 'F-SUB-SUSPENDED']);
   });
 
   it('olay olmazsa 30. gün PAST_DUE', async () => {

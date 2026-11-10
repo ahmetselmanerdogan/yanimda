@@ -1509,7 +1509,7 @@ paths:
       summary: Hesap aç (adım 2) — Keycloak consumers hesabı + korunan kişi + TRIAL abonelik. T-060
       description: |
         Parola bu uçtan geçmez: Keycloak hesabı VERIFY_EMAIL + UPDATE_PASSWORD gerekli eylemleriyle açılır ve kullanıcıya
-        e-posta bağlantısı gider. Telefona 6 haneli kod SMS'lenir (10 dk). Deneme 30 gün veya ilk olaya kadar.
+        e-posta bağlantısı gider. Telefona 6 haneli kod SMS'lenir (10 dk). Deneme 30 gün veya ilk gerçek alarma (SOS, FALL, INACTIVITY; test ve sistem olayları sayılmaz) kadar; ödeme bekleme ve askı geçişleri kişinin süren olayı varken ertelenir.
         KVKK aydınlatma sürümü güncel olmalı ve açık rıza `true` olmalı (metinler hukuk onayı bekliyor).
         IP başına saatte 10 kayıt. Aynı e-posta 409 (yarım kişi kalmaz).
       operationId: signup

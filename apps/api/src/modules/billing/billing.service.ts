@@ -34,6 +34,7 @@ import type { ConsumerAccounts } from './consumer-accounts';
 import {
   effective,
   type EffectiveStatus,
+  endsTrial,
   onFirstEvent,
   onPaymentEvent,
   onSweep,
@@ -169,10 +170,10 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** İlk (test olmayan) olay denemeyi bitirir. Testler için ayrı bus. */
+  /** İlk gerçek alarm (SOS / FALL / INACTIVITY; test değil) denemeyi bitirir. Testler için ayrı bus. */
   subscribe(bus: LocalBus = globalBus) {
     this.unsub?.();
-    this.unsub = bus.subscribe<{ protectedPersonId: string; isTest?: boolean; createdAt?: string }>(
+    this.unsub = bus.subscribe<{ protectedPersonId: string; type?: string; isTest?: boolean; createdAt?: string }>(
       TOPICS.eventCreated,
       (e) => this.onEventCreated(e.payload, new Date(e.occurredAt)).then(() => undefined),
       { lane: 'side', name: 'billing.trial' },
@@ -582,8 +583,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
   // ---- deneme ve zaman ----
 
-  async onEventCreated(p: { protectedPersonId: string; isTest?: boolean }, at = new Date()): Promise<boolean> {
-    if (p.isTest || !UUID.test(p.protectedPersonId)) return false;
+  async onEventCreated(
+    p: { protectedPersonId: string; type?: string; isTest?: boolean },
+    at = new Date(),
+  ): Promise<boolean> {
+    // İnceleme bulgusu 5: pil, bağlantı, saat çıkarıldı, geri arama, takip gibi sistem olayları denemeyi bitirmez.
+    if (p.isTest || !endsTrial(p.type) || !UUID.test(p.protectedPersonId)) return false;
     return this.db.transaction(async (tx) => {
       const [sub] = await tx
         .select()
@@ -604,12 +609,19 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Deneme bitti → PAST_DUE (+F-SUB-PAY); bekleme bitti → askıda (+F-SUB-SUSPENDED). Değişen sayısı. */
+  /**
+   * Deneme bitti → PAST_DUE (+F-SUB-PAY); bekleme bitti → askıda (+F-SUB-SUSPENDED). Değişen sayısı.
+   * İnceleme bulgusu 5: kişinin süren (kapanmamış, test olmayan) olayı varken ertelenir — aileye acil durumun
+   * ortasında ödeme / askı mesajı gitmez; olay kapanınca sonraki taramada işlenir.
+   */
   async sweep(now = new Date()): Promise<number> {
     const due = (await this.db.execute(sql`
-      SELECT id FROM profile.subscription
-      WHERE (status = 'TRIAL' AND COALESCE(trial_ends_at, started_at + interval '${sql.raw(String(TRIAL_DAYS))} days') <= ${now})
-         OR (status = 'PAST_DUE' AND suspended_at IS NULL AND grace_until <= ${now})
+      SELECT s.id FROM profile.subscription s
+      WHERE ((s.status = 'TRIAL' AND COALESCE(s.trial_ends_at, s.started_at + interval '${sql.raw(String(TRIAL_DAYS))} days') <= ${now})
+          OR (s.status = 'PAST_DUE' AND s.suspended_at IS NULL AND s.grace_until <= ${now}))
+        AND NOT EXISTS (
+          SELECT 1 FROM event.event e
+          WHERE e.protected_person_id = s.protected_person_id::text AND e.state <> 'CLOSED' AND NOT e.is_test)
       LIMIT 500`)) as unknown as Rows<{ id: string }>;
     let n = 0;
     for (const { id } of due.rows) {

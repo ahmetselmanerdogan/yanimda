@@ -2,7 +2,8 @@
  * T-060 (C-01) abonelik yaşam döngüsü — saf fonksiyonlar, tablo testiyle sabitlenir.
  *
  * Durumlar (profile.subscription.status, 0009): TRIAL · ACTIVE · PAST_DUE · CANCELED.
- *  - Deneme (TRIAL): kayıtta başlar; ilk (test olmayan) olay veya 30 gün, hangisi önceyse biter.
+ *  - Deneme (TRIAL): kayıtta başlar; ilk gerçek alarm (SOS / FALL / INACTIVITY, test değil) veya 30 gün, hangisi
+ *    önceyse biter. Sistem olayları (pil, bağlantı, saat çıkarıldı, geri arama, takip) denemeyi bitirmez.
  *    Deneme bitince ödeme yoksa → PAST_DUE ("ödeme bekliyor").
  *  - Ödeme bekliyor (PAST_DUE): 7 gün koruma sürer (grace_until). Girişte aileye F-SUB-PAY (bir kez).
  *    Süre dolunca askıda (SUSPENDED, türetilmiş): cihaz config'te koruma kapalı, aileye F-SUB-SUSPENDED (bir kez).
@@ -147,7 +148,11 @@ export function onPaymentEvent(subscriptionId: string, f: SubscriptionFacts, ev:
   }
 }
 
-/** İlk (test olmayan) olay denemeyi bitirir. */
+/** Denemeyi bitiren olay türleri: kişinin hizmetten gerçekten yararlandığı alarmlar. */
+export const TRIAL_ENDING_TYPES: readonly string[] = ['SOS', 'FALL', 'INACTIVITY'];
+export const endsTrial = (type: string | undefined) => !!type && TRIAL_ENDING_TYPES.includes(type);
+
+/** İlk gerçek alarm denemeyi bitirir (tür denetimi çağıranda: endsTrial). */
 export function onFirstEvent(f: SubscriptionFacts, at: Date): Patch | null {
   if (f.status !== 'TRIAL' || trialEndOf(f) <= at) return null;
   return { trialEndsAt: at };
