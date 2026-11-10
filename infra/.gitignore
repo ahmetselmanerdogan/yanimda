@@ -1,0 +1,3 @@
+# Ortama özgü sırlar (şablon: .env.prod.example)
+.env.prod
+.env.*.local
