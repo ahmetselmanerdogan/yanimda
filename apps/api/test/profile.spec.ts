@@ -146,6 +146,14 @@ describe('kişi (C-02)', () => {
     ).toEqual([{ plan: 'STANDARD', status: 'TRIAL' }]);
   });
 
+  it('yönetici/kurum eklediği kişiye abonelik açılmaz; durum ACTIVE (inceleme bulgusu 4)', async () => {
+    const p = await create(ADMIN);
+    expect(await h.rows('SELECT 1 FROM profile.subscription WHERE protected_person_id = $1', [p.id])).toEqual([]);
+    expect(await h.rows('SELECT status FROM profile.protected_person WHERE id = $1', [p.id])).toEqual([
+      { status: 'ACTIVE' },
+    ]);
+  });
+
   it('başka ailenin kişisi 404 (okuma, güncelleme, tıbbi, rehber, davet); liste yalnız kendi kişileri', async () => {
     const a = await create(ALICE);
     await create(BOB, { displayName: 'Mehmet B.' });

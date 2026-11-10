@@ -101,12 +101,16 @@ export class ProfileService {
     // D-06 (T-070): yeni kişi öğrenme modunda başlar (kural paketi `learning.days`, varsayılan 30 gün).
     const learningModeUntil = new Date(now.getTime() + learningOf(this.rules.current()).days * 86_400_000);
     await this.db.transaction(async (tx) => {
+      // İnceleme bulgusu 4: abonelik yalnız aile (tüketici) kişisine açılır. Yönetici/kurum eklediği kişi abonelik
+      // dışıdır (koruma her zaman açık, subscriptionProtection → null); zorla denemeye sokulup askıya düşmez.
+      const consumer = actor.kind === 'FAMILY';
       await tx.insert(protectedPerson).values({
         id,
         displayName,
         ...patch,
         doorAccessNoteEnc,
         learningModeUntil,
+        status: consumer ? 'TRIAL' : 'ACTIVE',
         createdAt: now,
         updatedAt: now,
       });
@@ -118,9 +122,10 @@ export class ProfileService {
           role: 'OWNER',
           relation: optStr(b.relation, 'relation', 50),
         });
-      await tx
-        .insert(subscription)
-        .values({ id: uuidv7(), protectedPersonId: id, plan: 'STANDARD', status: 'TRIAL', startedAt: now });
+      if (consumer)
+        await tx
+          .insert(subscription)
+          .values({ id: uuidv7(), protectedPersonId: id, plan: 'STANDARD', status: 'TRIAL', startedAt: now });
       await this.audit(tx, actor, 'profile.person_created', id, {
         fields: Object.keys(patch),
         doorNote: !!doorAccessNoteEnc,
