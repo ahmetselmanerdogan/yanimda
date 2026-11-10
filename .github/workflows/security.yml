@@ -57,7 +57,7 @@ jobs:
           docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
             zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -I \
             -r api-report.html -J api-report.json -w api-report.md
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with: { version: 9.12.0 }
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
