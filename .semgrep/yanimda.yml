@@ -1,0 +1,65 @@
+# T-081 projeye özel Semgrep kuralları (CLAUDE.md: log'lara PII yazılmaz, sırlar koda yazılmaz).
+# Yerelde: docker run --rm -v "$PWD":/src semgrep/semgrep:1.95.0 semgrep scan --config .semgrep --error
+rules:
+  - id: yanimda-no-pii-in-logs
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Log çağrısına kişisel/sağlık verisi veya kimlik bilgisi alanı ($F) geçiyor. Log'a kimlik (olay/kişi UUID'si)
+      yaz, değeri değil (CLAUDE.md, T-081).
+    paths:
+      include: [apps/*/src, packages/*/src]
+    patterns:
+      - pattern-either:
+          - pattern: $L.$M(..., <... $O.$F ...>, ...)
+          - pattern: $L.$M(..., <... $O?.$F ...>, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(log|warn|error|debug|verbose|fatal|info|trace)$
+      - metavariable-regex:
+          metavariable: $F
+          # to/from/code gibi genel adlar bilinçli olarak yok (durum geçişi, katalog kodu); numara alanları phone*
+          regex: (?i)^(phone|phoneE164|phone_e164|msisdn|displayName|display_name|fullName|address|addressLine|doorAccessNote|door_access_note|medical|conditions|medications|allergies|bloodType|email|token|accessToken|refreshToken|authorization|password|secret|otp|inviteCode|codeHash)$
+  - id: yanimda-no-request-body-in-logs
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: İstek/yanıt gövdesi log'a yazılıyor; gövde numara, ad veya tıbbi veri içerebilir (T-081).
+    paths:
+      include: [apps/*/src, packages/*/src]
+      exclude: [packages/simulator] # geliştirici CLI'si: --dry sahte sinyali stdout'a basar
+    patterns:
+      - pattern-either:
+          - pattern: $L.$M(..., <... JSON.stringify($B) ...>, ...)
+          - pattern: $L.$M(..., <... $REQ.body ...>, ...)
+          - pattern: $L.$M(..., <... await $RES.text() ...>, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(log|warn|error|debug|verbose|fatal|info|trace)$
+      - metavariable-regex:
+          metavariable: $L
+          regex: (?i).*(log|console).*
+  - id: yanimda-insecure-random-for-secrets
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Math.random() güvenlik amaçlı değer (kod, token, anahtar) için kullanılamaz; node:crypto kullan.
+    paths:
+      include: [apps/api/src]
+    pattern: Math.random()
+  - id: yanimda-hardcoded-secret-env-default
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Sır ortam değişkenine kodda varsayılan değer verilmiş; sırlar .env.example / sır yöneticisinden gelir.
+    paths:
+      include: [apps/*/src]
+    patterns:
+      - pattern-either:
+          - pattern: process.env.$K ?? "$V"
+          - pattern: process.env.$K || "$V"
+          - pattern: $E.$K ?? "$V"
+          - pattern: $E.$K || "$V"
+      - metavariable-regex:
+          metavariable: $K
+          regex: (?i).*(SECRET|PASSWORD|TOKEN|KEY|KEYS)$
+      - metavariable-regex:
+          metavariable: $V
+          regex: .{6,}

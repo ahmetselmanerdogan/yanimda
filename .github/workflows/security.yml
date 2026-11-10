@@ -1,0 +1,83 @@
+name: security
+# T-081 DAST: OWASP ZAP API taraması (OpenAPI'den) üretim imajına + gerçek TimescaleDB/Redis'e; konsol için ZAP
+# baseline. PR'larda ve haftalık. Uyarılar (WARN) raporlanır ama işi düşürmez (-I); FAIL düşürür.
+# SAST (Semgrep), sır taraması (gitleaks) ve imaj taraması (Trivy) ci.yml'de, imza (cosign) release-image.yml'de.
+on:
+  pull_request:
+  schedule: [{ cron: '0 4 * * 1' }]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap:
+    name: ZAP (API taraması + konsol baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: timescale/timescaledb:2.17.2-pg16
+        env: { POSTGRES_USER: yanimda, POSTGRES_PASSWORD: yanimda, POSTGRES_DB: yanimda }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U yanimda" --health-interval 2s --health-timeout 2s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+    env:
+      ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:2.15.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: API imajı (üretim)
+        run: docker build -f apps/api/Dockerfile -t yanimda-api:zap .
+      - run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
+      - name: API'yi aç (NODE_ENV=production, sırlar koşuya özel)
+        run: |
+          echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/device-secret)"
+          echo "::add-mask::$(openssl rand -base64 32 | tee /tmp/field-key)"
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda -e REDIS_URL=redis://localhost:6379 \
+            -e PORT=3000 -e FIELD_ENC_KEYS="zap:$(cat /tmp/field-key)" -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" \
+            yanimda-api:zap
+          for _ in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
+            { [ "$code" = 400 ] || [ "$code" = 401 ]; } && exit 0
+            sleep 1
+          done
+          docker logs api; exit 1
+      - name: ZAP API taraması (OpenAPI)
+        run: |
+          mkdir -p zap && chmod a+rwx zap && cp packages/contracts/openapi.yaml zap/
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -I \
+            -r api-report.html -J api-report.json -w api-report.md
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.12.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Konsol (üretim derlemesi, vite preview)
+        run: |
+          pnpm --filter @yanimda/contracts build
+          pnpm --filter @yanimda/console build
+          nohup pnpm --filter @yanimda/console exec vite preview --port 4173 --strictPort > zap/console-preview.log 2>&1 &
+          for _ in $(seq 1 30); do curl -sf http://localhost:4173 >/dev/null && exit 0; sleep 1; done; exit 1
+        env:
+          VITE_OIDC_AUTHORITY: http://localhost:8080/realms/operations
+      - name: ZAP baseline (konsol)
+        run: |
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t http://localhost:4173 -I -r console-report.html -J console-report.json -w console-report.md
+      - name: PII log denetimi (API log'u, ZAP saldırı yükü altında)
+        if: always()
+        run: |
+          docker logs api > zap/api.log 2>&1 || true
+          pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../zap/api.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: zap-reports, path: zap/, if-no-files-found: ignore }

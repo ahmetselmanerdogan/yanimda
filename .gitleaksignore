@@ -1,0 +1,3 @@
+# T-081 gitleaks: bilinen sahte test sırları (birim test fikstürü; gerçek anahtar değil). Parmak izi = commit:dosya:kural:satır
+5c18a5acd89413e6827e288cdff206c11cc793fb:apps/api/test/device-enrollment.spec.ts:generic-api-key:25
+5c18a5acd89413e6827e288cdff206c11cc793fb:apps/api/test/device-enrollment.spec.ts:generic-api-key:81
