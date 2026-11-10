@@ -1,0 +1,15 @@
+# cp backend.hcl.example backend.hcl && terraform init -backend-config=backend.hcl
+# Kimlik: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY ortamda (OBS erişim anahtarı). Durum kovası elle/ayrı oluşturulur,
+# sürümleme açık olmalı. OBS DynamoDB kilidi sunmaz: aynı anda tek kişi apply (CI'da concurrency grubu).
+bucket   = "yanimda-tfstate"
+key      = "staging/terraform.tfstate"
+region   = "tr-west-1"
+endpoints = {
+  s3 = "https://obs.tr-west-1.myhuaweicloud.com"
+}
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+skip_s3_checksum            = true
+use_path_style              = false

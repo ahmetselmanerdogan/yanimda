@@ -1,0 +1,89 @@
+{{- if .Values.synthetic.enabled }}
+{{- $ctx := dict "root" . "component" "synthetic" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+data:
+  # infra/synthetic/probe.mjs (files/probe.mjs sembolik bağ)
+  probe.mjs: |-
+    {{- .Files.Get "files/probe.mjs" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  schedule: {{ .Values.synthetic.schedule | quote }}
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 240
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "yanimda.selectorLabels" $ctx | nindent 12 }}
+          annotations:
+            checksum/probe: {{ .Files.Get "files/probe.mjs" | sha256sum }}
+        spec:
+          {{- include "yanimda.imagePullSecrets" . | nindent 10 }}
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.global.podSecurityContext | nindent 12 }}
+            runAsUser: 1000
+            runAsGroup: 1000
+          containers:
+            - name: probe
+              image: {{ include "yanimda.image" .Values.synthetic.image | quote }}
+              imagePullPolicy: {{ .Values.synthetic.image.pullPolicy }}
+              securityContext:
+                {{- include "yanimda.containerSecurityContext" true | nindent 16 }}
+              command: ["node", "/probe/probe.mjs"]
+              env:
+                - name: SYNTHETIC_API_URL
+                  value: {{ .Values.synthetic.apiUrl | default (printf "https://api.%s" .Values.global.domain) | quote }}
+                - name: SYNTHETIC_OIDC_ISSUER
+                  value: {{ .Values.synthetic.oidcIssuer | default (include "yanimda.issuer" (dict "root" . "realm" "consumers")) | quote }}
+                - name: SYNTHETIC_CLIENT_ID
+                  value: {{ .Values.synthetic.clientId | quote }}
+                - name: SYNTHETIC_PERSON_IDS
+                  value: {{ .Values.synthetic.personIds | quote }}
+                - name: SYNTHETIC_TIMEOUT_SEC
+                  value: {{ .Values.synthetic.timeoutSec | quote }}
+                - name: SYNTHETIC_ENV
+                  value: {{ .Release.Namespace | quote }}
+                - name: PUSHGATEWAY_URL
+                  value: {{ .Values.synthetic.pushgatewayUrl | quote }}
+                - name: SYNTHETIC_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.synthetic.existingSecret }}
+                      key: SYNTHETIC_CLIENT_SECRET
+                - name: UPTIME_KUMA_PUSH_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.synthetic.existingSecret }}
+                      key: UPTIME_KUMA_PUSH_URL
+                      optional: true
+              resources:
+                {{- toYaml .Values.synthetic.resources | nindent 16 }}
+              volumeMounts:
+                - name: probe
+                  mountPath: /probe
+                  readOnly: true
+          volumes:
+            - name: probe
+              configMap:
+                name: {{ include "yanimda.component" $ctx }}
+{{- end }}

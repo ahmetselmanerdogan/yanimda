@@ -1,0 +1,22 @@
+# T-081: bağımlılık güncellemeleri (haftalık, gruplu). Güvenlik yamaları ayrıca anında açılır (Dependabot alerts).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: 'deps' }
+    groups:
+      nestjs: { patterns: ['@nestjs/*'] }
+      lint-format: { patterns: ['eslint*', '@eslint/*', 'typescript-eslint', 'prettier', '@commitlint/*'] }
+      test: { patterns: ['vitest', '@vitest/*', '@playwright/*', '@axe-core/*'] }
+      minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'ci' }
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }

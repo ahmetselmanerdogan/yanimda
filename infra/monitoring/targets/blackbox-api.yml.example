@@ -1,0 +1,5 @@
+# cp blackbox-api.yml.example blackbox-api.yml (kimliksiz istek → 401 beklenir).
+- targets:
+    - https://api.staging.yanimda.example/v1/queue
+  labels:
+    env: staging

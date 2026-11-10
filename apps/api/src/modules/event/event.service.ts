@@ -1,3 +1,5 @@
+import { randomInt } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -368,7 +370,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         live &&
         r.status === 'OK' &&
         rate > 0 &&
-        Math.random() < rate &&
+        randomInt(1_000_000) < rate * 1_000_000 && // örnekleme (güvenlik değil); proje kuralı Math.random'ı yasaklar
         (await this.inLearningMode(u.tx, u.ev.protectedPersonId, new Date()));
       if (!(await screener.finish(u.tx, eventId, r, sampled))) return false;
       u.after.push(() => this.timers.cancel(eventId, 'voice-screen-expire'));

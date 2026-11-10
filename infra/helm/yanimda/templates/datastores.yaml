@@ -1,0 +1,291 @@
+{{- /*
+Küme içi veri depoları (geliştirme/staging). Üretimde kapatılır: yönetilen Postgres (PITR, çoklu AZ), Redis, nesne
+kilitli kova. Erişim NetworkPolicy ile yalnız yanimda.app/db-client=true pod'larından (api, worker, keycloak).
+*/ -}}
+{{- if .Values.timescaledb.enabled }}
+{{- $ctx := dict "root" . "component" "timescaledb" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yanimda.component" $ctx }}-init
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+data:
+  # infra/init.sql ile aynı uzantılar + Keycloak veritabanı. Şema/tablolar API migration'larında.
+  10-yanimda.sql: |
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE DATABASE keycloak;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "yanimda.component" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+        # timescale/timescaledb (alpine): postgres uid/gid 70
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+      containers:
+        - name: timescaledb
+          image: {{ include "yanimda.image" .Values.timescaledb.image | quote }}
+          imagePullPolicy: {{ .Values.timescaledb.image.pullPolicy }}
+          # İlk açılışta timescaledb-tune postgresql.conf'u PGDATA'da yazar; kök FS yazılabilir bırakıldı.
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" false | nindent 12 }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.timescaledb.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.timescaledb.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.timescaledb.existingSecret }}
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.timescaledb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/10-yanimda.sql
+              subPath: 10-yanimda.sql
+              readOnly: true
+      volumes:
+        - name: init
+          configMap:
+            name: {{ include "yanimda.component" $ctx }}-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.timescaledb.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.timescaledb.storage.size }}
+{{- end }}
+{{- if .Values.redis.enabled }}
+{{- $ctx := dict "root" . "component" "redis" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "yanimda.component" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: redis
+          image: {{ include "yanimda.image" .Values.redis.image | quote }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
+          command: ["sh", "-c", "exec redis-server --appendonly yes --dir /data --requirepass \"$REDIS_PASSWORD\""]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: REDIS_PASSWORD
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.redis.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage.size }}
+{{- end }}
+{{- if .Values.minio.enabled }}
+{{- $ctx := dict "root" . "component" "minio" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "yanimda.component" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: minio
+          image: {{ include "yanimda.image" .Values.minio.image | quote }}
+          imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+          # Bitnami betikleri /opt/bitnami altına yazar: kök FS yazılabilir.
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" false | nindent 12 }}
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.existingSecret }}
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.existingSecret }}
+                  key: MINIO_ROOT_PASSWORD
+            {{- with .Values.minio.defaultBuckets }}
+            - name: MINIO_DEFAULT_BUCKETS
+              value: {{ . | quote }}
+            {{- end }}
+            - name: MINIO_DATA_DIR
+              value: /bitnami/minio/data
+          ports:
+            - name: s3
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/minio/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.minio.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.minio.storage.size }}
+{{- end }}

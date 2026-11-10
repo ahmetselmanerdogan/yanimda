@@ -1,0 +1,88 @@
+# T-083 Prometheus. Hedefler "yanimda" Docker ağındaki servis adlarıdır; API metrik portu (9464) yalnız iç ağda.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: yanimda
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API kopyaları (compose: 2 replika → DNS A kayıtları). /metrics ayrı portta (METRICS_PORT=9464).
+  - job_name: api
+    dns_sd_configs:
+      - names: ['api']
+        type: A
+        port: 9464
+        refresh_interval: 30s
+
+  # Outbox işçisi: olay geçişleri (signal_to_screen_seconds vb.) burada ölçülür.
+  - job_name: worker
+    static_configs:
+      - targets: ['worker:9464']
+
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['keycloak:9000']
+
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: postgres
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  - job_name: loki
+    static_configs:
+      - targets: ['loki:3100']
+
+  # Dış uçlar (TLS dahil, genel DNS üzerinden). Hedef listesi ortama özgü: targets/blackbox-*.yml
+  # (örnek: targets/blackbox-http.yml.example). Dosya yoksa hedef yok, yapılandırma yine geçerli.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets/blackbox-http*.yml']
+    relabel_configs: &blackbox_relabel
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # API kimliksiz isteğe 401 döner (ayrık /health ucu yok): 401 = ayakta.
+  - job_name: blackbox-api
+    metrics_path: /probe
+    params:
+      module: [http_401]
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets/blackbox-api*.yml']
+    relabel_configs: *blackbox_relabel

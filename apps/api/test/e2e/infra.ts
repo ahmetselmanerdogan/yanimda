@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, createWriteStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,7 +60,13 @@ function managed(port: number, url: string, cmd: string, args: string[], logFile
     url,
     async start() {
       const log = createWriteStream(logFile, { flags: 'a' });
-      child = spawn(cmd, args, { cwd: API_DIR, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+      // Ayrı süreç grubu: kill -9 tsx sarmalayıcısıyla birlikte asıl node sürecini de öldürmeli (T-080 API kaosu)
+      child = spawn(cmd, args, {
+        cwd: API_DIR,
+        env: { ...process.env, ...env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
       child.stdout!.pipe(log);
       child.stderr!.pipe(log);
       await until(() => portOpen(port), 30_000, `${cmd} :${port}`);
@@ -68,8 +74,12 @@ function managed(port: number, url: string, cmd: string, args: string[], logFile
     async stop(signal = 'SIGTERM') {
       if (!child || child.exitCode !== null) return;
       const exited = new Promise((r) => child!.once('exit', r));
-      child.kill(signal);
+      if (signal === 'SIGKILL' && child.pid) process.kill(-child.pid, 'SIGKILL');
+      else child.kill(signal);
+      // zarif kapanış takılırsa (ör. veritabanı bozuk) 20 sn sonra tüm grubu öldür
+      const force = setTimeout(() => child?.pid && process.kill(-child.pid, 'SIGKILL'), 20_000);
       await exited;
+      clearTimeout(force);
       await until(async () => !(await portOpen(port)), 10_000, `${cmd} kapanışı`);
     },
   };
@@ -102,8 +112,17 @@ export function scaledRules(dir: string, timeScale: number) {
   copyFileSync(join(RULES_SRC, 'schema.json'), join(dir, 'schema.json'));
 }
 
+/** Dış (hazır) servis: başlat/durdur yok (ör. Docker'daki gerçek TimescaleDB; T-080 yük testi). */
+const external = (url: string): Proc => ({ url, start: async () => undefined, stop: async () => undefined });
+
 export async function startStack(
-  opts: { timeScale?: number; env?: Record<string, string>; apiPort?: number } = {},
+  opts: {
+    timeScale?: number;
+    env?: Record<string, string>;
+    apiPort?: number;
+    /** Verilirse PGlite yerine bu Postgres kullanılır (kaos testleri durdur/başlat için PGlite ister). */
+    databaseUrl?: string;
+  } = {},
 ): Promise<Stack> {
   const dir = mkdtempSync(join(tmpdir(), 'yanimda-e2e-'));
   scaledRules(dir, opts.timeScale ?? 1);
@@ -117,13 +136,15 @@ export async function startStack(
     ['--port', String(redisPort), '--bind', '127.0.0.1', '--save', '', '--appendonly', 'no'],
     join(dir, 'redis.log'),
   );
-  const db = managed(
-    dbPort,
-    `postgres://postgres@127.0.0.1:${dbPort}/postgres`,
-    join(API_DIR, 'node_modules/.bin/pglite-server'),
-    [`--db=${join(dir, 'pgdata')}`, `--port=${dbPort}`, '--max-connections=20'],
-    join(dir, 'pg.log'),
-  );
+  const db = opts.databaseUrl
+    ? external(opts.databaseUrl)
+    : managed(
+        dbPort,
+        `postgres://postgres@127.0.0.1:${dbPort}/postgres`,
+        join(API_DIR, 'node_modules/.bin/pglite-server'),
+        [`--db=${join(dir, 'pgdata')}`, `--port=${dbPort}`, '--max-connections=20'],
+        join(dir, 'pg.log'),
+      );
   const env = {
     NODE_ENV: 'test',
     PORT: String(apiPort),
@@ -186,6 +207,11 @@ export async function startStack(
       await db.stop();
       await redis.stop();
       await oidc.close();
+      // T-081 PII denetimi: CI'da API log'u saklanır ve log-pii-audit ile taranır
+      if (process.env.E2E_LOG_DIR) {
+        mkdirSync(process.env.E2E_LOG_DIR, { recursive: true });
+        copyFileSync(join(dir, 'api.log'), join(process.env.E2E_LOG_DIR, `api-${apiPort}.log`));
+      }
       if (!process.env.E2E_KEEP) rmSync(dir, { recursive: true, force: true });
     },
   };
