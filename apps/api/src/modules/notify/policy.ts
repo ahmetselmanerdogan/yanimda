@@ -65,6 +65,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-112-ON-SCENE': INFO, // 112 süreci: ekip ulaştı
   'F-112-TRANSPORT': INFO, // 112 süreci: hastaneye nakil
   'F-112-HOSPITAL': INFO, // 112 süreci: hastaneye ulaştı
+  'F-WELLNESS-MISSED': INFO, // düzenli arama: iki denemede ulaşılamadı
   'F-WATCH-OFF-4H': INFO,
   'F-CONN-LOST': INFO,
   'F-BAT-10': INFO,

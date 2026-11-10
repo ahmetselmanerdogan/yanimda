@@ -550,6 +550,7 @@ export const checkCall = eventSchema.table('check_call', {
   completedAt: timestamptz('completed_at'),
   operatorId: text('operator_id'),
   outcome: text('outcome'),
+  attempts: integer('attempts').notNull().default(0),
 });
 
 /** 0025: kalıcı amir uyarıları ve "gördüm". */

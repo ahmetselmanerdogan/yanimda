@@ -88,6 +88,15 @@ paths:
         '200': { description: Plan ve sıradaki zaman (nextDueAt) }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/checks:
+    get:
+      summary: Aile — düzenli arama dönemleri (son 60 gün + önümüzdeki 14 gün); operatör / olay kimliği yok
+      operationId: familyWellnessChecks
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { description: 'Dönemler (durum, kanal, zaman, sonuç nedeni)' }
+        '404': { $ref: '#/components/responses/Problem' }
   /wellness/checks:
     get:
       summary: Düzenli arama dönemleri (son N gün + önümüzdeki 14 gün); durum süzgeci
