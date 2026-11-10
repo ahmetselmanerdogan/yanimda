@@ -1,0 +1,22 @@
+{
+  "redisDownFallEscalatedMs": 6503,
+  "redisLostJobEscalatedMs": 11550,
+  "redisRecoveredFallEscalatedMs": 7608,
+  "redisDownMs": 60000,
+  "redisRecoveryMs": 7816,
+  "pgDownQueueStatus": 503,
+  "pgDownRetryAfter": "2",
+  "pgQueueRecoveryMs": 2687,
+  "pgDownMs": 11623,
+  "pgRecoveryMs": 2207,
+  "pgSignals": 40,
+  "pgDeviceRetries": 7,
+  "pgLost": 0,
+  "apiDownMs": 9053,
+  "apiDeviceDrainMs": 1545,
+  "apiSosQueuedAfterRestartMs": 1602,
+  "apiQueueRecoveryMs": 2035,
+  "apiSignals": 40,
+  "apiDeviceRetries": 2696,
+  "apiLost": 0
+}

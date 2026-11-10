@@ -1,0 +1,60 @@
+name: load-v1
+# T-080 yük testi (30 dk): 2.000 cihaz × 5 dk heartbeat, olay dağılımı, 20 operatör (WS + üstlen/kapat), gerçek
+# TimescaleDB (Docker) + Redis + API. Kabul: p95 signal→screen < 5 sn, HTTP hata 0, kayıp 0 (veritabanından sayılır).
+# Yük araçları değişen PR'larda, haftalık ve elle. Sonuç: test-results/load-v1.json (artefakt) → docs/test-reports.
+on:
+  pull_request:
+    paths:
+      - infra/k6/load-v1.js
+      - scripts/load-v1.sh
+      - apps/api/test/e2e/load-cli.ts
+      - .github/workflows/load-v1.yml
+  schedule: [{ cron: '0 3 * * 0' }]
+  workflow_dispatch:
+    inputs:
+      duration: { description: 'Süre (ör. 30m, 5m)', default: '30m' }
+      events_per_min: { description: 'Olay/dk (500/gün ≈ 0.35)', default: '6' }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.12.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: sudo apt-get update && sudo apt-get install -y redis-server && (sudo systemctl stop redis-server || true)
+      - uses: grafana/setup-k6-action@v1
+        with: { k6-version: '0.54.0' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanimda/contracts build
+      - name: Makine
+        run: nproc && free -m
+      - name: Yük testi (TimescaleDB)
+        run: scripts/load-v1.sh --quiet
+        env:
+          LOAD_TIMESCALE: '1'
+          LOAD_DURATION: ${{ inputs.duration || '30m' }}
+          LOAD_EVENTS_PER_MIN: ${{ inputs.events_per_min || '6' }}
+          E2E_LOG_DIR: ${{ github.workspace }}/test-results/logs
+      - name: PII log denetimi (yük altında API log'u)
+        if: always()
+        run: pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../test-results/logs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-v1
+          path: |
+            test-results/load-v1.json
+            test-results/load-work-*/k6-summary.json
+            test-results/logs/
+          if-no-files-found: ignore

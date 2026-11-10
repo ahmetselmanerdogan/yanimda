@@ -7,13 +7,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hasRedisServer, type Stack, startStack, waitFor } from './infra';
 
 /**
- * T-016 adım 3 kaos: Redis 30 sn kapalı → sinyal kaybı yok, düşme yine zamanında yükselir, işler sonra çalışır;
- * Postgres 10 sn kapalı → API 503 döner ve ayakta kalır, cihaz tamponlar/yeniden dener, kayıp 0, çift 0.
- * Ölçümler docs/test-reports için `CHAOS_REPORT` dosyasına yazılır.
+ * T-016 adım 3 / T-080 adım 2 kaos: Redis 60 sn kapalı → sinyal kaybı yok, düşme yine zamanında yükselir, işler sonra
+ * çalışır; Postgres 10 sn kapalı (yönetilen failover'ın yerel benzeri) → API 503 döner ve ayakta kalır, cihaz
+ * tamponlar/yeniden dener, kayıp 0, çift 0; API kill -9 + yeniden başlatma → kayıp 0, outbox kirası düşünce kuyruk
+ * toparlanır. Her durumda "kuyruk toparlanma süresi" (altyapı dönüşü → outbox birikimi 0) ölçülür; kabul < 2 dk.
+ * CPaaS 500: test/cpaas-chaos.spec.ts. Ölçümler docs/test-reports için `CHAOS_REPORT` dosyasına yazılır.
  */
 const SCALE = 0.1; // FALL penceresi 6 sn
-const REDIS_DOWN_MS = Number(process.env.CHAOS_REDIS_DOWN_MS ?? 30_000);
+const REDIS_DOWN_MS = Number(process.env.CHAOS_REDIS_DOWN_MS ?? 60_000);
 const PG_DOWN_MS = Number(process.env.CHAOS_PG_DOWN_MS ?? 10_000);
+const API_DOWN_MS = Number(process.env.CHAOS_API_DOWN_MS ?? 5_000);
+const RECOVERY_MAX_MS = 120_000; // T-080 kabul: toparlanma < 2 dk
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const report: Record<string, unknown> = {};
 
@@ -46,6 +50,17 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
         [person],
       )
     )[0]?.state;
+  /** Altyapı dönüşünden outbox'ta işlenmemiş satır kalmayana kadar geçen süre (kuyruk toparlanması). */
+  const outboxDrained = async (since: number) => {
+    await waitFor(
+      async () =>
+        (await st.query<{ n: number }>('SELECT count(*)::int n FROM event.outbox WHERE processed_at IS NULL'))[0]!.n ===
+        0,
+      RECOVERY_MAX_MS,
+      'outbox birikimi 2 dk içinde erimedi',
+    );
+    return Date.now() - since;
+  };
   const signalCount = async (person: string) =>
     (
       await st.query<{ n: number; keys: number }>(
@@ -93,6 +108,8 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
     await waitFor(async () => (await eventState('pp-redis-after')) === 'OPERATOR_QUEUE', 20_000, 'Redis sonrası FALL');
     report.redisRecoveredFallEscalatedMs = Date.now() - t1;
     report.redisDownMs = REDIS_DOWN_MS;
+    report.redisRecoveryMs = await outboxDrained(t1);
+    expect(report.redisRecoveryMs).toBeLessThan(RECOVERY_MAX_MS);
   });
 
   it(`Postgres ${PG_DOWN_MS / 1000} sn kapalı: API 503 ve ayakta, cihaz tamponlar, kayıp 0, çift 0`, async () => {
@@ -128,6 +145,8 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
     expect(dev.stats.failed).toBe(0);
     expect(await signalCount('pp-pg')).toEqual({ n: total, keys: total }); // kayıp 0, çift 0
     await waitFor(async () => (await eventState('pp-pg')) === 'OPERATOR_QUEUE', 15_000, 'SOS kuyruğa düşmedi');
+    report.pgQueueRecoveryMs = await outboxDrained(startedAt);
+    expect(report.pgQueueRecoveryMs).toBeLessThan(RECOVERY_MAX_MS);
     Object.assign(report, {
       pgDownMs: startedAt - stoppedAt,
       pgRecoveryMs: drainedAt - startedAt,
@@ -141,5 +160,42 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
     expect((await fetch(`${st.api.base}/queue`, { headers: st.op() })).status).toBe(200);
     const log = (await import('node:fs')).readFileSync(join(st.dir, 'api.log'), 'utf8');
     expect(log.match(/Nest application successfully started/g)).toHaveLength(1);
+  });
+
+  it(`API kill -9, ${API_DOWN_MS / 1000} sn sonra yeniden başlar: kayıp 0, çift 0, kuyruk < 2 dk toparlanır`, async () => {
+    const dev = device('pp-api');
+    const total = 40;
+    const sends: Promise<unknown>[] = [];
+    let startedAt = 0;
+    const outage = (async () => {
+      await sleep(1_500);
+      await st.api.stop('SIGKILL'); // zarif kapanış yok: outbox kirası ve açık bağlantılar ortada kalır
+      const stoppedAt = Date.now();
+      await sleep(API_DOWN_MS);
+      await st.api.start();
+      startedAt = Date.now();
+      report.apiDownMs = startedAt - stoppedAt;
+    })();
+    for (let i = 0; i < total; i++) {
+      sends.push(dev.send(i === 15 ? 'SOS' : 'HEARTBEAT')); // SOS kesinti sırasında
+      await sleep(200);
+    }
+    await outage;
+    await Promise.all(sends);
+    await waitFor(async () => dev.pending() === 0 && true, 60_000, 'cihaz tamponu boşalmadı');
+    report.apiDeviceDrainMs = Date.now() - startedAt;
+
+    expect(dev.stats.failed).toBe(0);
+    expect(await signalCount('pp-api')).toEqual({ n: total, keys: total }); // kayıp 0, çift 0
+    await waitFor(
+      async () => (await eventState('pp-api')) === 'OPERATOR_QUEUE',
+      RECOVERY_MAX_MS,
+      'SOS kuyruğa düşmedi',
+    );
+    report.apiSosQueuedAfterRestartMs = Date.now() - startedAt;
+    report.apiQueueRecoveryMs = await outboxDrained(startedAt);
+    expect(report.apiQueueRecoveryMs).toBeLessThan(RECOVERY_MAX_MS);
+    Object.assign(report, { apiSignals: total, apiDeviceRetries: dev.stats.retries, apiLost: 0 });
+    expect((await fetch(`${st.api.base}/queue`, { headers: st.op() })).status).toBe(200);
   });
 });
