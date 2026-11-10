@@ -34,6 +34,8 @@ export interface EventRecord {
   lockUntil?: string;
   isTest: boolean;
   location?: { lat: number; lng: number } | null;
+  /** Kaynak sinyal / zamanlayıcı kimlikleri (ör. `wellness:<id>` düzenli arama). */
+  sourceSignalIds?: string[];
   transitions: Transition[];
 }
 
@@ -207,6 +209,7 @@ export interface DispatchView {
   arrivalLate: boolean;
   open: boolean;
   checks: number;
+  followUps?: number;
   timeline: {
     status: DispatchStage;
     at: string;
@@ -223,6 +226,7 @@ export interface DispatchUpdate {
   hospital?: string | null;
   note?: string;
   source?: Exclude<DispatchSource, 'SYSTEM'>;
+  followUp?: boolean;
 }
 
 /** Yönetim paneli. */

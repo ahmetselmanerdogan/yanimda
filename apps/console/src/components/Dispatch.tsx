@@ -53,10 +53,10 @@ export function DispatchPanel({ api, eventId, initial }: { api: Api; eventId: st
   useEffect(() => setForm((f) => ({ ...f, caseRef, etaMin, hospital })), [caseRef, etaMin, hospital]);
 
   if (missing || !v) return null;
-  const save = async (status?: DispatchStage) => {
+  const save = async (status?: DispatchStage, followUp = false) => {
     setBusy(true);
     setErr(null);
-    const b: DispatchUpdate = { source };
+    const b: DispatchUpdate = followUp ? { source: 'EMS', followUp: true } : { source };
     if (status) b.status = status;
     if (form.caseRef !== (v.caseRef ?? '')) b.caseRef = form.caseRef || null;
     if (form.hospital !== (v.hospital ?? '')) b.hospital = form.hospital || null;
@@ -91,6 +91,23 @@ export function DispatchPanel({ api, eventId, initial }: { api: Api; eventId: st
             </li>
           ))}
       </ol>
+      {v.open && v.arrivalMin === null && v.arrivalLate && (
+        <div className="script dispatch-followup" role="note">
+          <p>
+            {t('O-SCRIPT-112-FOLLOWUP', {
+              case: v.caseRef ?? '–',
+              name: t('O-UI-PERSON'),
+              min: Math.round((Date.now() - Date.parse(v.notifiedAt)) / 60_000),
+            })}
+          </p>
+          <button type="button" className="primary" disabled={busy} onClick={() => void save(undefined, true)}>
+            {t('O-UI-DISPATCH-FOLLOWUP')}
+          </button>
+          {(v.followUps ?? 0) > 0 && (
+            <span className="muted small"> {t('O-UI-DISPATCH-FOLLOWUPS', { n: v.followUps ?? 0 })}</span>
+          )}
+        </div>
+      )}
       {v.open && (
         <>
           <div className="row dispatch-next">

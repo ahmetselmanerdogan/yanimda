@@ -363,6 +363,11 @@ paths:
                 hospital: { type: [string, 'null'], maxLength: 160 }
                 note: { type: string, maxLength: 1000 }
                 source: { enum: [OPERATOR, EMS, FAMILY], default: OPERATOR }
+                followUp:
+                  {
+                    type: boolean,
+                    description: "Operatör 112'yi tekrar arayıp durumu sordu (takip araması; sayılır, denetlenir)",
+                  }
       responses:
         '200':
           {

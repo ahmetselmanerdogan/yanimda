@@ -191,4 +191,17 @@ describe('112 süreci', () => {
     expect(await dispatch.open(id, OP)).toBe(false);
     expect(await dispatch.get(id)).toBeNull();
   });
+
+  it('112 takip araması işaretlenir, sayılır ve denetlenir; geçersiz followUp 400', async () => {
+    const id = await dispatched();
+    const v = await dispatch.update(id, op, { followUp: true, note: '112: ekip 5 dk uzakta' });
+    expect(v.followUps).toBe(1);
+    expect(v.timeline.at(-1)).toMatchObject({ source: 'EMS', followUp: true, note: '112: ekip 5 dk uzakta' });
+    expect(await status(dispatch.update(id, op, { followUp: 'evet' }))).toBe(400);
+    const [a] = await h.rows<{ data: { followUp?: boolean } }>(
+      "SELECT data FROM audit.log WHERE action = 'dispatch.updated' AND entity_id = $1 ORDER BY id DESC LIMIT 1",
+      [id],
+    );
+    expect(a!.data.followUp).toBe(true);
+  });
 });

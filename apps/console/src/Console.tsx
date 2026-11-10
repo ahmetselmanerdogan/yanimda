@@ -451,6 +451,12 @@ export function Console({
         {item && (ev?.state ?? item.state) === 'DISPATCH' && (
           <DispatchPanel key={item.eventId} api={api} eventId={item.eventId} />
         )}
+        {ev?.type === 'CALLBACK' && ev.sourceSignalIds?.some((s) => s.startsWith('wellness:')) && (
+          <section className="script wellness-script" aria-labelledby="wellness-script-title">
+            <h2 id="wellness-script-title">{t('O-UI-SCRIPT-WELLNESS')}</h2>
+            <p>{t('O-SCRIPT-WELLNESS', scriptVars)}</p>
+          </section>
+        )}
       </main>
       {viewport === 'tablet' && (
         <button

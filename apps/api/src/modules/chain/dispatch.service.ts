@@ -87,6 +87,8 @@ export interface DispatchView {
   arrivalLate: boolean;
   open: boolean;
   checks: number;
+  /** Operatörün 112'yi tekrar arayıp durumu sorduğu takip aramaları. */
+  followUps: number;
   timeline: {
     status: DispatchStage;
     at: string;
@@ -94,6 +96,7 @@ export interface DispatchView {
     actorId: string | null;
     source: DispatchSource;
     note: string | null;
+    followUp: boolean;
   }[];
 }
 
@@ -194,7 +197,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const status = b.status as DispatchStage | undefined;
     if (status !== undefined && status !== 'CANCELLED' && !DISPATCH_STAGES.includes(status as never))
       throw new BadRequestException('Geçersiz aşama');
-    const source = (b.source ?? 'OPERATOR') as DispatchSource;
+    const source = (b.source ?? (b.followUp === true ? 'EMS' : 'OPERATOR')) as DispatchSource;
     if (!['OPERATOR', 'EMS', 'FAMILY'].includes(source)) throw new BadRequestException('Geçersiz kaynak');
     const text = (k: string, max: number) => {
       const v = b[k];
@@ -206,6 +209,9 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const caseRef = text('caseRef', 64);
     const hospital = text('hospital', 160);
     const note = text('note', 1000);
+    if (b.followUp !== undefined && typeof b.followUp !== 'boolean')
+      throw new BadRequestException('followUp true/false');
+    const followUp = b.followUp === true;
     const eta = b.etaMin;
     if (eta !== undefined && eta !== null && (!Number.isInteger(eta) || (eta as number) < 0 || (eta as number) > 600))
       throw new BadRequestException('etaMin 0–600 dk');
@@ -252,12 +258,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         actorId: actor.id,
         source,
         note: note ?? null,
+        followUp,
       });
       await this.audit(tx, actor.kind, actor.id, 'dispatch.updated', eventId, {
         from: cur,
         to: advance ? status : cur,
         source,
         fields: Object.keys(set).filter((k) => k !== 'updatedAt'),
+        ...(followUp ? { followUp: true } : {}),
       });
       const notice = advance ? FAMILY_NOTICE[status!] : undefined;
       if (notice) {
@@ -384,6 +392,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       arrivalLate: status !== 'CANCELLED' && elapsedMin > arrivalSlaMin(),
       open: !TERMINAL.has(status),
       checks: row.checks,
+      followUps: timeline.filter((t) => t.followUp).length,
       timeline: timeline.map((t) => ({
         status: t.status as DispatchStage,
         at: t.at.toISOString(),
@@ -391,6 +400,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         actorId: t.actorId,
         source: t.source as DispatchSource,
         note: t.note,
+        followUp: t.followUp,
       })),
     };
   }
