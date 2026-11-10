@@ -552,6 +552,7 @@ export const checkCall = eventSchema.table('check_call', {
   outcome: text('outcome'),
 });
 
+<<<<<<< HEAD
 /** 0025: kalıcı amir uyarıları ve "gördüm". */
 export const supervisorAlert = eventSchema.table('supervisor_alert', {
   id: uuid('id').primaryKey(),
@@ -563,4 +564,16 @@ export const supervisorAlert = eventSchema.table('supervisor_alert', {
   at: timestamptz('at').notNull(),
   ackedAt: timestamptz('acked_at'),
   ackedBy: text('acked_by'),
+=======
+/** 0024: personel web push aboneliği (amir uyarıları). */
+export const webPushSubscription = identitySchema.table('web_push_subscription', {
+  endpoint: text('endpoint').primaryKey(),
+  subject: text('subject').notNull(),
+  roles: text('roles').array().notNull().default([]),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  lastOkAt: timestamptz('last_ok_at'),
+  failures: integer('failures').notNull().default(0),
+>>>>>>> claude/dispatch-accuracy
 });

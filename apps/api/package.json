@@ -31,6 +31,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "uuid": "^14.0.3",
+    "web-push": "3.6.7",
     "ws": "^8.18.0",
     "yaml": "^2.6.0"
   },
@@ -41,6 +42,7 @@
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "@types/uuid": "^10.0.0",
+    "@types/web-push": "3.6.4",
     "@types/ws": "^8.5.12",
     "@yanimda/simulator": "workspace:^",
     "ioredis-mock": "^8.13.1",
