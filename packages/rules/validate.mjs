@@ -43,6 +43,9 @@ for (const f of yamls.filter((f) => !f.startsWith('procedures.'))) {
         if (!proc.steps[step.split(':')[0]]) fail(`${f}: ${r.type} zincirindeki ${step} prosedürde tanımlı değil`);
       if (r.operatorScript && !catalog[r.operatorScript])
         fail(`${f}: ${r.type} → ${r.operatorScript} mesaj kataloğunda yok`);
+      const phrase = r.autoVoiceScreening?.phrase;
+      if (phrase && catalog[phrase]?.channel !== 'voice')
+        fail(`${f}: ${r.type} → ${phrase} mesaj kataloğunda voice kanalında yok`);
     }
   console.log(`${f}: ok (${doc.rules.length} kural)`);
 }

@@ -668,3 +668,65 @@ table.breaches tr.live td:first-child {
     grid-template-columns: 1fr;
   }
 }
+
+/* T-051 kalan: operatörün kendi durumu ve gelen SOS araması */
+.my-status {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.my-status button.on.available {
+  /* Koyu zeminde yeşil yazı WCAG AA'yı geçmiyor: dolu rozet, beyaz yazı. */
+  border-color: var(--safe);
+  background: var(--safe);
+  color: #fff;
+  font-weight: 700;
+}
+.my-status button.on.break {
+  border-color: var(--attention);
+  color: var(--attention);
+  font-weight: 700;
+}
+.phone-inbound {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 2px solid var(--help);
+  border-radius: 6px;
+  animation: ring-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes ring-pulse {
+  from {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  to {
+    box-shadow: 0 0 0 3px var(--help);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phone-inbound {
+    animation: none;
+  }
+}
+
+/* T-052: 112 adımı masa sabit hattından (manuel) */
+.badge-manual {
+  border: 1px solid var(--help);
+  background: var(--help);
+  color: #fff;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+.desk-112 {
+  border-left: 4px solid var(--help);
+  background: var(--surface-2);
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+.desk-112 p {
+  margin: 4px 0;
+}

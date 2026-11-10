@@ -45,6 +45,7 @@ import {
   type RulesProvider,
   staticRules,
 } from './rules.loader';
+import { NEVER_SCREEN, SCREENING_NOTE, type ScreeningResult, type VoiceScreener } from './voice-screening';
 
 export type { EventRecord, QueueItem } from './event.repository';
 
@@ -77,6 +78,7 @@ const WAIT_TIMERS: TimerKind[] = [
   'learning-ask-expire',
   'watch-off-remind',
   'watch-off-operator',
+  'voice-screen-expire',
 ];
 
 /** Operatörün elindeki durumlar (kilit, kapatma, zincir). */
@@ -210,8 +212,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       };
     this.timers.on('prompt-expire', expire('cevap yok'));
     this.timers.on('silent-ask-expire', (job) => this.onSilentAskExpired(job));
-    this.timers.on('learning-ask-expire', expire('2. sessiz soru cevapsız'));
-    this.timers.on('watch-off-operator', expire('saat takılmadı'));
+    this.timers.on('learning-ask-expire', this.screenOrEscalate('2. sessiz soru cevapsız'));
+    this.timers.on('watch-off-operator', this.screenOrEscalate('saat takılmadı'));
+    this.timers.on('voice-screen-expire', async ({ eventId }) => {
+      await this.resolveScreening(eventId, { status: 'NO_ANSWER', reason: 'TIMEOUT' }, { hangup: true });
+    });
     this.timers.on('watch-off-remind', async ({ eventId }) => {
       await this.withEvent(eventId, async (u) => {
         if (u.ev.state !== 'DEVICE_PROMPT') return;
@@ -235,7 +240,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   /**
    * Sessiz soru cevapsız. D-06 (T-070): kişi öğrenme modundaysa ve kural `learningMode.extraSilentAsks` veriyorsa
    * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza ELDER bildirimi, kuralın tts kodu); o da
-   * cevapsızsa yükseltilir. SOS/FALL'da sessiz soru yoktur, değişmez. Otomatik sesli ön eleme T-072'de buraya girer.
+   * cevapsızsa yükseltilir. SOS/FALL'da sessiz soru yoktur, değişmez. Yükseltmeden önce otomatik sesli ön eleme
+   * (T-072, `screenOrEscalate`).
    */
   private async onSilentAskExpired({ eventId }: TimerJob) {
     const pack = this.pack;
@@ -266,9 +272,103 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         await this.timers.schedule(u.ev.id, 'learning-ask-expire', win); // commit'ten önce (bkz. sınıf notu)
         return;
       }
-      this.escalate(u, 'cevap yok');
+      if (!(await this.startScreening(u))) this.escalate(u, 'cevap yok');
     });
     if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
+  }
+
+  // ---- T-072 (D-12) otomatik sesli ön eleme ----
+
+  private screener: VoiceScreener | null = null;
+  /** ScreeningModule bağlar (döngüsel bağımlılık yerine port). */
+  useScreener(s: VoiceScreener) {
+    this.screener = s;
+  }
+
+  /** Bekleme/soru cevapsız: ön eleme başlatılabiliyorsa başlat, yoksa yükselt. */
+  private screenOrEscalate(note: string) {
+    return async ({ eventId }: TimerJob) => {
+      const found = await this.withEvent(eventId, async (u) => {
+        if (u.ev.state === 'DEVICE_PROMPT' && !(await this.startScreening(u))) this.escalate(u, note);
+      });
+      if (found === null) this.log.warn(`Zamanlayıcı: olay bulunamadı ${eventId}`);
+    };
+  }
+
+  /**
+   * Kural `autoVoiceScreening` açıksa (asla SOS/FALL) ön eleme satırı aynı transaction'da yazılır, olay cihaz
+   * sorusunda kalır ve süresi ön eleme süresine uzar (tarama güvenlik ağı), süre zamanlayıcısı commit'ten önce kurulur,
+   * arama commit'ten sonra başlar. Başladıysa true.
+   */
+  private async startScreening(u: Uow): Promise<boolean> {
+    const rule = ruleFor(this.pack, u.ev.type);
+    if (!this.screener || !rule?.autoVoiceScreening?.enabled || NEVER_SCREEN.has(u.ev.type)) return false;
+    const s = await this.screener.prepare(u.tx, {
+      eventId: u.ev.id,
+      protectedPersonId: u.ev.protectedPersonId,
+      type: u.ev.type,
+      rule,
+    });
+    if (!s) return false;
+    if (!s.fresh) return true; // süren ön eleme (zamanlayıcının tekrar teslimi)
+    const ms = s.timeoutSec * 1000;
+    u.ev.devicePromptUntil = new Date(Date.now() + ms).toISOString();
+    u.dirty = true;
+    await this.repo.insertAudit(u.tx, {
+      actorKind: 'SYSTEM',
+      action: 'event.voice_screening_started',
+      entityId: u.ev.id,
+      data: { timeoutSec: s.timeoutSec },
+    });
+    u.publishes.push({
+      topic: TOPICS.eventUpdated,
+      payload: { eventId: u.ev.id, devicePromptUntil: u.ev.devicePromptUntil, reason: 'VOICE_SCREENING' },
+    });
+    await this.timers.schedule(u.ev.id, 'voice-screen-expire', ms); // commit'ten önce (bkz. sınıf notu)
+    const screener = this.screener;
+    u.after.push(() => screener.dial(u.ev.id));
+    return true;
+  }
+
+  /**
+   * Ön eleme sonucu (webhook, süre, arama hatası). İlk sonuç kazanır ve her durumda kaydedilir; olay hâlâ cihaz
+   * sorusundaysa OK → kullanıcı adına SYSTEM kapatır (sonuç OK; yanlış alarm sayılmaz), diğerleri → kuyruk.
+   * OK sonucu öğrenme modunda (ilk ay) kural oranıyla operatör örneklemine (CALLBACK P4) alınır. Uygulandıysa true.
+   */
+  async resolveScreening(eventId: string, r: ScreeningResult, opts: { hangup?: boolean } = {}): Promise<boolean> {
+    const screener = this.screener;
+    if (!screener) return false;
+    const pack = this.pack;
+    const applied = await this.withEvent(eventId, async (u) => {
+      const live = u.ev.state === 'DEVICE_PROMPT';
+      const rate = ruleFor(pack, u.ev.type)?.autoVoiceScreening?.operatorSampleRate ?? 0;
+      const sampled =
+        live &&
+        r.status === 'OK' &&
+        rate > 0 &&
+        Math.random() < rate &&
+        (await this.inLearningMode(u.tx, u.ev.protectedPersonId, new Date()));
+      if (!(await screener.finish(u.tx, eventId, r, sampled))) return false;
+      u.after.push(() => this.timers.cancel(eventId, 'voice-screen-expire'));
+      if (opts.hangup) u.after.push(() => screener.hangup(eventId));
+      if (!live) return true; // olay başka yoldan ilerledi; sonuç yalnız kayıtlı
+      if (r.status === 'OK') {
+        this.transition(u, 'CANCELLED_BY_USER', 'SYSTEM', undefined, `${SCREENING_NOTE.OK} (${r.input ?? '-'})`);
+        this.close(u, 'OK', 'sesli ön eleme', 'SYSTEM');
+        u.after.push(() => this.cancelWaitTimers(eventId));
+        if (sampled)
+          u.after.push(async () => {
+            await this.raiseCallback(
+              u.ev.protectedPersonId,
+              `voice-screen-sample:${eventId}`,
+              'sesli ön eleme örneklemesi',
+            );
+          });
+      } else this.escalate(u, SCREENING_NOTE[r.status]);
+      return true;
+    });
+    if (applied === null) this.log.warn(`Ön eleme: olay bulunamadı ${eventId}`);
+    return !!applied;
   }
 
   private async inLearningMode(tx: Tx, protectedPersonId: string, now: Date): Promise<boolean> {
@@ -453,7 +553,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
         this.transition(u, 'CREATED', 'SYSTEM', undefined, s.note);
         if (rule.devicePrompt?.enabled) {
-          const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
+          // T-061 (C-09): düşme sorusunun süresi aile ayarıyla (30–90 sn) değişebilir.
+          const personal =
+            type === 'FALL' ? (await this.protection.settingsOf(s.protectedPersonId, tx)).fallPromptSec : null;
+          const win = (personal ?? rule.devicePrompt.windowSec ?? 60) * 1000;
           u.ev.devicePromptUntil = new Date(now.getTime() + win).toISOString();
           this.transition(
             u,
@@ -548,6 +651,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   private async cancelWaitTimers(eventId: string) {
     for (const k of WAIT_TIMERS) await this.timers.cancel(eventId, k);
+    await this.screener?.abort(eventId); // T-072: bekleyen ön eleme iptal, süren arama kapanır
   }
 
   // ---- Konsol tarafı (E-02, E-07; T-021 zincir bunun üstünde) ----

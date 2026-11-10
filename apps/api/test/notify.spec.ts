@@ -144,7 +144,13 @@ describe('uçtan uca: olay geçişi → aile', () => {
     const text = `${NAME} yardım istedi. Operatör hatta.`;
     expect(fcm.sent).toHaveLength(1);
     expect(fcm.sent[0]).toMatchObject({ token: TOKEN, body: text, priority: 'high' });
-    expect(fcm.sent[0]!.data).toMatchObject({ type: 'NOTICE', code: 'F-EVT-SOS' });
+    // T-061: aile uygulaması bildirime dokununca olay ekranını açar (kişi + olay).
+    expect(fcm.sent[0]!.data).toMatchObject({
+      type: 'NOTICE',
+      code: 'F-EVT-SOS',
+      protectedPersonId: PERSON,
+      eventId: expect.any(String),
+    });
     expect(cpaas.sms.map((s) => s.to).sort()).toEqual([PHONES.kizi, PHONES.oglu]);
     expect(cpaas.sms[0]!.body).toBe(text);
     expect(cpaas.tts).toEqual([{ to: PHONES.kizi, text }]);

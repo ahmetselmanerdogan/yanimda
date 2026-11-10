@@ -10,8 +10,11 @@ import {
   type CloseOutcome,
   type DispatchScript,
   type EventWithChain,
+  type OperatorStatus,
   type PersonCard,
+  type SelfStatus,
   type StepResultBody,
+  type TelephonyConfig,
 } from './lib/api';
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
@@ -174,7 +177,12 @@ export function Console({
   }, [mine, selected, api]);
 
   // ---- T-051 yazılım telefonu: girişte başlar (mikrofon izni), oturum boyunca yaşar ----
-  const [phoneState, setPhoneState] = useState<PhoneSnapshot>({ device: 'starting', connected: false });
+  const [phoneState, setPhoneState] = useState<PhoneSnapshot>({
+    device: 'starting',
+    connected: false,
+    incoming: null,
+    inbound: false,
+  });
   const phoneRef = useRef<ReturnType<typeof startSoftphone> | null>(null);
   useEffect(() => {
     const phone = startSoftphone({ token: () => api.telephonyToken(), training });
@@ -186,6 +194,32 @@ export function Console({
       phoneRef.current = null;
     };
   }, [api, training]);
+  // Gelen SOS aramasının olayı: çalarken gelir, görüşme boyunca "Olayı aç" için tutulur.
+  const [inboundEventId, setInboundEventId] = useState<string | null>(null);
+  useEffect(() => {
+    if (phoneState.incoming) setInboundEventId(phoneState.incoming.eventId);
+    else if (!phoneState.inbound) setInboundEventId(null);
+  }, [phoneState.incoming, phoneState.inbound]);
+
+  // ---- operatörün kendi durumu (gelen SOS yönlendirmesi) ve telefoni yapılandırması (T-052 masa hattı) ----
+  const [myStatus, setMyStatus] = useState<OperatorStatus | null>(null);
+  const [telConfig, setTelConfig] = useState<TelephonyConfig | null>(null);
+  useEffect(() => {
+    void api
+      .myStatus()
+      .then((s) => setMyStatus(s.status))
+      .catch(() => undefined);
+    void api
+      .telephonyConfig()
+      .then(setTelConfig)
+      .catch(() => undefined);
+  }, [api]);
+  const changeMyStatus = (s: SelfStatus) =>
+    void api
+      .setMyStatus(s)
+      .then((r) => setMyStatus(r.status))
+      .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message })));
+
   const activeCall: CallView | null =
     (mine && detail?.event.id === selected
       ? detail.calls?.filter((c) => CALL_ACTIVE.includes(c.status)).at(-1)
@@ -341,6 +375,8 @@ export function Console({
         count={queue.items.length}
         flash={flash}
         onLogout={onLogout}
+        myStatus={myStatus}
+        onMyStatus={changeMyStatus}
         {...(onSupervisor ? { onSupervisor } : {})}
       />
       <QueueList items={queue.items} selected={selected} me={me} now={now} onSelect={setSelected} />
@@ -362,6 +398,7 @@ export function Console({
             skipReason={skipReason}
             scriptVars={scriptVars}
             dispatch={dispatchScript}
+            deskLine={telConfig?.deskLine ?? null}
             noteRef={noteRef}
             skipRef={skipRef}
             onNote={setNote}
@@ -392,6 +429,10 @@ export function Console({
           phoneRef.current?.hangup();
           phoneAction((id) => api.hangup(id));
         }}
+        inboundEventId={inboundEventId}
+        onAccept={() => phoneRef.current?.accept()}
+        onReject={() => phoneRef.current?.reject()}
+        onOpenEvent={setSelected}
       />
       {mode === 'close' && mine && (
         <ClosePanel

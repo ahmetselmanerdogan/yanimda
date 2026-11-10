@@ -21,6 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { contact, device, invite } from '../../db/schema';
+import { subscriptionProtection } from '../billing/subscription-protection';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
 import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -73,6 +74,16 @@ export interface DeviceConfig {
   inactivityThresholdMin: number | null;
   /** Cihazın göstereceği / seslendireceği metinler (katalog; saat W-*, telefon P-*). */
   messages: Record<string, { text: string; action?: string }>;
+  /**
+   * T-060 abonelik: `protectionActive=false` (askıda / iptal) iken cihaz koruma kapalı ekranını gösterir ve
+   * `messageCode` metnini kullanır. status null = abonelik dışı kişi (koruma açık).
+   */
+  subscription: {
+    status: 'TRIAL' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SUSPENDED' | 'CANCELED' | null;
+    protectionActive: boolean;
+    until: string | null;
+    messageCode: string | null;
+  };
   /**
    * Operatörün arayan numaraları (T-054: telefon bu numaradan gelen aramayı hoparlöre alır, rehbere "Yanımda"
    * olarak ekler) ve ana ekranda gösterilen ad (P-HOME-OK `{operator}`). Ortam: OPERATOR_CALLER_IDS
@@ -365,6 +376,7 @@ export class EnrollmentService {
     const inact = ruleFor(pack, 'INACTIVITY');
     const prefix = PHONE_KINDS.includes(p.kind) ? 'P-' : 'W-';
     const settings = await this.protection.settingsOf(p.protectedPersonId);
+    const sub = await subscriptionProtection(this.db, p.protectedPersonId);
     const messages: DeviceConfig['messages'] = {};
     for (const [code, m] of Object.entries(catalogs.tr ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
       if (code.startsWith(prefix)) messages[code] = m.action ? { text: m.text, action: m.action } : { text: m.text };
@@ -376,17 +388,27 @@ export class EnrollmentService {
       rulesVersion: pack.version,
       sleepWindow: { timezone: settings.timezone, start: settings.start, end: settings.end },
       devicePrompt: {
-        fallWindowSec: fall?.devicePrompt?.enabled ? (fall.devicePrompt.windowSec ?? null) : null,
+        fallWindowSec: fall?.devicePrompt?.enabled
+          ? (settings.fallPromptSec ?? fall.devicePrompt.windowSec ?? null) // T-061 aile ayarı
+          : null,
         inactivityWindowSec: inact?.devicePrompt?.enabled ? (inact.devicePrompt.windowSec ?? null) : null,
       },
       inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
       messages,
       operator: operatorInfo(),
       familyContact: PHONE_KINDS.includes(p.kind) ? await this.firstContact(p.protectedPersonId) : null,
+      subscription: { ...sub, messageCode: subscriptionMessage(sub.status, prefix) },
     };
     const etag = `"${createHash('sha256').update(JSON.stringify(body)).digest('base64url').slice(0, 22)}"`;
     return { etag, body };
   }
+}
+
+/** Abonelik durumunun cihaz metni (katalog): ödeme bekliyor yalnız telefonda; askı/iptal ikisinde. */
+function subscriptionMessage(status: DeviceConfig['subscription']['status'], prefix: string): string | null {
+  if (status === 'SUSPENDED' || status === 'CANCELED') return `${prefix}SUB-OFF`;
+  if (status === 'PAYMENT_PENDING' && prefix === 'P-') return 'P-SUB-PAY';
+  return null;
 }
 
 /** If-None-Match başlığı ETag'i içeriyor mu (virgüllü liste, W/ öneki ve * desteklenir). */

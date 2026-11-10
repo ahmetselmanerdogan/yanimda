@@ -43,6 +43,24 @@ export type ConferenceOp =
   | { kind: 'add'; room: string; /** Log'a yazılmaz. */ to: string; announce: string; urls: WebhookUrls }
   | { kind: 'hold'; room: string; legCallId: string; hold: boolean };
 
+/**
+ * T-072 (D-12) otomatik sesli ön eleme araması: kişiye doğrudan (operatörsüz) arama; açınca soru okunur, DTMF veya
+ * konuşma (tr-TR) beklenir. Sonuç `gather`, arama durumu `status` webhook'una gelir (`?s=<ön eleme kimliği>`).
+ */
+export interface ScreenRequest {
+  screeningId: string;
+  /** Aranan numara (E.164). Log'a yazılmaz. */
+  to: string;
+  /** Okunacak soru (katalog, voice kanalı). */
+  ask: string;
+  /** Konuşma tanıma ipuçları (kabul/yardım terimleri). */
+  hints: string[];
+  /** Beklenen tuş sayısı. */
+  digits: number;
+  ringTimeoutSec: number;
+  urls: { gather: string; status: string };
+}
+
 export interface CpaasProvider {
   readonly name: string;
   call(r: DialRequest): Promise<{ providerCallId: string }>;
@@ -53,6 +71,8 @@ export interface CpaasProvider {
   sendSms(to: string, body: string, statusCallback?: string): Promise<{ providerId: string }>;
   /** Metni okuyup kapatan arama (D-08 sesli bildirim). */
   ttsCall(to: string, text: string): Promise<{ providerCallId: string }>;
+  /** T-072: soru sorup DTMF/konuşma bekleyen arama (otomatik sesli ön eleme). */
+  screenCall(r: ScreenRequest): Promise<{ providerCallId: string }>;
   /** T-051: konferansa taşı, yakın ekle, beklet. `add` yeni bacağın kimliğini döner. */
   conference(op: ConferenceOp): Promise<{ providerCallId?: string }>;
   /** Webhook imzası (Twilio X-Twilio-Signature şeması). */
@@ -102,3 +122,21 @@ export function conferenceTwiml(room: string, o: { endOnExit: boolean; recording
 }
 
 export const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response/>';
+
+/**
+ * T-072 ön eleme TwiML'i: soru `<Gather input="dtmf speech" language="tr-TR">` içinde okunur; cevap yoksa bir kez
+ * tekrarlanır, ikinci de boşsa `actionOnEmptyResult` ile action yine çağrılır (cevapsız). Konuşma tanıma Twilio'nun
+ * (Google) tr-TR modeli; ipuçları kabul/yardım terimleri.
+ */
+export function screenTwiml(o: { ask: string; gatherUrl: string; hints: string[]; digits: number }): string {
+  const say = `<Say language="tr-TR" voice="Polly.Filiz">${xml(o.ask)}</Say>`;
+  const gather = (last: boolean) =>
+    `<Gather input="dtmf speech" language="tr-TR" numDigits="${o.digits}" timeout="6" speechTimeout="auto"` +
+    ` hints="${xml(o.hints.join(', '))}" action="${xml(o.gatherUrl)}" method="POST"` +
+    `${last ? ' actionOnEmptyResult="true"' : ''}>${say}</Gather>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>${gather(false)}${gather(true)}</Response>`;
+}
+
+/** Ön eleme sonucunda okunup kapatılan TwiML. */
+export const sayAndHangupTwiml = (text: string) =>
+  `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR" voice="Polly.Filiz">${xml(text)}</Say><Hangup/></Response>`;

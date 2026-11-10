@@ -317,6 +317,186 @@ paths:
           content: { text/xml: { schema: { type: string } } }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /webhooks/cpaas-inbound/{kind}:
+    post:
+      summary: Gelen SOS araması geri çağrıları (Twilio uyumlu). E-05, T-051 kalan
+      description: |
+        Herkese açık; yalnız imzalı istek (giden aramadakiyle aynı X-Twilio-Signature şeması), bozuksa 403.
+        Twilio numarasının (ya da BYOC trunk'ın) Voice URL'i `call`, durum geri çağrısı `status` (ikisi CallSid ile;
+        `call` parametresi yok). Yönlendirme TwiML'inin verdiği diğerleri `?call=<gelen arama kimliği>` taşır:
+        dial (operatör `<Dial>` sonucu: cevapsız/meşgul → sıradaki operatör, cevaplanıp bitti → kapat), agent
+        (operatör bacağı açıldı → bağlı), wait (kuyruk bekleme döngüsü: V-INBOUND-WAIT + Pause ya da müsait operatör
+        varsa `<Leave/>`), leave (kuyruktan çıkış: leave → yeniden yönlendir, hangup → vazgeçti), recording (kayıt →
+        S3 `recordings/<ülke>/<olay|inbound>/…`, sağlayıcıdan silinir). Sıra: arayanın açık olayını yürüten operatör
+        (bağlıysa), sonra bağlı ve AVAILABLE operatörler (açık olayı olmayan, en uzun boşta kalan önce); kimse yoksa
+        `<Enqueue>`. Arayan numara saklanmaz.
+      operationId: cpaasInboundWebhook
+      security: []
+      parameters:
+        - {
+            name: kind,
+            in: path,
+            required: true,
+            schema: { enum: [call, status, dial, agent, wait, leave, recording] },
+          }
+        - { name: call, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200':
+          description: TwiML
+          content: { text/xml: { schema: { type: string } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /telephony/config:
+    get:
+      summary: Konsol telefoni yapılandırması (masa hattı, 112). E-05, T-052
+      description: |
+        Yazılım telefonu ve gelen arama açık mı; masa sabit hattı (CPAAS_AGENT_NUMBER, ulusal gösterim — 112 geri arama
+        numarası olarak okunur, yoksa null); acil numarası kural paketinden (`numbers.emergency`). Sır yok.
+      operationId: telephonyConfig
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Yapılandırma
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [softphone, inbound, deskLine, emergencyNumber]
+                properties:
+                  softphone: { type: boolean }
+                  inbound: { type: boolean }
+                  deskLine: { type: [string, 'null'], example: '0212 000 00 00' }
+                  emergencyNumber: { type: string, example: '112' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /operators/me:
+    get:
+      summary: Operatörün kendi durumu. E-05, T-051 kalan
+      operationId: myOperatorStatus
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Durum (kayıt yoksa AVAILABLE, statusAt null)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subject, status, statusAt]
+                properties:
+                  subject: { type: string }
+                  status: { enum: [AVAILABLE, BREAK, OFFLINE] }
+                  statusAt: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /operators/me/status:
+    put:
+      summary: Operatör kendi durumunu seçer (Müsait / Molada; audit). E-05, T-051 kalan
+      description: |
+        Gelen SOS aramaları yalnız bağlı (WS, 90 sn) ve AVAILABLE operatörlere çalar (olayı yürüten operatör hariç:
+        kendi olayının kişisi ararsa molada da çalar). OFFLINE amir işidir (`PUT /v1/supervisor/operators/{sub}/status`),
+        burada 400.
+      operationId: setMyOperatorStatus
+      security: [{ operatorToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { enum: [AVAILABLE, BREAK] } }
+      responses:
+        '200':
+          description: Yeni durum
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  status: { enum: [AVAILABLE, BREAK] }
+                  statusAt: { type: string, format: date-time }
+                  statusBy: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /webhooks/screening/{kind}:
+    post:
+      summary: Otomatik sesli ön eleme geri çağrıları (Twilio uyumlu). D-12, T-072
+      description: |
+        Herkese açık; yalnız imzalı istek (X-Twilio-Signature, CPAAS_WEBHOOK_BASE + yol); bozuk imza 403.
+        kind: gather (Gather sonucu: Digits / SpeechResult / Confidence → sınıflandırma; yanıt sonuca göre katalog
+        metni V-SCREEN-OK ya da V-SCREEN-HELP + kapat), status (arama durumu; Gather sonucu gelmeden biten arama
+        cevapsız / FAILED sayılır). İlk sonuç kazanır; tekrar teslim olayı değiştirmez. Bilinmeyen kimlik boş TwiML.
+      operationId: screeningWebhook
+      security: []
+      parameters:
+        - { name: kind, in: path, required: true, schema: { enum: [gather, status] } }
+        - { name: s, in: query, required: true, schema: { type: string, format: uuid }, description: Ön eleme kimliği }
+        - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                CallSid: { type: string }
+                CallStatus:
+                  { enum: [queued, initiated, ringing, in-progress, completed, busy, no-answer, failed, canceled] }
+                Digits: { type: string }
+                SpeechResult: { type: string }
+                Confidence: { type: string }
+              additionalProperties: { type: string }
+      responses:
+        '200':
+          description: TwiML
+          content: { text/xml: { schema: { type: string } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /screening/stats:
+    get:
+      summary: Otomatik sesli ön eleme sonuçları ve yanlış pozitif ölçümü. D-12, T-072
+      description: |
+        SUPERVISOR veya ADMIN. Son `days` gündeki ön elemelerin sonuç dağılımı; öğrenme modunda (kişinin ilk ayı)
+        kural paketindeki `operatorSampleRate` oranıyla OK sonuçlarından operatöre düşen geri arama (CALLBACK P4,
+        kaynak `voice-screen-sample:<olay>`) örneklemi, kapanmış olanlar ve acil çıkanlar (yanlış pozitif).
+      operationId: screeningStats
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        '200':
+          description: Özet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since, total, byResult, sampled, sampleReviewed, sampleFalsePositive, falsePositiveRate]
+                properties:
+                  since: { type: string, format: date-time }
+                  total: { type: integer }
+                  byResult:
+                    type: object
+                    properties:
+                      OK: { type: integer }
+                      HELP: { type: integer }
+                      UNCLEAR: { type: integer }
+                      NO_ANSWER: { type: integer }
+                      FAILED: { type: integer }
+                      PENDING: { type: integer }
+                      CANCELLED: { type: integer }
+                  sampled: { type: integer }
+                  sampleReviewed: { type: integer }
+                  sampleFalsePositive: { type: integer }
+                  falsePositiveRate: { type: [number, 'null'] }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /telephony/token:
     get:
       summary: Konsol yazılım telefonu token'ı. E-05, T-051
@@ -749,7 +929,9 @@ paths:
   /supervisor/operators/{sub}/status:
     put:
       summary: Amir — operatör durumunu değiştir (audit). E-11, T-074
-      description: Durum bilgi amaçlıdır (gelen SOS yönlendirmesi bunu kullanacak); olay kilidini değiştirmez (unclaim ayrı).
+      description: |
+        Gelen SOS yönlendirmesi bunu kullanır (yalnız AVAILABLE ve bağlı operatör çalar); olay kilidini değiştirmez
+        (unclaim ayrı). Operatör kendi durumunu `PUT /v1/operators/me/status` ile seçer.
       operationId: setOperatorStatus
       security: [{ operatorToken: [] }]
       parameters: [{ name: sub, in: path, required: true, schema: { type: string, maxLength: 200 } }]
@@ -795,6 +977,40 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/events:
+    get:
+      summary: Aile — kişinin olayları (yeniden eskiye). C-06, T-061
+      operationId: listPersonEvents
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/PersonId' }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Olaylar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { items: { type: array, items: { $ref: '#/components/schemas/FamilyEventSummary' } } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/events/{eventId}:
+    get:
+      summary: Aile — olay ayrıntısı (aşama, zincir adımları, geri bildirim). C-06, C-12, T-061
+      description: |
+        Numara, ad, operatör kimliği ve konum dönmez. Operatör notu yalnız kapanmış test olayında. Canlı değişiklikler
+        WebSocket `/v1/ws/family`: ilk mesaj `{"type":"auth","token":"<consumers erişim token'ı>"}` (FAMILY; 5 sn içinde);
+        sunucu `ready {persons}` ve ardından ailenin kişilerindeki olaylar için `event {event}` (bu gövde) gönderir.
+        Kapanış kodları 4400/4401/4403 kuyruk WS'si ile aynı.
+      operationId: getPersonEvent
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/PersonId' }
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          { description: Olay, content: { application/json: { schema: { $ref: '#/components/schemas/FamilyEvent' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
     get:
       summary: Korunan kişinin koruma durumu. D-05, T-014
@@ -802,9 +1018,11 @@ paths:
         Koruma durumu sinyallerle ve periyodik taramayla (gece başlangıcı/bitişi, 15 dk sessiz cihaz) güncellenir:
         saat bağlı ve bilekte → PROTECTED_WATCH; değilse gece penceresinde → NIGHT; değilse telefon bağlı →
         PROTECTED_PHONE; hiçbiri → UNPROTECTED. Bağlantı: ONLINE (<15 dk), NO_CONNECTION (<6 saat), LOST.
-        Şimdilik yalnız operasyon rolleri (OPERATOR, SUPERVISOR, ADMIN). TODO T-040: FAMILY yalnız kendi kişisini görür.
+        Operasyon rolleri (OPERATOR, SUPERVISOR, ADMIN) her kişiyi; aile (consumers FAMILY, T-061) yalnız kendi kişisini
+        görür (başkasınınki 404) ve ek olarak `location` alır (konum paylaşımı açıksa son 24 saatteki son konum).
+        Kişiden henüz sinyal gelmediyse 404.
       operationId: getProtectionStatus
-      security: [{ operatorToken: [] }]
+      security: [{ operatorToken: [] }, { userToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         '401': { $ref: '#/components/responses/Problem' }
@@ -838,6 +1056,14 @@ paths:
                       timezone: { type: string }
                       start: { type: string, example: '22:00' }
                       end: { type: string, example: '08:00' }
+                  location:
+                    description: Yalnız aile yanıtında (C-08 harita); paylaşım kapalı veya konum yoksa null.
+                    type: [object, 'null']
+                    properties:
+                      lat: { type: number }
+                      lng: { type: number }
+                      accuracyM: { type: [number, 'null'] }
+                      at: { type: string, format: date-time }
                   openEvent:
                     type: [object, 'null']
                     properties:
@@ -912,6 +1138,11 @@ paths:
                     start: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
                     end: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$' }
                 inactivityMin: { type: [integer, 'null'], minimum: 15, maximum: 90 }
+                fallPromptSec:
+                  type: [integer, 'null']
+                  minimum: 30
+                  maximum: 90
+                  description: Düşme sorusu cevap süresi (T-061, C-09); null → kural paketi (60 sn)
       responses:
         '200':
           {
@@ -1031,7 +1262,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages]
+                required:
+                  [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages, subscription]
                 properties:
                   deviceId: { type: string }
                   protectedPersonId: { type: string }
@@ -1049,6 +1281,17 @@ paths:
                       fallWindowSec: { type: [integer, 'null'] }
                       inactivityWindowSec: { type: [integer, 'null'] }
                   inactivityThresholdMin: { type: [integer, 'null'] }
+                  subscription:
+                    type: object
+                    description: |
+                      T-060. protectionActive=false (askıda / iptal) iken cihaz "koruma kapalı" gösterir; metin
+                      `messages[messageCode]` (P-SUB-PAY, P-SUB-OFF, W-SUB-OFF). status null = abonelik dışı kişi.
+                    required: [status, protectionActive, until, messageCode]
+                    properties:
+                      status: { enum: [TRIAL, ACTIVE, PAYMENT_PENDING, SUSPENDED, CANCELED, null] }
+                      protectionActive: { type: boolean }
+                      until: { type: [string, 'null'], format: date-time }
+                      messageCode: { type: [string, 'null'] }
                   messages:
                     type: object
                     description: Katalog metinleri (telefon P-*, saat W-*)
@@ -1219,6 +1462,237 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  # ---- T-060 (C-01) web abonelik ----
+  /plans:
+    get:
+      summary: Paketler (adım 1). T-060
+      description: >-
+        Tutarlar yer tutucudur (`placeholder: true`, ürün/finans onayı bekliyor); fiyatın kendisi sağlayıcı panosunda.
+      operationId: listPlans
+      security: []
+      parameters: [{ name: country, in: query, schema: { enum: [TR, US], default: TR } }]
+      responses:
+        '200':
+          description: Paketler
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [country, trialDays, kvkkNoticeVersion, plans]
+                properties:
+                  country: { enum: [TR, US] }
+                  trialDays: { type: integer, example: 30 }
+                  kvkkNoticeVersion: { type: string, description: Kayıtta geri gönderilecek aydınlatma metni sürümü }
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, interval, nameCode, currency, amountMinor, placeholder]
+                      properties:
+                        code: { type: string, example: STANDARD }
+                        interval: { enum: [month, year] }
+                        nameCode: { type: string, description: Mesaj kataloğu kodu }
+                        currency: { type: string, example: TRY }
+                        amountMinor: { type: integer, description: Kuruş / sent }
+                        placeholder: { type: boolean }
+  /signup:
+    post:
+      summary: Hesap aç (adım 2) — Keycloak consumers hesabı + korunan kişi + TRIAL abonelik. T-060
+      description: |
+        Parola bu uçtan geçmez: Keycloak hesabı VERIFY_EMAIL + UPDATE_PASSWORD gerekli eylemleriyle açılır ve kullanıcıya
+        e-posta bağlantısı gider. Telefona 6 haneli kod SMS'lenir (10 dk). Deneme 30 gün veya ilk olaya kadar.
+        KVKK aydınlatma sürümü güncel olmalı ve açık rıza `true` olmalı (metinler hukuk onayı bekliyor).
+        IP başına saatte 10 kayıt. Aynı e-posta 409 (yarım kişi kalmaz).
+      operationId: signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, country, account, protectedPerson, consents]
+              properties:
+                plan: { type: string, example: STANDARD }
+                country: { enum: [TR, US] }
+                account:
+                  type: object
+                  required: [firstName, lastName, email, phone]
+                  properties:
+                    firstName: { type: string, maxLength: 60 }
+                    lastName: { type: string, maxLength: 60 }
+                    email: { type: string, format: email }
+                    phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
+                protectedPerson:
+                  type: object
+                  required: [displayName]
+                  properties: { displayName: { type: string, maxLength: 100 } }
+                consents:
+                  type: object
+                  required: [kvkkNoticeVersion, explicitConsent]
+                  properties:
+                    kvkkNoticeVersion: { type: string }
+                    explicitConsent: { const: true }
+      responses:
+        '201':
+          description: Hesap açıldı
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [subscriptionId, protectedPersonId, signupToken, signupTokenExpiresAt, trialEndsAt, phoneVerification]
+                properties:
+                  subscriptionId: { type: string, format: uuid }
+                  protectedPersonId: { type: string, format: uuid }
+                  signupToken: { type: string, description: 'Sonraki kayıt adımlarında `x-signup-token` (2 saat)' }
+                  signupTokenExpiresAt: { type: string, format: date-time }
+                  trialEndsAt: { type: string, format: date-time }
+                  phoneVerification: { enum: [SENT, UNAVAILABLE] }
+                  devCode: { type: string, description: Yalnız geliştirmede, sahte SMS sağlayıcısıyla }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/phone/code:
+    post:
+      summary: Telefon doğrulama kodunu yeniden gönder (saatte 5). T-060
+      operationId: resendSignupCode
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { description: Gönderildi }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/phone/verify:
+    post:
+      summary: Telefonu doğrula → Keycloak `phone_number_verified=true`. T-060
+      description: 5 hatalı denemede kod geçersizleşir (yeni kod istenir).
+      operationId: verifySignupPhone
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string, pattern: '^\d{6}$' } } }
+      responses:
+        '200': { description: Doğrulandı }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/checkout:
+    post:
+      summary: 'Ödeme sayfası (adım 2) — iyzico Checkout Form (TR, gömülü) / Stripe Checkout (US, yönlendirme). T-060'
+      description: Telefon doğrulanmış olmalı (409). Kart bilgisi bize gelmez. iyzico için fatura adresi zorunlu.
+      operationId: createSignupCheckout
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CheckoutSession' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/subscription:
+    get:
+      summary: Kayıt akışındaki aboneliğin durumu (adım 3). T-060
+      operationId: getSignupSubscription
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /webhooks/payments:
+    post:
+      summary: Ödeme sağlayıcısı webhook'u (imza doğrulamalı, idempotent). T-060
+      description: |
+        Sağlayıcı başlıktan bulunur: Stripe `Stripe-Signature` (HMAC-SHA256, 5 dk tolerans; checkout.session.completed,
+        invoice.paid, invoice.payment_failed, customer.subscription.deleted), iyzico `X-IYZ-SIGNATURE-V3`
+        (subscription.order.success / failure), geliştirme `X-Fake-Signature`. İmza ham gövde üzerinden; geçersizse 400.
+        (sağlayıcı, olay kimliği) bir kez işlenir; tekrar 200 `duplicate: true`. Sıra dışı eski olay durumu değiştirmez;
+        CANCELED son durumdur. PAST_DUE girişinde aileye F-SUB-PAY (outbox, aynı transaction).
+      operationId: paymentWebhook
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200':
+          description: Alındı
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, duplicate, outcome]
+                properties:
+                  received: { const: true }
+                  duplicate: { type: boolean }
+                  outcome: { enum: [applied, stale, terminal, ignored, unmatched, duplicate] }
+        '400': { $ref: '#/components/responses/Problem' }
+  /payments/iyzico/callback:
+    post:
+      summary: iyzico Checkout Form tarayıcı dönüşü → sonuç iyzico'dan okunur → web adım 3'e 303. T-060
+      operationId: iyzicoCallback
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses:
+        '303': { description: Web'e yönlendirme }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /payments/fake/{ref}/pay:
+    post:
+      summary: Sahte ödeme sayfasının düğmesi (yalnız PAYMENT_PROVIDER=fake; üretimde yok). T-060
+      operationId: fakePay
+      security: []
+      parameters: [{ name: ref, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { outcome: { enum: [success, fail] } } }
+      responses:
+        '200': { description: 'İmzalı webhook gerçek yoldan işlendi; `redirect` web adresi' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription:
+    get:
+      summary: Abonelik durumu (aile üyesi / yönetici). T-060
+      operationId: getSubscription
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription/cancel:
+    post:
+      summary: Tek tık iptal (yalnız OWNER) → CANCELED, koruma kapanır (cihaz config). T-060
+      description: Sağlayıcıdaki abonelik önce sonlandırılır; ulaşılamazsa 502 ve yerel durum değişmez (ücret sürmesin).
+      operationId: cancelSubscription
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription/checkout:
+    post:
+      summary: Sonradan ödeme (deneme bitti / ödeme bekliyor) — yalnız OWNER. T-060
+      operationId: createSubscriptionCheckout
+      security: [{ userToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CheckoutSession' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }
@@ -1239,12 +1713,47 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Keycloak `consumers` realm erişim token'ı (ELDER, FAMILY).
+    signupToken:
+      type: apiKey
+      in: header
+      name: x-signup-token
+      description: T-060 kayıt akışı token'ı (POST /signup yanıtı; tek aboneliğe bağlı, 2 saat).
+  requestBodies:
+    CheckoutInput:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              billing:
+                type: object
+                description: Fatura adresi (iyzico zorunlu). Saklanmaz, yalnız sağlayıcıya iletilir.
+                required: [city, address]
+                properties:
+                  city: { type: string, maxLength: 60 }
+                  address: { type: string, maxLength: 200 }
   parameters:
     EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
     PersonId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
+    Subscription:
+      description: Abonelik
+      content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } }
+    CheckoutSession:
+      description: Barındırılan ödeme sayfası
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                required: [kind, url, checkoutRef]
+                properties: { kind: { const: redirect }, url: { type: string }, checkoutRef: { type: string } }
+              - type: object
+                description: iyzico checkoutFormContent (script) — sayfaya eklenir
+                required: [kind, html, checkoutRef]
+                properties: { kind: { const: embed }, html: { type: string }, checkoutRef: { type: string } }
     CallView:
       description: Arama (numarasız)
       content:
@@ -1280,6 +1789,70 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    Subscription:
+      type: object
+      required:
+        [
+          id,
+          protectedPersonId,
+          plan,
+          countryCode,
+          status,
+          effectiveStatus,
+          protectionActive,
+          provider,
+          paymentMethodOnFile,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        protectedPersonId: { type: string, format: uuid }
+        plan: { type: string }
+        countryCode: { enum: [TR, US] }
+        status: { enum: [TRIAL, ACTIVE, PAST_DUE, CANCELED] }
+        effectiveStatus:
+          description: TRIAL (deneme) · ACTIVE · PAYMENT_PENDING (ödeme bekliyor, 7 gün koruma) · SUSPENDED (askıda, koruma kapalı) · CANCELED
+          enum: [TRIAL, ACTIVE, PAYMENT_PENDING, SUSPENDED, CANCELED, null]
+        protectionActive: { type: boolean }
+        until: { type: [string, 'null'], format: date-time, description: Deneme sonu / bekleme sonu / yenileme }
+        trialEndsAt: { type: [string, 'null'], format: date-time }
+        canceledAt: { type: [string, 'null'], format: date-time }
+        provider: { enum: [IYZICO, STRIPE, FAKE, null] }
+        paymentMethodOnFile: { type: boolean }
+    FamilyEventSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        protectedPersonId: { type: string, format: uuid }
+        type: { type: string }
+        priority: { type: integer }
+        isTest: { type: boolean }
+        state: { type: string }
+        stage:
+          enum: [DETECTED, ASKING, CANCELLED, QUEUED, OPERATOR, CALLING, SAFE, EMERGENCY, DISPATCH, FOLLOW_UP, CLOSED]
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time }
+        outcome: { type: [string, 'null'] }
+    FamilyEvent:
+      allOf:
+        - { $ref: '#/components/schemas/FamilyEventSummary' }
+        - type: object
+          properties:
+            devicePromptUntil: { type: [string, 'null'], format: date-time }
+            steps:
+              type: array
+              items:
+                type: object
+                properties:
+                  n: { type: integer }
+                  kind: { enum: [CALL_WATCH, CALL_PHONE, CALL_CONTACT, CALL_NEIGHBOR, CALL_112] }
+                  contactIndex: { type: [integer, 'null'] }
+                  status: { enum: [PENDING, CALLING, DONE] }
+                  result: { type: [string, 'null'] }
+                  assessment: { type: [string, 'null'] }
+                  at: { type: [string, 'null'], format: date-time }
+            operatorNote: { type: [string, 'null'] }
+            feedback: { type: [object, 'null'], properties: { real: { type: boolean } } }
+            canFeedback: { type: boolean }
     OperatorCard:
       type: object
       properties:
@@ -1375,6 +1948,7 @@ components:
             lng: { type: number, minimum: -180, maximum: 180 }
         doorAccessNote: { type: [string, 'null'], maxLength: 500, description: Şifreli saklanır }
         dailySummary: { type: boolean, description: Akşam F-DAILY bildirimi (C-07; varsayılan açık) }
+        locationSharing: { type: boolean, description: Aile uygulaması son konumu görür (T-061, C-09; varsayılan açık) }
     PersonView:
       type: object
       required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
@@ -1401,6 +1975,7 @@ components:
         doorAccessNote: { type: [string, 'null'] }
         myRole: { enum: [OWNER, MEMBER, null] }
         dailySummary: { type: boolean }
+        locationSharing: { type: boolean }
         medical:
           type: object
           description: Yalnız var/yok ve rıza zamanı; içerik geri okunmaz.
@@ -1438,6 +2013,8 @@ components:
         learnedAt: { type: [string, 'null'], format: date-time }
         learnedDays: { type: [integer, 'null'], description: Son öğrenmede veri olan gün sayısı }
         reportSentAt: { type: [string, 'null'], format: date-time }
+        fallPromptSec: { type: [integer, 'null'], description: Aile ayarı (sn); null → fallPromptDefault }
+        fallPromptDefault: { type: [integer, 'null'] }
     ThresholdSource:
       enum: [DEFAULT, LEARNED, FAMILY]
     FalseAlarmStats:
