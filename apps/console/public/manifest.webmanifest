@@ -1,0 +1,20 @@
+{
+  "name": "Yanımda Konsol",
+  "short_name": "Yanımda",
+  "description": "Yanımda operatör, amir ve yönetim konsolu",
+  "lang": "tr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#2F4F8F",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Amir panosu", "url": "/supervisor" },
+    { "name": "Yönetim", "url": "/yonetim" }
+  ]
+}

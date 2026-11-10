@@ -176,6 +176,39 @@ paths:
       security: [{ operatorToken: [] }]
       responses:
         '200': { description: Sağlık }
+  /push/web/config:
+    get:
+      summary: Personel web push (PWA) — açık mı, VAPID açık anahtarı
+      operationId: webPushConfig
+      security: [{ operatorToken: [] }]
+      responses:
+        '200': { description: '{ enabled, publicKey }' }
+  /push/web/subscriptions:
+    post:
+      summary: Bu cihazı amir uyarılarına abone et (PushSubscription JSON; endpoint https)
+      description: Amir uyarıları (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL, O-DISPATCH-OPEN, O-WELLNESS-MISSED) SUPERVISOR aboneliklerine gider; yükte kişi adı / numara yok. 404/410 dönen abonelik silinir.
+      operationId: webPushSubscribe
+      security: [{ operatorToken: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              properties:
+                endpoint: { type: string, format: uri }
+                keys: { type: object, properties: { p256dh: { type: string }, auth: { type: string } } }
+      responses:
+        '200': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Aboneliği bırak
+      operationId: webPushUnsubscribe
+      security: [{ operatorToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { endpoint: { type: string } } } } }
+      responses:
+        '204': { description: Bırakıldı }
   /queue:
     get:
       summary: Operatör kuyruğu (öncelik → yaş, sayfalı). E-02, T-022

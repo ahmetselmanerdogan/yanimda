@@ -80,3 +80,20 @@ test('kapatma penceresi telefonda tam ekran, her boyutta erişilebilir', async (
   }
   await axe(page);
 });
+
+test('PWA: manifest, simge ve service worker yayınlanır; API önbellek dışı', async ({ page, request }) => {
+  test.skip(test.info().project.name !== 'masaustu', 'bir kez yeter');
+  await page.goto('/?training=1');
+  const href = await page.locator('link[rel="manifest"]').getAttribute('href');
+  const m = (await (await request.get(href!)).json()) as {
+    name: string;
+    display: string;
+    icons: unknown[];
+    start_url: string;
+  };
+  expect(m).toMatchObject({ name: 'Yanımda Konsol', display: 'standalone', start_url: '/' });
+  expect(m.icons.length).toBeGreaterThanOrEqual(2);
+  expect((await request.get('/icon.svg')).ok()).toBe(true);
+  const sw = await (await request.get('/sw.js')).text();
+  expect(sw).toContain('/^\\/v1\\//');
+});
