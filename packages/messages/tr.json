@@ -524,6 +524,35 @@
     "channel": "console",
     "text": "Aramayı bitir"
   },
+  "O-UI-INBOUND": {
+    "channel": "console",
+    "text": "Gelen acil arama"
+  },
+  "O-UI-INBOUND-EVENT": {
+    "channel": "console",
+    "text": "Olaydaki kişiden",
+    "action": "Olayı aç"
+  },
+  "O-UI-INBOUND-UNKNOWN": {
+    "channel": "console",
+    "text": "Kayıtlı olmayan numara"
+  },
+  "O-UI-INBOUND-ACCEPT": {
+    "channel": "console",
+    "text": "Cevapla"
+  },
+  "O-UI-INBOUND-REJECT": {
+    "channel": "console",
+    "text": "Reddet"
+  },
+  "O-UI-INBOUND-TALKING": {
+    "channel": "console",
+    "text": "Gelen arama görüşülüyor"
+  },
+  "O-UI-MY-STATUS": {
+    "channel": "console",
+    "text": "Durumum"
+  },
   "O-UI-CLOSE": {
     "channel": "console",
     "text": "Olayı kapat",
@@ -702,6 +731,10 @@
     "channel": "voice",
     "text": "Bu görüşme kaydedilmektedir."
   },
+  "V-INBOUND-WAIT": {
+    "channel": "voice",
+    "text": "Yanımda acil yardım hattı. Sizi operatörümüze bağlıyoruz, lütfen hattan ayrılmayın."
+  },
   "O-CALL-queued": {
     "channel": "console",
     "text": "Arama başlatılıyor"
@@ -745,6 +778,26 @@
   "O-CALL-MANUAL": {
     "channel": "console",
     "text": "Bu adım masa telefonundan aranır; sonucu girin."
+  },
+  "O-CALL-112-BADGE": {
+    "channel": "console",
+    "text": "MANUEL"
+  },
+  "O-CALL-112-DESK": {
+    "channel": "console",
+    "text": "112'yi masadaki sabit hattan arayın; yazılım telefonu veya cep telefonu kullanmayın."
+  },
+  "O-CALL-112-CALLBACK": {
+    "channel": "console",
+    "text": "112 geri arama numarası sorarsa: {desk}"
+  },
+  "O-CALL-112-STEPS": {
+    "channel": "console",
+    "text": "Betiği okuyun, 112'nin söylediklerini nota yazın, sonucu girin."
+  },
+  "O-CALL-112-DONE": {
+    "channel": "console",
+    "text": "Sabit hattan aradım"
   },
   "O-CALL-DURATION": {
     "channel": "console",

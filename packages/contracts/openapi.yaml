@@ -315,6 +315,114 @@ paths:
           content: { text/xml: { schema: { type: string } } }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /webhooks/cpaas-inbound/{kind}:
+    post:
+      summary: Gelen SOS araması geri çağrıları (Twilio uyumlu). E-05, T-051 kalan
+      description: |
+        Herkese açık; yalnız imzalı istek (giden aramadakiyle aynı X-Twilio-Signature şeması), bozuksa 403.
+        Twilio numarasının (ya da BYOC trunk'ın) Voice URL'i `call`, durum geri çağrısı `status` (ikisi CallSid ile;
+        `call` parametresi yok). Yönlendirme TwiML'inin verdiği diğerleri `?call=<gelen arama kimliği>` taşır:
+        dial (operatör `<Dial>` sonucu: cevapsız/meşgul → sıradaki operatör, cevaplanıp bitti → kapat), agent
+        (operatör bacağı açıldı → bağlı), wait (kuyruk bekleme döngüsü: V-INBOUND-WAIT + Pause ya da müsait operatör
+        varsa `<Leave/>`), leave (kuyruktan çıkış: leave → yeniden yönlendir, hangup → vazgeçti), recording (kayıt →
+        S3 `recordings/<ülke>/<olay|inbound>/…`, sağlayıcıdan silinir). Sıra: arayanın açık olayını yürüten operatör
+        (bağlıysa), sonra bağlı ve AVAILABLE operatörler (açık olayı olmayan, en uzun boşta kalan önce); kimse yoksa
+        `<Enqueue>`. Arayan numara saklanmaz.
+      operationId: cpaasInboundWebhook
+      security: []
+      parameters:
+        - {
+            name: kind,
+            in: path,
+            required: true,
+            schema: { enum: [call, status, dial, agent, wait, leave, recording] },
+          }
+        - { name: call, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200':
+          description: TwiML
+          content: { text/xml: { schema: { type: string } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /telephony/config:
+    get:
+      summary: Konsol telefoni yapılandırması (masa hattı, 112). E-05, T-052
+      description: |
+        Yazılım telefonu ve gelen arama açık mı; masa sabit hattı (CPAAS_AGENT_NUMBER, ulusal gösterim — 112 geri arama
+        numarası olarak okunur, yoksa null); acil numarası kural paketinden (`numbers.emergency`). Sır yok.
+      operationId: telephonyConfig
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Yapılandırma
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [softphone, inbound, deskLine, emergencyNumber]
+                properties:
+                  softphone: { type: boolean }
+                  inbound: { type: boolean }
+                  deskLine: { type: [string, 'null'], example: '0212 000 00 00' }
+                  emergencyNumber: { type: string, example: '112' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /operators/me:
+    get:
+      summary: Operatörün kendi durumu. E-05, T-051 kalan
+      operationId: myOperatorStatus
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Durum (kayıt yoksa AVAILABLE, statusAt null)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subject, status, statusAt]
+                properties:
+                  subject: { type: string }
+                  status: { enum: [AVAILABLE, BREAK, OFFLINE] }
+                  statusAt: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /operators/me/status:
+    put:
+      summary: Operatör kendi durumunu seçer (Müsait / Molada; audit). E-05, T-051 kalan
+      description: |
+        Gelen SOS aramaları yalnız bağlı (WS, 90 sn) ve AVAILABLE operatörlere çalar (olayı yürüten operatör hariç:
+        kendi olayının kişisi ararsa molada da çalar). OFFLINE amir işidir (`PUT /v1/supervisor/operators/{sub}/status`),
+        burada 400.
+      operationId: setMyOperatorStatus
+      security: [{ operatorToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { enum: [AVAILABLE, BREAK] } }
+      responses:
+        '200':
+          description: Yeni durum
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  status: { enum: [AVAILABLE, BREAK] }
+                  statusAt: { type: string, format: date-time }
+                  statusBy: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /telephony/token:
     get:
       summary: Konsol yazılım telefonu token'ı. E-05, T-051
@@ -747,7 +855,9 @@ paths:
   /supervisor/operators/{sub}/status:
     put:
       summary: Amir — operatör durumunu değiştir (audit). E-11, T-074
-      description: Durum bilgi amaçlıdır (gelen SOS yönlendirmesi bunu kullanacak); olay kilidini değiştirmez (unclaim ayrı).
+      description: |
+        Gelen SOS yönlendirmesi bunu kullanır (yalnız AVAILABLE ve bağlı operatör çalar); olay kilidini değiştirmez
+        (unclaim ayrı). Operatör kendi durumunu `PUT /v1/operators/me/status` ile seçer.
       operationId: setOperatorStatus
       security: [{ operatorToken: [] }]
       parameters: [{ name: sub, in: path, required: true, schema: { type: string, maxLength: 200 } }]

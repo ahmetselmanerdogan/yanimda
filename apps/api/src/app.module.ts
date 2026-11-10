@@ -15,6 +15,7 @@ import { QueueModule } from './modules/queue/queue.module';
 import { ReportModule } from './modules/report/report.module';
 import { RulesModule } from './modules/rules/rules.module';
 import { SignalModule } from './modules/signal/signal.module';
+import { InboundModule } from './modules/telephony/inbound.module';
 
 // 03-teknik-mimari.md "Servis haritası": modüler monolit. Diğer modüller (identity, profile, health, device,
 // chain, notify, telephony, report) ilgili görevlerde (docs/TASKS.md) eklenir.
@@ -35,6 +36,7 @@ import { SignalModule } from './modules/signal/signal.module';
     ReportModule,
     LearningModule,
     FalseAlarmModule,
+    InboundModule,
   ],
 })
 export class AppModule {}
