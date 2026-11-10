@@ -278,9 +278,14 @@
     "text": "112 ekibi {name} yanına ulaştı.",
     "action": "Olayı aç"
   },
-  "F-112-HOSPITAL": {
+  "F-112-TRANSPORT": {
     "channel": "family",
     "text": "{name} {hospital} hastanesine götürülüyor.",
+    "action": "Olayı aç"
+  },
+  "F-112-HOSPITAL": {
+    "channel": "family",
+    "text": "{name} {hospital} hastanesine ulaştı.",
     "action": "Olayı aç"
   },
   "F-DAILY": {
@@ -428,6 +433,14 @@
   "O-DISPATCH-OPEN": {
     "channel": "console",
     "text": "112 süreci açık ({type}). Son durumu girin ya da tamamlayın."
+  },
+  "O-DISPATCH-ESCALATE": {
+    "channel": "console",
+    "text": "112 ekibi hâlâ ulaşmadı ({type}). 112'yi tekrar arayın, gecikmenin nedenini ve tahmini varışı girin."
+  },
+  "O-CLOSE-NO-112": {
+    "channel": "console",
+    "text": "Acil olay 112 aranmadan kapatıldı ({type}). Gerekçeyi kontrol edin."
   },
   "O-WELLNESS-MISSED": {
     "channel": "console",
@@ -637,6 +650,10 @@
   "O-UI-DISPATCH-NONE": {
     "channel": "console",
     "text": "Süren 112 süreci yok."
+  },
+  "O-UI-CLOSE-NOTIFIED-112": {
+    "channel": "console",
+    "text": "112 zincir dışında arandı (masa hattı / başka yol)"
   },
   "O-UI-ADM-TITLE": {
     "channel": "console",

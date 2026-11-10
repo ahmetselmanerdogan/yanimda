@@ -297,8 +297,8 @@ export function Console({
       : ev?.state === 'CONFIRMED_OK'
         ? ['OK', 'FALSE_ALARM', 'TEST']
         : ['OK', 'FALSE_ALARM', 'UNREACHABLE', 'TEST', 'EMERGENCY'];
-  const close = async (outcome: CloseOutcome, closeNote: string, followUp?: number) => {
-    const ok = await run(() => api.close(selected!, outcome, closeNote || undefined, followUp));
+  const close = async (outcome: CloseOutcome, closeNote: string, followUp?: number, notified112?: boolean) => {
+    const ok = await run(() => api.close(selected!, outcome, closeNote || undefined, followUp, notified112));
     if (ok) {
       setMode('normal');
       setNote('');
@@ -502,7 +502,8 @@ export function Console({
           allowed={allowedOutcomes()}
           initialNote={note}
           busy={busy}
-          onSubmit={(o, n, f) => void close(o, n, f)}
+          ask112={ev?.state === 'CONFIRMED_EMERGENCY'}
+          onSubmit={(o, n, f, x) => void close(o, n, f, x)}
           onCancel={() => setMode('normal')}
         />
       )}

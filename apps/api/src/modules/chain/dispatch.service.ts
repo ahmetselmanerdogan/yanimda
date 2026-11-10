@@ -17,7 +17,7 @@ import {
   type SupervisorAlert,
   TOPICS,
 } from '@yanimda/contracts';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
@@ -25,6 +25,7 @@ import { OutboxBus } from '../../common/outbox';
 import { type TimerJob, TIMERS, type Timers } from '../../common/timers/timers';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, dispatch, dispatchUpdate, event } from '../../db/schema';
+import { RULES, type RulesProvider } from '../event/rules.loader';
 
 /**
  * 112 bildirim ve intikal takibi. Olay DISPATCH'e geçince (112 arandı; zincir 112 adımı ya da acil kapanış)
@@ -59,9 +60,13 @@ const STAGE_COLUMN: Record<Exclude<DispatchStage, 'NOTIFIED'>, keyof typeof disp
 };
 const FAMILY_NOTICE: Partial<Record<DispatchStage, string>> = {
   ON_SCENE: 'F-112-ON-SCENE',
-  TRANSPORTING: 'F-112-HOSPITAL',
+  TRANSPORTING: 'F-112-TRANSPORT',
   AT_HOSPITAL: 'F-112-HOSPITAL',
 };
+/** Ekip varmadan en çok bu kadar "varmadı" uyarısı; sonra tek O-DISPATCH-ESCALATE ve varış bekleme uyarıları durur. */
+export const NO_ARRIVAL_ALERTS = 3;
+/** Ekip vardıktan sonra açık süreç hatırlatması üst sınırı. */
+export const OPEN_REMINDERS = 6;
 
 export const arrivalSlaMin = () => Number(process.env.DISPATCH_ARRIVAL_SLA_MIN ?? 15);
 export const openRemindMin = () => Number(process.env.DISPATCH_OPEN_REMIND_MIN ?? 60);
@@ -107,6 +112,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     @Inject(DB) private readonly db: Db,
     @Inject(OutboxBus) private readonly outbox: OutboxBus,
     @Optional() @Inject(TIMERS) private readonly timers?: Timers,
+    @Optional() @Inject(RULES) private readonly rules?: RulesProvider,
   ) {
     this.timers?.on('dispatch-check', (job) => this.check(job));
   }
@@ -141,14 +147,21 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       .select({ id: event.id, protectedPersonId: event.protectedPersonId, isTest: event.isTest })
       .from(event)
       .where(eq(event.id, eventId));
-    if (!ev) return false;
+    if (!ev || ev.isTest) return false; // test olayında gerçek 112 aranmaz: süreç yok
     const opened = await this.db.transaction(async (tx) => {
       const ins = await tx
         .insert(dispatch)
         .values({ eventId, protectedPersonId: ev.protectedPersonId, notifiedAt: at, notifiedBy: by })
         .onConflictDoNothing()
         .returning({ id: dispatch.eventId });
-      if (!ins.length) return false;
+      if (!ins.length) {
+        // Tekrar teslim: süreç açıksa takip zamanlayıcısı eksik olabilir (önceki teslim commit ile kurulum arasında
+        // öldüyse) → yeniden kur. İş kimliği <olay>.dispatch-check: zaten bekliyorsa ikinci kez eklenmez.
+        const [row] = await tx.select({ status: dispatch.status }).from(dispatch).where(eq(dispatch.eventId, eventId));
+        if (row && !TERMINAL.has(row.status as DispatchStage))
+          await this.timers?.schedule(eventId, 'dispatch-check', arrivalSlaMin() * 60_000);
+        return false;
+      }
       await tx.insert(dispatchUpdate).values({
         id: uuidv7(),
         eventId,
@@ -159,12 +172,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         source: by ? 'OPERATOR' : 'SYSTEM',
       });
       await this.audit(tx, by ? 'OPERATOR' : 'SYSTEM', by, 'dispatch.opened', eventId, { status: 'NOTIFIED' });
+      // Zamanlayıcı commit'ten ÖNCE (olay motoru kalıbı): commit sonrası çökme takibi sessizce düşürmesin.
+      await this.timers?.schedule(eventId, 'dispatch-check', arrivalSlaMin() * 60_000);
       return true;
     });
-    if (opened) {
-      await this.timers?.schedule(eventId, 'dispatch-check', arrivalSlaMin() * 60_000);
-      this.log.log(`112 süreci açıldı (olay=${eventId})`);
-    }
+    if (opened) this.log.log(`112 süreci açıldı (olay=${eventId})`);
     return opened;
   }
 
@@ -217,6 +229,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       if (eta !== undefined) set.etaMin = eta as number | null;
       if (advance) {
         set.status = status;
+        if (status === 'ON_SCENE' || status === 'TRANSPORTING' || status === 'AT_HOSPITAL') set.checks = 0;
         const col = STAGE_COLUMN[status as Exclude<DispatchStage, 'NOTIFIED'>];
         (set as Record<string, unknown>)[col] = now;
         // Atlanan ara aşamalar da zaman alır (ör. doğrudan "olay yerinde").
@@ -249,7 +262,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       const notice = advance ? FAMILY_NOTICE[status!] : undefined;
       if (notice) {
         const h = hospital ?? row.hospital;
-        if (notice !== 'F-112-HOSPITAL' || h)
+        if (notice === 'F-112-ON-SCENE' || h)
           await this.notify(tx, row.protectedPersonId, eventId, notice, h ? { hospital: h } : undefined, now);
       }
       await this.outbox.publish(
@@ -272,15 +285,27 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     return (await this.get(eventId))!;
   }
 
-  /** Zamanlayıcı: süreç hâlâ açıksa amir uyarısı + yeniden kur. */
+  /**
+   * Zamanlayıcı: süreç hâlâ açıksa amir uyarısı + yeniden kur.
+   *  - Ekip yoldaysa ve tahmini varış girildiyse bekleme max(SLA, yola çıkış + ETA + 5 dk); dolmadan uyarı yok.
+   *  - Varış öncesi en çok NO_ARRIVAL_ALERTS uyarı, sonra tek O-DISPATCH-ESCALATE ("112'yi tekrar arayın") ve durur.
+   *  - Varış sonrası açık süreç hatırlatması OPEN_REMINDERS ile sınırlı.
+   */
   async check({ eventId }: TimerJob, now = new Date()): Promise<void> {
     const next = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(dispatch).where(eq(dispatch.eventId, eventId)).for('update');
       if (!row || TERMINAL.has(row.status as DispatchStage)) return null;
       const arrived = ARRIVED.has(row.status as DispatchStage);
+      if (!arrived && row.status === 'EN_ROUTE' && row.etaMin !== null && row.enRouteAt) {
+        const due = row.enRouteAt.getTime() + (row.etaMin + 5) * 60_000;
+        if (due > now.getTime()) return Math.max(1, Math.ceil((due - now.getTime()) / 60_000));
+      }
+      const limit = arrived ? OPEN_REMINDERS : NO_ARRIVAL_ALERTS;
+      if (row.checks > limit) return null;
+      const code = arrived ? 'O-DISPATCH-OPEN' : row.checks >= limit ? 'O-DISPATCH-ESCALATE' : 'O-DISPATCH-NO-ARRIVAL';
       const [ev] = await tx.select({ type: event.type }).from(event).where(eq(event.id, eventId));
       const alert: SupervisorAlert = {
-        code: arrived ? 'O-DISPATCH-OPEN' : 'O-DISPATCH-NO-ARRIVAL',
+        code,
         eventId,
         eventType: (ev?.type ?? 'SOS') as EventType,
         at: now.toISOString(),
@@ -294,12 +319,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         .update(dispatch)
         .set({ checks: sql`${dispatch.checks} + 1`, lastCheckAt: now })
         .where(eq(dispatch.eventId, eventId));
-      await this.audit(tx, 'SYSTEM', null, 'dispatch.check', eventId, { status: row.status, alert: alert.code });
+      await this.audit(tx, 'SYSTEM', null, 'dispatch.check', eventId, { status: row.status, alert: code });
+      if (code === 'O-DISPATCH-ESCALATE' || (arrived && row.checks + 1 >= OPEN_REMINDERS)) return null;
       return arrived ? openRemindMin() : Math.max(5, Math.round(arrivalSlaMin() / 3));
     });
-    if (next === null) return;
+    if (next !== null) await this.timers?.schedule(eventId, 'dispatch-check', next * 60_000);
     this.outbox.notifyCommitted();
-    await this.timers?.schedule(eventId, 'dispatch-check', next * 60_000);
   }
 
   async get(eventId: string, now = new Date()): Promise<DispatchView | null> {
@@ -324,7 +349,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
           ? sql`${dispatch.status} NOT IN ('COMPLETED', 'CANCELLED')`
           : sql`${dispatch.notifiedAt} > ${new Date(now.getTime() - 30 * 86_400_000)}`,
       )
-      .orderBy(asc(dispatch.notifiedAt))
+      .orderBy(desc(dispatch.notifiedAt))
       .limit(Math.min(opts.limit ?? 100, 500));
     return rows.map((r) => this.view(r, [], now));
   }
@@ -399,7 +424,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       type: topic,
       version: 1,
       occurredAt: now.toISOString(),
-      countryCode: 'TR',
+      countryCode: this.rules?.current().country ?? 'TR',
       subjectUserId: subject,
       payload,
     };

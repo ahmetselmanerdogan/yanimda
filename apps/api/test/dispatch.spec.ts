@@ -97,7 +97,7 @@ describe('112 süreci', () => {
     expect(await status(dispatch.update(id, op, { note: 'geç not' }))).toBe(409);
     const codes = (await outbox('notify.requested')).map((p) => p.code);
     expect(codes).toContain('F-112-ON-SCENE');
-    expect(codes).toContain('F-112-HOSPITAL');
+    expect(codes).toContain('F-112-TRANSPORT');
     expect(timers.pendingIds()).not.toContain(`${id}.dispatch-check`);
   });
 
@@ -125,5 +125,70 @@ describe('112 süreci', () => {
     expect(await status(dispatch.update('01960000-0000-7000-8000-00000000ffff', op, { status: 'ON_SCENE' }))).toBe(404);
     await dispatch.update(id, op, { status: 'CANCELLED', note: 'aile özel araçla götürdü' });
     expect(await dispatch.list({ open: true })).toEqual([]);
+  });
+
+  it('112 aranmadan acil kapanış: süreç yok, aileye 112 bildirimi yok, amire O-CLOSE-NO-112 (bulgu)', async () => {
+    await bus.deliver<Signal>('signal.received', {
+      payload: sig('SOS', { protectedPersonId: P }),
+    } as unknown as KafkaEnvelope<Signal>);
+    const [ev] = await events.all();
+    await chain.claim(ev!.id, OP);
+    await chain.stepResult(ev!.id, 1, OP, { result: 'REACHED', assessment: 'EMERGENCY' });
+    await chain.close(ev!.id, OP, { outcome: 'EMERGENCY', note: 'aile kendi götürdü', followUpAfterHours: 24 });
+    await h.worker().drain();
+    expect((await events.get(ev!.id)).state).toBe('CLOSED');
+    expect(await dispatch.get(ev!.id)).toBeNull();
+    expect((await outbox('notify.requested')).map((p) => p.code)).not.toContain('F-EVT-112');
+    expect((await outbox('supervisor.alert')).map((p) => p.code)).toContain('O-CLOSE-NO-112');
+  });
+
+  it('zincir dışında 112 arandı (notified112) → DISPATCH ve süreç açılır', async () => {
+    await bus.deliver<Signal>('signal.received', {
+      payload: sig('SOS', { protectedPersonId: P }),
+    } as unknown as KafkaEnvelope<Signal>);
+    const [ev] = await events.all();
+    await chain.claim(ev!.id, OP);
+    await chain.stepResult(ev!.id, 1, OP, { result: 'REACHED', assessment: 'EMERGENCY' });
+    await chain.close(ev!.id, OP, { outcome: 'EMERGENCY', followUpAfterHours: 24, notified112: true });
+    await h.worker().drain();
+    expect(await dispatch.get(ev!.id)).toMatchObject({ status: 'NOTIFIED' });
+  });
+
+  it('tekrar teslimde eksik takip zamanlayıcısı yeniden kurulur', async () => {
+    const id = await dispatched();
+    await timers.cancel(id, 'dispatch-check'); // önceki teslim commit ile kurulum arasında öldü
+    expect(timers.pendingIds()).not.toContain(`${id}.dispatch-check`);
+    expect(await dispatch.open(id, OP)).toBe(false);
+    expect(timers.pendingIds()).toContain(`${id}.dispatch-check`);
+  });
+
+  it('ekip yolda + tahmini varış: süre dolmadan uyarı yok; en çok 3 uyarı, sonra tek ESCALATE ve durur', async () => {
+    const id = await dispatched();
+    const t0 = new Date();
+    await dispatch.update(id, op, { status: 'EN_ROUTE', etaMin: 25 }, t0);
+    await dispatch.check({ eventId: id, kind: 'dispatch-check' }, new Date(t0.getTime() + 16 * 60_000));
+    expect((await outbox('supervisor.alert')).map((p) => p.code)).toEqual([]);
+    for (let i = 0; i < 6; i++)
+      await dispatch.check({ eventId: id, kind: 'dispatch-check' }, new Date(t0.getTime() + (31 + i * 5) * 60_000));
+    expect((await outbox('supervisor.alert')).map((p) => p.code)).toEqual([
+      'O-DISPATCH-NO-ARRIVAL',
+      'O-DISPATCH-NO-ARRIVAL',
+      'O-DISPATCH-NO-ARRIVAL',
+      'O-DISPATCH-ESCALATE',
+    ]);
+  });
+
+  it('nakil ve hastaneye ulaşma ayrı aile bildirimleri; test olayında süreç açılmaz', async () => {
+    const id = await dispatched();
+    await dispatch.update(id, op, { status: 'TRANSPORTING', hospital: 'Şehir Hastanesi' });
+    await dispatch.update(id, op, { status: 'AT_HOSPITAL' });
+    const codes = (await outbox('notify.requested')).map((p) => p.code);
+    expect(codes).toContain('F-112-TRANSPORT');
+    expect(codes).toContain('F-112-HOSPITAL');
+    await h.pg.query('UPDATE event.event SET is_test = true WHERE id = $1', [id]);
+    await h.pg.query('DELETE FROM event.dispatch_update WHERE event_id = $1', [id]);
+    await h.pg.query('DELETE FROM event.dispatch WHERE event_id = $1', [id]);
+    expect(await dispatch.open(id, OP)).toBe(false);
+    expect(await dispatch.get(id)).toBeNull();
   });
 });
