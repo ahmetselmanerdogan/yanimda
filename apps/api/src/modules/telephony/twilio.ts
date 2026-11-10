@@ -3,6 +3,8 @@ import {
   conferenceTwiml,
   type CpaasProvider,
   type DialRequest,
+  type ScreenRequest,
+  screenTwiml,
   verifySignature,
   xml,
 } from './cpaas';
@@ -96,6 +98,20 @@ export class TwilioProvider implements CpaasProvider {
     )) as {
       sid: string;
     };
+    return { providerCallId: j.sid };
+  }
+
+  /** T-072 ön eleme: kişiyi doğrudan arar; soru + Gather (DTMF/konuşma), arama durumu `status` webhook'una. */
+  async screenCall(r: ScreenRequest) {
+    const p = new URLSearchParams({
+      To: r.to,
+      From: this.cfg.from,
+      Twiml: screenTwiml({ ask: r.ask, gatherUrl: r.urls.gather, hints: r.hints, digits: r.digits }),
+      StatusCallback: r.urls.status,
+      Timeout: String(r.ringTimeoutSec),
+    });
+    for (const e of ['initiated', 'ringing', 'answered', 'completed']) p.append('StatusCallbackEvent', e);
+    const j = (await this.req('POST', '/Calls.json', p)) as { sid: string };
     return { providerCallId: j.sid };
   }
 

@@ -230,6 +230,27 @@ export const call = telephonySchema.table('call', {
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
 
+/** T-072 (D-12) otomatik sesli ön eleme: olay başına bir arama. Numara ve konuşma dökümü tutulmaz. */
+export const voiceScreening = eventSchema.table('voice_screening', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  eventType: text('event_type').notNull(),
+  contactId: uuid('contact_id'),
+  provider: text('provider').notNull(),
+  providerCallId: text('provider_call_id'),
+  config: jsonb('config').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  reason: text('reason'),
+  input: text('input'),
+  matched: text('matched'),
+  confidence: doublePrecision('confidence'),
+  callStatus: text('call_status'),
+  sampled: boolean('sampled').notNull().default(false),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  finishedAt: timestamptz('finished_at'),
+});
+
 export const auditSchema = pgSchema('audit');
 
 export const event = eventSchema.table('event', {

@@ -21,6 +21,20 @@ export interface Rule {
   operatorScript?: string;
   /** D-06: öğrenme modunda operatöre düşmeden önce ek sessiz soru (yalnız sessiz soru olan kurallar). */
   learningMode?: { extraSilentAsks?: number };
+  /** D-12 (T-072): soru/bekleme cevapsızsa operatörden önce kişiye sesli arama. Asla SOS/FALL. */
+  autoVoiceScreening?: AutoVoiceScreening;
+}
+export interface AutoVoiceScreening {
+  enabled: boolean;
+  /** Soru metni (katalog kodu, voice kanalı). */
+  phrase: string;
+  acceptIf: string[];
+  helpIf?: string[];
+  acceptDigits?: string[];
+  minConfidence?: number;
+  timeoutSec?: number;
+  /** Öğrenme modunda (ilk ay) OK sonuçlarının operatöre CALLBACK olarak düşen oranı. */
+  operatorSampleRate?: number;
 }
 /** D-06 öğrenme modu parametreleri (T-070). */
 export interface LearningParams {

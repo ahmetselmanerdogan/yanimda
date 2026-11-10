@@ -12,6 +12,7 @@ export const TIMER_KINDS = [
   'battery-dead', //        pil bitti → BATTERY_DEAD olayı                                    (T-012 bağlar)
   'connection-lost', //     heartbeat yok → CONNECTION_LOST olayı                             (T-012 bağlar)
   'follow-up', //           acil kapanış + 24 saat → FOLLOW_UP olayı                          (aktif)
+  'voice-screen-expire', // sesli ön eleme sonucu gelmedi → cevapsız, ESCALATED (T-072)     (aktif)
 ] as const;
 
 export type TimerKind = (typeof TIMER_KINDS)[number];

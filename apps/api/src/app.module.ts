@@ -14,6 +14,7 @@ import { ProfileModule } from './modules/profile/profile.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { ReportModule } from './modules/report/report.module';
 import { RulesModule } from './modules/rules/rules.module';
+import { ScreeningModule } from './modules/screening/screening.module';
 import { SignalModule } from './modules/signal/signal.module';
 
 // 03-teknik-mimari.md "Servis haritası": modüler monolit. Diğer modüller (identity, profile, health, device,
@@ -35,6 +36,7 @@ import { SignalModule } from './modules/signal/signal.module';
     ReportModule,
     LearningModule,
     FalseAlarmModule,
+    ScreeningModule,
   ],
 })
 export class AppModule {}
