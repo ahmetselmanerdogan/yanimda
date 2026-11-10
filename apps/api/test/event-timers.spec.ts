@@ -125,10 +125,10 @@ describe.skipIf(!inject('redisTestUrl'))('EventService + BullTimers (gerçek Red
       ),
     };
 
-    // 1. süreç: iki FALL; biri iptal; süreç ölür
+    // 1. süreç: iki FALL; biri iptal; süreç süre dolmadan ölür. İşçi başlatılmaz (bulgu 13): yavaş CI'da 0,8 sn
+    // dolup iş 1. süreçte çalışırsa test kararsızlaşıyordu; "süre dolmadan öldü" böylece kesin.
     const t1 = new BullTimers({ url, prefix });
     const events1 = h.events(t1, pack);
-    await t1.start();
     await deliver(sig('FALL', { protectedPersonId: 'pp-a' }));
     await deliver(sig('FALL', { protectedPersonId: 'pp-b' }));
     const byPerson = async (ev: EventService, p: string) => (await ev.all()).find((e) => e.protectedPersonId === p)!;
@@ -144,10 +144,10 @@ describe.skipIf(!inject('redisTestUrl'))('EventService + BullTimers (gerçek Red
     const events2 = h.events(t2, pack);
     await t2.start();
     await vi.waitFor(async () => expect((await events2.get(a.id)).state).toBe('OPERATOR_QUEUE'), {
-      timeout: 5000,
+      timeout: 15_000,
       interval: 100,
     });
     expect((await events2.get(b.id)).state).toBe('CLOSED');
     await t2.close();
-  });
+  }, 30_000);
 });

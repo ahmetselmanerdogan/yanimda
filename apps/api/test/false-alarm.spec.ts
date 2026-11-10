@@ -147,6 +147,15 @@ describe('3. tekrarda eşik görüşmesi (30 gün)', () => {
     await userCancel();
     expect(await callbacks()).toEqual([]);
     expect((await familyNotices()).filter((n) => n.code === 'F-FA-REVIEW')).toHaveLength(1);
+    // Bulgu 11: tetikleyen kayıt aile geri bildirimi → "saatini iptal etti" (F-EVT-OK) gönderilmez.
+    expect((await familyNotices()).filter((n) => n.code === 'F-EVT-OK')).toEqual([]);
+  });
+
+  it('acil olarak teyit edilmiş olay aile görüşüyle yanlış alarm sayılmaz: 409, kayıt yok (bulgu 11)', async () => {
+    const em = await operatorClose('EMERGENCY', 'SOS');
+    expect(await status(falseAlarms.feedback(ALICE, em, { real: false }))).toBe(409);
+    await pump();
+    expect(await recorded()).toEqual([]);
   });
 
   it('tekrar teslim (en az bir kez): görüşme ve bildirim tek', async () => {

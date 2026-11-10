@@ -53,18 +53,6 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
-  /prompts/{id}/answer:
-    post:
-      summary: Cihaz sorusuna cevap (İyiyim / Yardım). A-02, D-09
-      operationId: answerPrompt
-      security: [{ deviceToken: [] }]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
-      requestBody:
-        content:
-          application/json:
-            schema: { type: object, required: [answer], properties: { answer: { enum: [OK, HELP] } } }
-      responses:
-        '204': { description: No Content }
   /queue:
     get:
       summary: Operatör kuyruğu (öncelik → yaş, sayfalı). E-02, T-022
@@ -771,7 +759,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/contacts:
     put:
-      summary: Zincirin arayacağı numaraları değiştir. C-03, T-040 (T-050)
+      summary: Zincirin arayacağı numaraları değiştir (yalnız OWNER veya ADMIN; MEMBER 403). C-03, T-040 (T-050)
       description: |
         Liste bütün olarak değişir. CONTACT sıralı 1–5 (öncelik verilmezse liste sırası); ELDER, WATCH, NEIGHBOR en
         çok birer. Aile yalnız kendi kişisine; yönetici simülatör kimliklerine de yazabilir. Numaralar yalnız arama
@@ -861,6 +849,7 @@ paths:
       summary: CPaaS SMS teslim raporu (Twilio StatusCallback). T-053
       description: İmzalı (X-Twilio-Signature, CPAAS_WEBHOOK_BASE + yol); bozuksa 403. Durum geri gitmez.
       operationId: smsStatusWebhook
+      security: []
       parameters: [{ name: 'n', in: query, required: true, schema: { type: string, format: uuid } }]
       requestBody:
         content:
@@ -1178,7 +1167,8 @@ paths:
             description: Özet,
             content: { application/json: { schema: { $ref: '#/components/schemas/LearningSummary' } } },
           }
-        '400': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/Problem', description: 'Geçersiz değer; uyku penceresi en çok 12 saat' }
+        '403': { $ref: '#/components/responses/Problem', description: 'Yalnız hesap sahibi (OWNER) değiştirir' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/false-alarms:
     get:
@@ -1233,7 +1223,11 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '409':
+          {
+            $ref: '#/components/responses/Problem',
+            description: 'Olay kapanmadı veya acil olarak teyit edildi (yanlış alarm sayılamaz)',
+          }
   /devices/enroll:
     post:
       summary: Cihaz kaydı (davet kodu → cihaz token'ı). T-041
@@ -1578,7 +1572,7 @@ paths:
                   signupTokenExpiresAt: { type: string, format: date-time }
                   trialEndsAt: { type: string, format: date-time }
                   phoneVerification: { enum: [SENT, UNAVAILABLE] }
-                  devCode: { type: string, description: Yalnız geliştirmede, sahte SMS sağlayıcısıyla }
+                  devCode: { type: string, description: 'Yalnız geliştirmede, sahte SMS sağlayıcısıyla' }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
@@ -1588,7 +1582,7 @@ paths:
       summary: Telefon doğrulama kodunu yeniden gönder (saatte 5). T-060
       operationId: resendSignupCode
       security: [{ signupToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       responses:
         '200': { description: Gönderildi }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1600,7 +1594,7 @@ paths:
       description: 5 hatalı denemede kod geçersizleşir (yeni kod istenir).
       operationId: verifySignupPhone
       security: [{ signupToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       requestBody:
         required: true
         content:
@@ -1617,7 +1611,7 @@ paths:
       description: Telefon doğrulanmış olmalı (409). Kart bilgisi bize gelmez. iyzico için fatura adresi zorunlu.
       operationId: createSignupCheckout
       security: [{ signupToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
       responses:
         '200': { $ref: '#/components/responses/CheckoutSession' }
@@ -1631,7 +1625,7 @@ paths:
       summary: Kayıt akışındaki aboneliğin durumu (adım 3). T-060
       operationId: getSignupSubscription
       security: [{ signupToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       responses:
         '200': { $ref: '#/components/responses/Subscription' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1765,6 +1759,12 @@ components:
     EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
     PersonId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    SubscriptionId:
+      name: id
+      in: path
+      required: true
+      description: Kayıt yanıtındaki subscriptionId
+      schema: { type: string, format: uuid }
     CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
     Subscription:
@@ -1977,7 +1977,8 @@ components:
             lng: { type: number, minimum: -180, maximum: 180 }
         doorAccessNote: { type: [string, 'null'], maxLength: 500, description: Şifreli saklanır }
         dailySummary: { type: boolean, description: Akşam F-DAILY bildirimi (C-07; varsayılan açık) }
-        locationSharing: { type: boolean, description: Aile uygulaması son konumu görür (T-061, C-09; varsayılan açık) }
+        locationSharing:
+          { type: boolean, description: 'Aile uygulaması son konumu görür (T-061, C-09; varsayılan açık)' }
     PersonView:
       type: object
       required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
@@ -1987,7 +1988,11 @@ components:
         birthYear: { type: [integer, 'null'] }
         language: { type: string }
         timezone: { type: string }
-        status: { enum: [TRIAL, ACTIVE, PAUSED, CANCELED] }
+        status:
+          {
+            enum: [TRIAL, ACTIVE, PAST_DUE, CANCELED],
+            description: Aboneliği yansıtır; abonelik dışı (kurum) kişi ACTIVE,
+          }
         learningModeUntil:
           type: [string, 'null']
           format: date-time

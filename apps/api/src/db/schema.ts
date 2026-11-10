@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgSchema,
+  primaryKey,
   text,
   time,
   timestamp,
@@ -33,18 +34,22 @@ export const signal = signalSchema.table('signal', {
 });
 
 /** T-062 günlük özet (kişinin yerel günü). */
-export const dailySummary = signalSchema.table('daily_summary', {
-  protectedPersonId: text('protected_person_id').notNull(),
-  day: text('day').notNull(),
-  steps: integer('steps'),
-  hrMin: integer('hr_min'),
-  hrAvg: integer('hr_avg'),
-  hrMax: integer('hr_max'),
-  wristMinutes: integer('wrist_minutes').notNull().default(0),
-  restStart: timestamptz('rest_start'),
-  restEnd: timestamptz('rest_end'),
-  computedAt: timestamptz('computed_at').notNull().defaultNow(),
-});
+export const dailySummary = signalSchema.table(
+  'daily_summary',
+  {
+    protectedPersonId: text('protected_person_id').notNull(),
+    day: text('day').notNull(),
+    steps: integer('steps'),
+    hrMin: integer('hr_min'),
+    hrAvg: integer('hr_avg'),
+    hrMax: integer('hr_max'),
+    wristMinutes: integer('wrist_minutes').notNull().default(0),
+    restStart: timestamptz('rest_start'),
+    restEnd: timestamptz('rest_end'),
+    computedAt: timestamptz('computed_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.protectedPersonId, t.day] })],
+);
 
 export const outbox = eventSchema.table('outbox', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
@@ -175,14 +180,18 @@ export const subscription = profileSchema.table('subscription', {
 });
 
 /** T-060 ödeme webhook'u tekrar ayıklama: (sağlayıcı, olay kimliği) bir kez. */
-export const paymentWebhook = profileSchema.table('payment_webhook', {
-  provider: text('provider').notNull(),
-  providerEventId: text('provider_event_id').notNull(),
-  type: text('type').notNull(),
-  subscriptionId: uuid('subscription_id'),
-  outcome: text('outcome').notNull(),
-  receivedAt: timestamptz('received_at').notNull().defaultNow(),
-});
+export const paymentWebhook = profileSchema.table(
+  'payment_webhook',
+  {
+    provider: text('provider').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    type: text('type').notNull(),
+    subscriptionId: uuid('subscription_id'),
+    outcome: text('outcome').notNull(),
+    receivedAt: timestamptz('received_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.providerEventId] })],
+);
 
 /** T-040/T-041 davet kodu: sha256(kod) saklanır; 15 dk, tek kullanım. */
 export const invite = profileSchema.table('invite', {
@@ -363,14 +372,18 @@ export const auditLog = auditSchema.table('log', {
 
 export const chainSchema = pgSchema('chain');
 
-export const procedureTemplate = chainSchema.table('procedure_template', {
-  country: text('country').notNull(),
-  version: integer('version').notNull(),
-  checksum: text('checksum').notNull(),
-  content: jsonb('content').notNull(),
-  loadedAt: timestamptz('loaded_at').notNull().defaultNow(),
-  loadedBy: text('loaded_by'),
-});
+export const procedureTemplate = chainSchema.table(
+  'procedure_template',
+  {
+    country: text('country').notNull(),
+    version: integer('version').notNull(),
+    checksum: text('checksum').notNull(),
+    content: jsonb('content').notNull(),
+    loadedAt: timestamptz('loaded_at').notNull().defaultNow(),
+    loadedBy: text('loaded_by'),
+  },
+  (t) => [primaryKey({ columns: [t.country, t.version] })],
+);
 
 /** T-021 zincir: olay başına bir koşu, adımlar sırayla. */
 export const chainRun = chainSchema.table('chain_run', {
@@ -385,25 +398,29 @@ export const chainRun = chainSchema.table('chain_run', {
   isTest: boolean('is_test'),
 });
 
-export const chainStep = chainSchema.table('chain_step', {
-  runId: uuid('run_id').notNull(),
-  n: integer('n').notNull(),
-  kind: text('kind').notNull(),
-  target: text('target').notNull(),
-  contactIndex: integer('contact_index'),
-  labelCode: text('label_code').notNull(),
-  scriptCode: text('script_code'),
-  timeoutSec: integer('timeout_sec').notNull(),
-  required: boolean('required').notNull(),
-  calledAt: timestamptz('called_at'),
-  result: text('result'),
-  assessment: text('assessment'),
-  note: text('note'),
-  reason: text('reason'),
-  operatorId: text('operator_id'),
-  completedAt: timestamptz('completed_at'),
-  scriptReadAt: timestamptz('script_read_at'),
-});
+export const chainStep = chainSchema.table(
+  'chain_step',
+  {
+    runId: uuid('run_id').notNull(),
+    n: integer('n').notNull(),
+    kind: text('kind').notNull(),
+    target: text('target').notNull(),
+    contactIndex: integer('contact_index'),
+    labelCode: text('label_code').notNull(),
+    scriptCode: text('script_code'),
+    timeoutSec: integer('timeout_sec').notNull(),
+    required: boolean('required').notNull(),
+    calledAt: timestamptz('called_at'),
+    result: text('result'),
+    assessment: text('assessment'),
+    note: text('note'),
+    reason: text('reason'),
+    operatorId: text('operator_id'),
+    completedAt: timestamptz('completed_at'),
+    scriptReadAt: timestamptz('script_read_at'),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.n] })],
+);
 
 export const protectionState = eventSchema.table('protection_state', {
   protectedPersonId: text('protected_person_id').primaryKey(),
@@ -444,12 +461,16 @@ export const falseAlarm = eventSchema.table('false_alarm', {
 });
 
 /** T-071 C-12 aile geri bildirimi. */
-export const familyFeedback = eventSchema.table('family_feedback', {
-  eventId: uuid('event_id').notNull(),
-  subject: text('subject').notNull(),
-  real: boolean('real').notNull(),
-  at: timestamptz('at').notNull().defaultNow(),
-});
+export const familyFeedback = eventSchema.table(
+  'family_feedback',
+  {
+    eventId: uuid('event_id').notNull(),
+    subject: text('subject').notNull(),
+    real: boolean('real').notNull(),
+    at: timestamptz('at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.subject] })],
+);
 
 /** T-074 (E-11) operatör durumu ve son görülme (WS bağlantısı). */
 export const identitySchema = pgSchema('identity');

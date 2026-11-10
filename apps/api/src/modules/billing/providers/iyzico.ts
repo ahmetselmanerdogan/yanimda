@@ -67,6 +67,7 @@ export class IyzicoProvider implements PaymentProvider {
   constructor(
     private readonly cfg: IyzicoConfig,
     private readonly http: Fetch = fetch,
+    private readonly now: () => Date = () => new Date(),
   ) {
     this.base = (cfg.baseUrl ?? 'https://sandbox-api.iyzipay.com').replace(/\/+$/, '');
   }
@@ -148,12 +149,18 @@ export class IyzicoProvider implements PaymentProvider {
     if (str(b.merchantId) !== this.cfg.merchantId) throw new SignatureError('üye işyeri eşleşmiyor');
     if (!safeEqualHex(sig.toLowerCase(), iyzicoWebhookSignature(this.cfg, b))) throw new SignatureError();
     const type = str(b.iyziEventType) ?? '';
+    const order = str(b.orderReferenceCode);
+    // Bulgu 12: imza iyziReferenceCode ve iyziEventTime'ı KAPSAMAZ. Tekrar ayıklama yalnız imzalı alanlardan
+    // (olay türü + sipariş): yakalanan imzalı bildirim yeni bir referans koduyla yeniden oynatılamaz. Zaman da
+    // imzasız olduğundan gelecek değer şimdiye çekilir (sıra dışı denetimi atlatılamasın).
+    if (TYPES[type] && !order) throw new SignatureError('orderReferenceCode yok');
+    const now = this.now();
     const at = Number(b.iyziEventTime);
     return {
       provider: this.name,
-      eventId: str(b.iyziReferenceCode) ?? `${type}:${str(b.orderReferenceCode) ?? ''}`,
+      eventId: `${type}:${order ?? str(b.subscriptionReferenceCode) ?? ''}`,
       type: TYPES[type] ?? 'IGNORED',
-      occurredAt: Number.isFinite(at) && at > 0 ? new Date(at) : new Date(),
+      occurredAt: Number.isFinite(at) && at > 0 && at <= now.getTime() ? new Date(at) : now,
       providerSubscriptionRef: str(b.subscriptionReferenceCode),
       providerCustomerRef: str(b.customerReferenceCode),
       rawType: type,

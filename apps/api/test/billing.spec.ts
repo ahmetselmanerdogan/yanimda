@@ -172,9 +172,24 @@ describe('sağlayıcı imzaları', () => {
     const sig = iyzicoWebhookSignature(IYZ, b);
     expect(p.parseWebhook({ rawBody: raw, headers: { 'x-iyz-signature-v3': sig } })).toMatchObject({
       type: 'PAYMENT_FAILED',
-      eventId: 'ref-1',
+      eventId: 'subscription.order.failure:ord-1',
       providerSubscriptionRef: 'isub-1',
     });
+    // Bulgu 12: imzasız alanlar (iyziReferenceCode, iyziEventTime) değiştirilerek yeniden oynatılsa da aynı anahtar;
+    // gelecek zaman şimdiye çekilir.
+    const replay = Buffer.from(
+      JSON.stringify({ ...b, iyziReferenceCode: 'ref-2', iyziEventTime: Date.now() + 86_400_000 }),
+    );
+    const r = p.parseWebhook({ rawBody: replay, headers: { 'x-iyz-signature-v3': sig } });
+    expect(r.eventId).toBe('subscription.order.failure:ord-1');
+    expect(r.occurredAt.getTime()).toBeLessThanOrEqual(Date.now());
+    const noOrder = { ...b, orderReferenceCode: undefined };
+    expect(() =>
+      p.parseWebhook({
+        rawBody: Buffer.from(JSON.stringify(noOrder)),
+        headers: { 'x-iyz-signature-v3': iyzicoWebhookSignature(IYZ, noOrder) },
+      }),
+    ).toThrow(SignatureError);
     expect(() => p.parseWebhook({ rawBody: raw, headers: { 'x-iyz-signature-v3': sig.replace(/.$/, '0') } })).toThrow(
       SignatureError,
     );
