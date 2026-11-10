@@ -45,6 +45,9 @@ afterAll(async () => {
 /** SOS → üstlen → saati ara (cevap verildi, kayıtlı) → 112 → ulaşıldı → ekip olay yerinde → kapat. */
 async function scenario() {
   await h.pg.query("INSERT INTO profile.protected_person (id, display_name) VALUES ($1, 'Ayşe Y.')", [P]);
+  await h.pg.query("INSERT INTO identity.operator (subject, display_name, kind) VALUES ($1, 'Zeynep K.', 'OPERATOR')", [
+    OP,
+  ]);
   await bus.deliver<Signal>('signal.received', {
     payload: sig('SOS', { protectedPersonId: P }),
   } as unknown as KafkaEnvelope<Signal>);
@@ -96,12 +99,12 @@ describe('yönetim paneli', () => {
       'kalite kontrol',
     );
     expect(r.body.toString()).toBe('ses');
-    const [a] = await h.rows<{ actor_id: string; data: { reason: string } }>(
-      "SELECT actor_id, data FROM audit.log WHERE action = 'recording.played' AND entity_id = '01960000-0000-7000-8000-0000000000c1'",
+    const [a] = await h.rows<{ actor_id: string; actor_kind: string; data: { reason: string } }>(
+      "SELECT actor_id, actor_kind, data FROM audit.log WHERE action = 'recording.played' AND entity_id = '01960000-0000-7000-8000-0000000000c1'",
     );
-    expect(a).toMatchObject({ actor_id: 'sup-1', data: { reason: 'kalite kontrol' } });
+    expect(a).toMatchObject({ actor_id: 'sup-1', actor_kind: 'SUPERVISOR', data: { reason: 'kalite kontrol' } });
     await expect(
-      admin.recording('01960000-0000-7000-8000-0000000000c2', { id: 'sup-1', role: 'SUPERVISOR' }, undefined),
+      admin.recording('01960000-0000-7000-8000-0000000000c2', { id: 'sup-1', role: 'SUPERVISOR' }, 'kalite kontrol'),
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -129,5 +132,32 @@ describe('yönetim paneli', () => {
     expect(audit.map((x) => x.action)).toEqual(expect.arrayContaining(['dispatch.opened', 'dispatch.updated']));
     const hl = await admin.health();
     expect(hl).toMatchObject({ queue: { waiting: 0 }, dispatch: { open: 1, late: 0 }, outbox: { dlq: 0 } });
+  });
+
+  it('analizde test olayının aramaları sayılmaz; operatör adı', async () => {
+    const id = await scenario();
+    await h.pg.query('UPDATE event.event SET is_test = true WHERE id = $1', [id]);
+    const a = await admin.analytics(7);
+    expect(a.calls.total).toBe(0);
+    await h.pg.query('UPDATE event.event SET is_test = false WHERE id = $1', [id]);
+    expect((await admin.analytics(7)).operators[0]).toMatchObject({ operatorId: OP, operatorName: 'Zeynep K.' });
+  });
+
+  it('olay arama (ad parçası / kimlik) ve vaka dosyası: geçiş, adım, arama, 112, bildirim, denetim; numara yok', async () => {
+    const id = await scenario();
+    const range = { from: new Date(Date.now() - 3_600_000), to: new Date(Date.now() + 60_000) };
+    expect((await admin.events({ ...range, q: 'ayşe' })).map((e) => e.id)).toEqual([id]);
+    expect((await admin.events({ ...range, q: id }))[0]).toMatchObject({ id, dispatch: 'ON_SCENE', person: 'Ayşe Y.' });
+    await h.worker().drain();
+    const c = await admin.caseFile(id);
+    expect(c.event).toMatchObject({ id, type: 'SOS', outcome: 'EMERGENCY', person: 'Ayşe Y.' });
+    expect(c.transitions.map((t) => t.to)).toContain('DISPATCH');
+    expect(c.steps.find((s) => s.kind === 'CALL_112')).toMatchObject({ result: 'REACHED' });
+    expect(c.calls).toHaveLength(2);
+    expect(c.dispatch).toMatchObject({ status: 'ON_SCENE' });
+    expect(c.dispatch!.timeline.map((u) => u.status)).toEqual(['NOTIFIED', 'ON_SCENE']);
+    expect(c.audit.map((x) => x.action)).toEqual(expect.arrayContaining(['dispatch.opened']));
+    expect(JSON.stringify(c)).not.toMatch(/\+90\d{10}/);
+    await expect(admin.caseFile('yok')).rejects.toMatchObject({ status: 404 });
   });
 });
