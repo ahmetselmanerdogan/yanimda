@@ -36,6 +36,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm --filter @yanimda/family-web exec playwright install --with-deps chromium
+      - name: Aile web erişilebilirlik (axe, klavye, 320 px; T-082)
+        run: pnpm --filter @yanimda/family-web test:a11y
 
   e2e:
     name: uçtan uca + kaos (S3/S4/S7, Redis 60 sn, Postgres 10 sn, API kill -9) + PII log denetimi

@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
 import { login, sendSignal } from './support';
@@ -22,6 +23,13 @@ test('ihlal 5 sn içinde listede; taşma bayrağı aç/kapat', async ({ page }) 
   await expect(page).toHaveURL(/\/supervisor$/);
   await expect(page.getByTestId('tile-waiting')).toBeVisible();
   await expect(page.locator('.conn')).toHaveText('Canlı');
+  // T-082: amir panosu da axe ciddi/kritik ihlalsiz.
+  const ax = await new AxeBuilder({ page }).analyze();
+  expect(
+    ax.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
+  ).toEqual([]);
 
   const headers = { authorization: `Bearer ${await tokenOf(page)}` };
   const ids = async () =>
