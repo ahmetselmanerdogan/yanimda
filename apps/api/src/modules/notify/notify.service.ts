@@ -329,6 +329,8 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
         code: row.code,
         notificationId: row.id,
         ...(row.eventId ? { eventId: row.eventId } : {}),
+        // T-061: aile uygulaması bildirime dokununca olay ekranını açar (kişi + olay).
+        ...(row.protectedPersonId ? { protectedPersonId: row.protectedPersonId } : {}),
       },
       priority: row.urgency === 'URGENT' ? 'high' : 'normal',
       ttlSec: PUSH_TTL_SEC,

@@ -916,5 +916,756 @@
   "O-UI-SUP-UPDATED": {
     "channel": "console",
     "text": "Güncellendi {time}"
+  },
+  "F-UI-APP-TITLE": {
+    "channel": "family",
+    "text": "Yanımda"
+  },
+  "F-UI-LOADING": {
+    "channel": "family",
+    "text": "Yükleniyor…"
+  },
+  "F-UI-ERROR": {
+    "channel": "family",
+    "text": "Bir sorun oldu: {detail}",
+    "action": "Tekrar dene"
+  },
+  "F-UI-OFFLINE": {
+    "channel": "family",
+    "text": "İnternet bağlantısı yok. Bilgiler güncel olmayabilir."
+  },
+  "F-UI-SAVE": {
+    "channel": "family",
+    "text": "Kaydet"
+  },
+  "F-UI-SAVED": {
+    "channel": "family",
+    "text": "Kaydedildi"
+  },
+  "F-UI-CANCEL": {
+    "channel": "family",
+    "text": "Vazgeç"
+  },
+  "F-UI-NEXT": {
+    "channel": "family",
+    "text": "Devam"
+  },
+  "F-UI-BACK": {
+    "channel": "family",
+    "text": "Geri"
+  },
+  "F-UI-DONE": {
+    "channel": "family",
+    "text": "Bitti"
+  },
+  "F-UI-UNKNOWN": {
+    "channel": "family",
+    "text": "bilinmiyor"
+  },
+  "F-UI-REQUIRED": {
+    "channel": "family",
+    "text": "Bu alan gerekli"
+  },
+  "F-UI-LOGIN-TITLE": {
+    "channel": "family",
+    "text": "Yakınınız yanınızda olmasa da güvende"
+  },
+  "F-UI-LOGIN-BODY": {
+    "channel": "family",
+    "text": "Yanımda aile hesabınızla giriş yapın. Hesabınız yoksa web sitesinden abonelik başlatabilirsiniz.",
+    "action": "Giriş yap"
+  },
+  "F-UI-LOGIN-FAILED": {
+    "channel": "family",
+    "text": "Giriş yapılamadı. Lütfen tekrar deneyin.",
+    "action": "Tekrar dene"
+  },
+  "F-UI-LOGOUT": {
+    "channel": "family",
+    "text": "Çıkış yap"
+  },
+  "F-UI-TAB-HOME": {
+    "channel": "family",
+    "text": "Ana sayfa"
+  },
+  "F-UI-TAB-EVENTS": {
+    "channel": "family",
+    "text": "Olaylar"
+  },
+  "F-UI-TAB-PROFILE": {
+    "channel": "family",
+    "text": "Profil"
+  },
+  "F-UI-TAB-SETTINGS": {
+    "channel": "family",
+    "text": "Ayarlar"
+  },
+  "F-UI-SETUP-TITLE": {
+    "channel": "family",
+    "text": "Kurulum"
+  },
+  "F-UI-SETUP-STEP": {
+    "channel": "family",
+    "text": "Adım {n} / 6"
+  },
+  "F-UI-SETUP-START": {
+    "channel": "family",
+    "text": "Koruyacağınız kişiyi ekleyelim. Kurulum yaklaşık 10 dakika sürer.",
+    "action": "Başla"
+  },
+  "F-UI-SETUP-PERSON": {
+    "channel": "family",
+    "text": "Kişi bilgileri"
+  },
+  "F-UI-SETUP-ADDRESS": {
+    "channel": "family",
+    "text": "Adres"
+  },
+  "F-UI-SETUP-CONTACTS": {
+    "channel": "family",
+    "text": "Aranacak kişiler"
+  },
+  "F-UI-SETUP-HEALTH": {
+    "channel": "family",
+    "text": "Sağlık bilgileri"
+  },
+  "F-UI-SETUP-DEVICE": {
+    "channel": "family",
+    "text": "Saati ve telefonu eşleştirin"
+  },
+  "F-UI-SETUP-TEST": {
+    "channel": "family",
+    "text": "Test çağrısı"
+  },
+  "F-UI-FIELD-NAME": {
+    "channel": "family",
+    "text": "Adı ve soyadının baş harfi"
+  },
+  "F-UI-FIELD-BIRTH-YEAR": {
+    "channel": "family",
+    "text": "Doğum yılı"
+  },
+  "F-UI-FIELD-RELATION": {
+    "channel": "family",
+    "text": "Size yakınlığı (ör. annem)"
+  },
+  "F-UI-FIELD-ADDRESS-LINE": {
+    "channel": "family",
+    "text": "Açık adres"
+  },
+  "F-UI-FIELD-DISTRICT": {
+    "channel": "family",
+    "text": "İlçe"
+  },
+  "F-UI-FIELD-CITY": {
+    "channel": "family",
+    "text": "İl"
+  },
+  "F-UI-FIELD-POSTAL": {
+    "channel": "family",
+    "text": "Posta kodu"
+  },
+  "F-UI-FIELD-DOOR-NOTE": {
+    "channel": "family",
+    "text": "Kapı ve giriş notu (ör. anahtar komşuda)"
+  },
+  "F-UI-DOOR-NOTE-HINT": {
+    "channel": "family",
+    "text": "Bu not şifreli saklanır; yalnız acil durumda operatör görür."
+  },
+  "F-UI-CONTACTS-HINT": {
+    "channel": "family",
+    "text": "Acil durumda operatör bu kişileri sırayla arar. En az bir yakın ekleyin."
+  },
+  "F-UI-CONTACT-ROLE-CONTACT": {
+    "channel": "family",
+    "text": "Yakın"
+  },
+  "F-UI-CONTACT-ROLE-ELDER": {
+    "channel": "family",
+    "text": "Kendi telefonu"
+  },
+  "F-UI-CONTACT-ROLE-WATCH": {
+    "channel": "family",
+    "text": "Saatin numarası"
+  },
+  "F-UI-CONTACT-ROLE-NEIGHBOR": {
+    "channel": "family",
+    "text": "Komşu"
+  },
+  "F-UI-FIELD-CONTACT-NAME": {
+    "channel": "family",
+    "text": "Adı"
+  },
+  "F-UI-FIELD-PHONE": {
+    "channel": "family",
+    "text": "Telefon (+90…)"
+  },
+  "F-UI-PHONE-INVALID": {
+    "channel": "family",
+    "text": "Telefon numarasını +90 ile başlayarak yazın"
+  },
+  "F-UI-CONTACT-ADD": {
+    "channel": "family",
+    "text": "Kişi ekle"
+  },
+  "F-UI-CONTACT-REMOVE": {
+    "channel": "family",
+    "text": "Kaldır"
+  },
+  "F-UI-CONTACT-LIMIT": {
+    "channel": "family",
+    "text": "En çok 5 yakın eklenebilir"
+  },
+  "F-UI-HEALTH-HINT": {
+    "channel": "family",
+    "text": "Bu bilgiler şifreli saklanır ve yalnız acil durumda operatöre açılır. İsterseniz boş bırakabilirsiniz."
+  },
+  "F-UI-FIELD-CONDITIONS": {
+    "channel": "family",
+    "text": "Hastalıkları (virgülle ayırın)"
+  },
+  "F-UI-FIELD-MEDICATIONS": {
+    "channel": "family",
+    "text": "Kullandığı ilaçlar"
+  },
+  "F-UI-FIELD-ALLERGIES": {
+    "channel": "family",
+    "text": "Alerjileri"
+  },
+  "F-UI-FIELD-BLOOD-TYPE": {
+    "channel": "family",
+    "text": "Kan grubu"
+  },
+  "F-UI-FIELD-MEDICAL-NOTES": {
+    "channel": "family",
+    "text": "Diğer notlar"
+  },
+  "F-UI-HEALTH-CONSENT": {
+    "channel": "family",
+    "text": "Sağlık bilgilerinin acil durumda operatöre gösterilmesine açık rıza veriyorum."
+  },
+  "F-UI-HEALTH-CONSENT-NEEDED": {
+    "channel": "family",
+    "text": "Sağlık bilgilerini kaydetmek için rıza gerekli"
+  },
+  "F-UI-DEVICE-HINT": {
+    "channel": "family",
+    "text": "Saatte ve telefonda Yanımda uygulamasını açın ve bu kodu girin. Kod 15 dakika geçerlidir."
+  },
+  "F-UI-DEVICE-CODE": {
+    "channel": "family",
+    "text": "Eşleştirme kodu"
+  },
+  "F-UI-DEVICE-SHARE": {
+    "channel": "family",
+    "text": "Kodu SMS ile paylaş"
+  },
+  "F-UI-DEVICE-NEW-CODE": {
+    "channel": "family",
+    "text": "Yeni kod al"
+  },
+  "F-UI-DEVICE-WAITING": {
+    "channel": "family",
+    "text": "Cihazın bağlanması bekleniyor…"
+  },
+  "F-UI-DEVICE-CONNECTED": {
+    "channel": "family",
+    "text": "Cihaz bağlandı"
+  },
+  "F-UI-DEVICE-SKIP": {
+    "channel": "family",
+    "text": "Sonra eşleştiririm"
+  },
+  "F-UI-TEST-HINT": {
+    "channel": "family",
+    "text": "Test çağrısında operatörümüz yakınınızı arayıp kurulumu birlikte kontrol eder. 112 aranmaz.",
+    "action": "Test çağrısı başlat"
+  },
+  "F-UI-TEST-RUNNING": {
+    "channel": "family",
+    "text": "Test sürüyor: {stage}"
+  },
+  "F-UI-TEST-DONE": {
+    "channel": "family",
+    "text": "Test tamamlandı."
+  },
+  "F-UI-TEST-NOTE": {
+    "channel": "family",
+    "text": "Operatörün notu: {note}"
+  },
+  "F-UI-TEST-BUSY": {
+    "channel": "family",
+    "text": "Şu an açık bir olay var; test çağrısı sonra yapılabilir."
+  },
+  "F-UI-TEST-COOLDOWN": {
+    "channel": "family",
+    "text": "Son test çağrısının üzerinden 10 dakika geçmeden yenisi yapılamaz."
+  },
+  "F-UI-SETUP-FINISHED": {
+    "channel": "family",
+    "text": "Kurulum tamamlandı. {name} artık Yanımda koruması altında.",
+    "action": "Ana sayfaya git"
+  },
+  "F-UI-HOME-NO-PERSON": {
+    "channel": "family",
+    "text": "Henüz koruduğunuz kişi yok.",
+    "action": "Kişi ekle"
+  },
+  "F-UI-HOME-PICK": {
+    "channel": "family",
+    "text": "Kişi seçin"
+  },
+  "F-UI-STATUS-PROTECTED_WATCH": {
+    "channel": "family",
+    "text": "Korunuyor (saat takılı)"
+  },
+  "F-UI-STATUS-PROTECTED_PHONE": {
+    "channel": "family",
+    "text": "Korunuyor (telefon)"
+  },
+  "F-UI-STATUS-NIGHT": {
+    "channel": "family",
+    "text": "Gece modu"
+  },
+  "F-UI-STATUS-UNPROTECTED": {
+    "channel": "family",
+    "text": "Koruma yok"
+  },
+  "F-UI-STATUS-NO-DEVICE": {
+    "channel": "family",
+    "text": "Henüz cihazdan sinyal gelmedi",
+    "action": "Cihaz eşleştir"
+  },
+  "F-UI-STATUS-SINCE": {
+    "channel": "family",
+    "text": "{time} saatinden beri"
+  },
+  "F-UI-WATCH": {
+    "channel": "family",
+    "text": "Saat"
+  },
+  "F-UI-PHONE": {
+    "channel": "family",
+    "text": "Telefon"
+  },
+  "F-UI-CONN-ONLINE": {
+    "channel": "family",
+    "text": "Bağlı"
+  },
+  "F-UI-CONN-NO_CONNECTION": {
+    "channel": "family",
+    "text": "Bağlantı yok"
+  },
+  "F-UI-CONN-LOST": {
+    "channel": "family",
+    "text": "Uzun süredir bağlantı yok"
+  },
+  "F-UI-LAST-SEEN": {
+    "channel": "family",
+    "text": "Son görülme {time}"
+  },
+  "F-UI-LOCATION": {
+    "channel": "family",
+    "text": "Son konum ({time})"
+  },
+  "F-UI-LOCATION-OFF": {
+    "channel": "family",
+    "text": "Konum paylaşımı kapalı"
+  },
+  "F-UI-LOCATION-NONE": {
+    "channel": "family",
+    "text": "Konum bilgisi yok"
+  },
+  "F-UI-DAILY-LINE": {
+    "channel": "family",
+    "text": "Bugün: {steps} adım, saat {hours} saat takıldı"
+  },
+  "F-UI-DAILY-NONE": {
+    "channel": "family",
+    "text": "Bugün için henüz veri yok"
+  },
+  "F-UI-LEARNING-BANNER": {
+    "channel": "family",
+    "text": "İlk 30 gün öğrenme dönemi: Yanımda {name} için alışkanlıklarını öğreniyor ({date} tarihine kadar)."
+  },
+  "F-UI-OPEN-EVENT": {
+    "channel": "family",
+    "text": "Şu an süren bir olay var",
+    "action": "Ayrıntılar"
+  },
+  "F-UI-REFRESHED": {
+    "channel": "family",
+    "text": "Güncellendi {time}"
+  },
+  "F-UI-TYPE-SOS": {
+    "channel": "family",
+    "text": "Yardım çağrısı (SOS)"
+  },
+  "F-UI-TYPE-FALL": {
+    "channel": "family",
+    "text": "Düşme"
+  },
+  "F-UI-TYPE-INACTIVITY": {
+    "channel": "family",
+    "text": "Uzun süre hareketsizlik"
+  },
+  "F-UI-TYPE-CALLBACK": {
+    "channel": "family",
+    "text": "Geri arama"
+  },
+  "F-UI-TYPE-WATCH_OFF": {
+    "channel": "family",
+    "text": "Saat takılı değil"
+  },
+  "F-UI-TYPE-BATTERY_LOW": {
+    "channel": "family",
+    "text": "Pil azaldı"
+  },
+  "F-UI-TYPE-BATTERY_DEAD": {
+    "channel": "family",
+    "text": "Pil bitti"
+  },
+  "F-UI-TYPE-CONNECTION_LOST": {
+    "channel": "family",
+    "text": "Bağlantı koptu"
+  },
+  "F-UI-TYPE-ROUTINE_DEVIATION": {
+    "channel": "family",
+    "text": "Alışılmadık gün"
+  },
+  "F-UI-TYPE-HEART_ANOMALY": {
+    "channel": "family",
+    "text": "Nabız uyarısı"
+  },
+  "F-UI-TYPE-TEST": {
+    "channel": "family",
+    "text": "Test çağrısı"
+  },
+  "F-UI-TYPE-FOLLOW_UP": {
+    "channel": "family",
+    "text": "Takip araması"
+  },
+  "F-UI-STAGE-DETECTED": {
+    "channel": "family",
+    "text": "Algılandı"
+  },
+  "F-UI-STAGE-ASKING": {
+    "channel": "family",
+    "text": "Saat kendisine soruyor"
+  },
+  "F-UI-STAGE-CANCELLED": {
+    "channel": "family",
+    "text": "İyi olduğunu bildirdi"
+  },
+  "F-UI-STAGE-QUEUED": {
+    "channel": "family",
+    "text": "Operatöre iletildi"
+  },
+  "F-UI-STAGE-OPERATOR": {
+    "channel": "family",
+    "text": "Operatör ilgileniyor"
+  },
+  "F-UI-STAGE-CALLING": {
+    "channel": "family",
+    "text": "Operatör arıyor"
+  },
+  "F-UI-STAGE-SAFE": {
+    "channel": "family",
+    "text": "İyi olduğu doğrulandı"
+  },
+  "F-UI-STAGE-EMERGENCY": {
+    "channel": "family",
+    "text": "Acil durum doğrulandı"
+  },
+  "F-UI-STAGE-DISPATCH": {
+    "channel": "family",
+    "text": "112 yönlendirildi"
+  },
+  "F-UI-STAGE-FOLLOW_UP": {
+    "channel": "family",
+    "text": "Takip ediliyor"
+  },
+  "F-UI-STAGE-CLOSED": {
+    "channel": "family",
+    "text": "Kapandı"
+  },
+  "F-UI-STEP-CALL_WATCH": {
+    "channel": "family",
+    "text": "Saati aranıyor"
+  },
+  "F-UI-STEP-CALL_PHONE": {
+    "channel": "family",
+    "text": "Telefonu aranıyor"
+  },
+  "F-UI-STEP-CALL_CONTACT": {
+    "channel": "family",
+    "text": "{n}. yakın aranıyor"
+  },
+  "F-UI-STEP-CALL_NEIGHBOR": {
+    "channel": "family",
+    "text": "Komşu aranıyor"
+  },
+  "F-UI-STEP-CALL_112": {
+    "channel": "family",
+    "text": "112 aranıyor"
+  },
+  "F-UI-STEP-PENDING": {
+    "channel": "family",
+    "text": "Sırada"
+  },
+  "F-UI-STEP-CALLING": {
+    "channel": "family",
+    "text": "Aranıyor"
+  },
+  "F-UI-STEP-REACHED": {
+    "channel": "family",
+    "text": "Ulaşıldı"
+  },
+  "F-UI-STEP-NO_ANSWER": {
+    "channel": "family",
+    "text": "Cevap yok"
+  },
+  "F-UI-STEP-BUSY": {
+    "channel": "family",
+    "text": "Meşgul"
+  },
+  "F-UI-STEP-WRONG_NUMBER": {
+    "channel": "family",
+    "text": "Numara yanlış"
+  },
+  "F-UI-STEP-SKIPPED": {
+    "channel": "family",
+    "text": "Atlandı"
+  },
+  "F-UI-OUTCOME-OK": {
+    "channel": "family",
+    "text": "İyi"
+  },
+  "F-UI-OUTCOME-EMERGENCY": {
+    "channel": "family",
+    "text": "Acil durum"
+  },
+  "F-UI-OUTCOME-FALSE_ALARM": {
+    "channel": "family",
+    "text": "Yanlış alarm"
+  },
+  "F-UI-OUTCOME-TEST": {
+    "channel": "family",
+    "text": "Test"
+  },
+  "F-UI-OUTCOME-UNREACHABLE": {
+    "channel": "family",
+    "text": "Ulaşılamadı"
+  },
+  "F-UI-EVENT-LIVE": {
+    "channel": "family",
+    "text": "Canlı"
+  },
+  "F-UI-EVENT-RECONNECTING": {
+    "channel": "family",
+    "text": "Bağlantı yenileniyor…"
+  },
+  "F-UI-EVENT-STARTED": {
+    "channel": "family",
+    "text": "{time} saatinde başladı"
+  },
+  "F-UI-EVENT-CLOSED-AT": {
+    "channel": "family",
+    "text": "{time} saatinde kapandı"
+  },
+  "F-UI-EVENT-PROMPT": {
+    "channel": "family",
+    "text": "{name} saatinden \"İyiyim\" demesi bekleniyor ({sec} sn)"
+  },
+  "F-UI-EVENT-REASSURE": {
+    "channel": "family",
+    "text": "Operatörümüz durumu takip ediyor. Size de ulaşabilir; telefonunuzu yakınınızda tutun."
+  },
+  "F-UI-EVENT-STEPS": {
+    "channel": "family",
+    "text": "Arama adımları"
+  },
+  "F-UI-FEEDBACK-QUESTION": {
+    "channel": "family",
+    "text": "Bu gerçek bir acil durum muydu?"
+  },
+  "F-UI-FEEDBACK-YES": {
+    "channel": "family",
+    "text": "Evet, gerçekti"
+  },
+  "F-UI-FEEDBACK-NO": {
+    "channel": "family",
+    "text": "Hayır, yanlış alarmdı"
+  },
+  "F-UI-FEEDBACK-THANKS": {
+    "channel": "family",
+    "text": "Teşekkürler, geri bildiriminiz kaydedildi."
+  },
+  "F-UI-EVENTS-EMPTY": {
+    "channel": "family",
+    "text": "Henüz olay yok"
+  },
+  "F-UI-EVENTS-TEST-BADGE": {
+    "channel": "family",
+    "text": "TEST"
+  },
+  "F-UI-PROFILE-PERSON": {
+    "channel": "family",
+    "text": "Kişi"
+  },
+  "F-UI-PROFILE-CONTACTS": {
+    "channel": "family",
+    "text": "Aranacak kişiler"
+  },
+  "F-UI-PROFILE-HEALTH": {
+    "channel": "family",
+    "text": "Sağlık bilgileri"
+  },
+  "F-UI-PROFILE-HEALTH-PRESENT": {
+    "channel": "family",
+    "text": "Kayıtlı (rıza {date})"
+  },
+  "F-UI-PROFILE-HEALTH-NONE": {
+    "channel": "family",
+    "text": "Kayıtlı değil"
+  },
+  "F-UI-PROFILE-EDIT": {
+    "channel": "family",
+    "text": "Düzenle"
+  },
+  "F-UI-PROFILE-DEVICE": {
+    "channel": "family",
+    "text": "Cihaz eşleştir"
+  },
+  "F-UI-PROFILE-TEST": {
+    "channel": "family",
+    "text": "Test çağrısı yap"
+  },
+  "F-UI-AGE-YEARS": {
+    "channel": "family",
+    "text": "{n} yaşında"
+  },
+  "F-UI-SETTINGS-SLEEP": {
+    "channel": "family",
+    "text": "Uyku saatleri"
+  },
+  "F-UI-SETTINGS-SLEEP-HINT": {
+    "channel": "family",
+    "text": "Bu saatlerde hareketsizlik uyarısı verilmez."
+  },
+  "F-UI-SETTINGS-SLEEP-START": {
+    "channel": "family",
+    "text": "Yatış"
+  },
+  "F-UI-SETTINGS-SLEEP-END": {
+    "channel": "family",
+    "text": "Kalkış"
+  },
+  "F-UI-SETTINGS-INACTIVITY": {
+    "channel": "family",
+    "text": "Hareketsizlik hassasiyeti"
+  },
+  "F-UI-SETTINGS-INACTIVITY-LOW": {
+    "channel": "family",
+    "text": "Düşük (45 dk)"
+  },
+  "F-UI-SETTINGS-INACTIVITY-MEDIUM": {
+    "channel": "family",
+    "text": "Orta (30 dk)"
+  },
+  "F-UI-SETTINGS-INACTIVITY-HIGH": {
+    "channel": "family",
+    "text": "Yüksek (20 dk)"
+  },
+  "F-UI-SETTINGS-LEARNED": {
+    "channel": "family",
+    "text": "Öğrenilen: {value}"
+  },
+  "F-UI-SETTINGS-FALL-PROMPT": {
+    "channel": "family",
+    "text": "Düşmede \"İyiyim\" için bekleme süresi"
+  },
+  "F-UI-SETTINGS-FALL-PROMPT-HINT": {
+    "channel": "family",
+    "text": "Bu süre içinde cevap gelmezse operatöre iletilir."
+  },
+  "F-UI-SETTINGS-SECONDS": {
+    "channel": "family",
+    "text": "{n} sn"
+  },
+  "F-UI-SETTINGS-MINUTES": {
+    "channel": "family",
+    "text": "{n} dk"
+  },
+  "F-UI-SETTINGS-DEFAULT": {
+    "channel": "family",
+    "text": "Varsayılan"
+  },
+  "F-UI-SETTINGS-LOCATION": {
+    "channel": "family",
+    "text": "Konumu ailemle paylaş"
+  },
+  "F-UI-SETTINGS-LOCATION-HINT": {
+    "channel": "family",
+    "text": "Kapalıysa uygulamada konum görünmez; acil durumda operatör yine görür."
+  },
+  "F-UI-SETTINGS-DAILY": {
+    "channel": "family",
+    "text": "Akşam günlük özet bildirimi"
+  },
+  "F-UI-SETTINGS-NOTIFICATIONS": {
+    "channel": "family",
+    "text": "Bildirim izinleri"
+  },
+  "F-UI-SETTINGS-CRITICAL": {
+    "channel": "family",
+    "text": "Acil bildirimler sessiz modda da çalsın"
+  },
+  "F-UI-SETTINGS-CONSENT": {
+    "channel": "family",
+    "text": "Rıza ve gizlilik"
+  },
+  "F-UI-CONSENT-TITLE": {
+    "channel": "family",
+    "text": "Rıza ve gizlilik"
+  },
+  "F-UI-CONSENT-KVKK": {
+    "channel": "family",
+    "text": "KVKK aydınlatma metni (hukuk onayı bekleniyor): Yanımda, koruma hizmeti için konum, hareket ve sağlık verilerini yalnız bu amaçla işler."
+  },
+  "F-UI-CONSENT-MEDICAL": {
+    "channel": "family",
+    "text": "Sağlık bilgileri için açık rıza"
+  },
+  "F-UI-CONSENT-MEDICAL-GIVEN": {
+    "channel": "family",
+    "text": "Rıza verildi: {date}"
+  },
+  "F-UI-CONSENT-MEDICAL-NONE": {
+    "channel": "family",
+    "text": "Rıza verilmedi"
+  },
+  "F-UI-CONSENT-WITHDRAW": {
+    "channel": "family",
+    "text": "Rızayı geri al ve sağlık bilgilerini sil",
+    "action": "Geri al"
+  },
+  "F-UI-CONSENT-WITHDRAW-CONFIRM": {
+    "channel": "family",
+    "text": "Sağlık bilgileri kalıcı olarak silinecek. Emin misiniz?",
+    "action": "Sil"
+  },
+  "F-UI-CONSENT-LOCATION": {
+    "channel": "family",
+    "text": "Konum paylaşımı"
+  },
+  "F-UI-PUSH-CHANNEL-URGENT": {
+    "channel": "family",
+    "text": "Acil olaylar"
+  },
+  "F-UI-PUSH-CHANNEL-INFO": {
+    "channel": "family",
+    "text": "Bilgilendirme"
   }
 }
