@@ -66,6 +66,10 @@ export function Console({
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
+  const [inbound, setInbound] = useState<{ queued: number; oldestQueuedSec: number | null }>({
+    queued: 0,
+    oldestQueuedSec: null,
+  });
   const [now, setNow] = useState(Date.now());
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const skipRef = useRef<HTMLInputElement>(null);
@@ -108,6 +112,7 @@ export function Console({
           else if (m.type === 'upsert') dispatch({ type: 'upsert', item: m.item });
           else if (m.type === 'remove') dispatch({ type: 'remove', eventId: m.eventId });
           else if (m.type === 'alert') setFlash(t(m.alert.code, { type: t(`O-TYPE-${m.alert.eventType}`) }));
+          else if (m.type === 'inbound') setInbound({ queued: m.queued, oldestQueuedSec: m.oldestQueuedSec });
         },
       }),
     [backend],
@@ -378,6 +383,7 @@ export function Console({
         online={online}
         count={queue.items.length}
         flash={flash}
+        inbound={inbound}
         onLogout={onLogout}
         myStatus={myStatus}
         onMyStatus={changeMyStatus}

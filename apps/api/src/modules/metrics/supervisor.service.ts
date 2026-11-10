@@ -73,6 +73,25 @@ export interface SupervisorDashboard {
   slaBreaches: SlaBreach[];
   sla: { claimSec: number; firstCallSec: number };
   overflow: { enabled: boolean; changedAt: string | null; changedBy: string | null };
+  /** İnceleme bulgusu 8: bekleyen gelen SOS aramaları (kuyrukta / çalıyor / yönlendiriliyor). */
+  inbound: InboundSummary;
+}
+
+export interface InboundCallView {
+  id: string;
+  status: 'routing' | 'ringing' | 'queued';
+  eventId: string | null;
+  /** Rehberden eşleşen kişinin görünen adı (numara yok). */
+  person: string | null;
+  operatorId: string | null;
+  waitSec: number;
+}
+export interface InboundSummary {
+  queued: number;
+  ringing: number;
+  oldestQueuedSec: number | null;
+  /** En eski önce, en çok 20. */
+  calls: InboundCallView[];
 }
 
 const OPERATOR_STATES = sql`('OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH')`;
@@ -145,6 +164,45 @@ export class SupervisorService {
       slaBreaches: await this.breaches(now, claims),
       sla: { claimSec: CLAIM_SLA_SEC, firstCallSec: FIRST_CALL_SLA_SEC },
       overflow: await this.overflow(),
+      inbound: await this.inbound(now),
+    };
+  }
+
+  /**
+   * İnceleme bulgusu 8: henüz bağlanmamış gelen SOS aramaları. Kuyruktaki arama (kimse müsait değil) amire ve
+   * operatörlere görünür; arayan numara yoktur (yalnız eşleşen kişi ve olay).
+   */
+  async inbound(now = new Date()): Promise<InboundSummary> {
+    const rows = await this.q<{
+      id: string;
+      status: InboundCallView['status'];
+      event_id: string | null;
+      display_name: string | null;
+      operator_id: string | null;
+      since: Date | string;
+    }>(sql`
+      SELECT c.id::text AS id, c.status, c.event_id::text AS event_id, p.display_name, c.operator_id,
+             coalesce(c.queued_at, c.created_at) AS since
+      FROM telephony.inbound_call c
+      LEFT JOIN profile.protected_person p ON p.id::text = c.protected_person_id
+      WHERE c.status IN ('routing', 'ringing', 'queued')
+      ORDER BY coalesce(c.queued_at, c.created_at) ASC
+      LIMIT 20`);
+    const wait = (d: Date | string) => Math.max(0, Math.round((now.getTime() - new Date(d).getTime()) / 1000));
+    const calls = rows.map((r) => ({
+      id: r.id,
+      status: r.status,
+      eventId: r.event_id,
+      person: r.display_name,
+      operatorId: r.operator_id,
+      waitSec: wait(r.since),
+    }));
+    const queued = calls.filter((c) => c.status === 'queued');
+    return {
+      queued: queued.length,
+      ringing: calls.filter((c) => c.status === 'ringing').length,
+      oldestQueuedSec: queued[0]?.waitSec ?? null,
+      calls,
     };
   }
 

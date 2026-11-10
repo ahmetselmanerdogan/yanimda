@@ -13,6 +13,7 @@ import {
   type SelfStatus,
 } from '../lib/api';
 import { action, t } from '../lib/i18n';
+import { clock } from '../lib/sla';
 import type { DeviceState, PhoneSnapshot } from '../lib/softphone';
 
 /**
@@ -25,6 +26,8 @@ export function TopBar(p: {
   online: boolean;
   count: number;
   flash: string | null;
+  /** İnceleme bulgusu 8: kuyrukta bekleyen gelen SOS aramaları. */
+  inbound?: { queued: number; oldestQueuedSec: number | null };
   onLogout(): void;
   onSupervisor?(): void;
   myStatus?: OperatorStatus | null;
@@ -41,6 +44,11 @@ export function TopBar(p: {
       <span className="flash-text" role="alert">
         {p.flash ?? ''}
       </span>
+      {!!p.inbound?.queued && (
+        <span className="inbound-waiting" role="status" data-testid="inbound-waiting">
+          {t('O-UI-INBOUND-WAITING', { n: p.inbound.queued, wait: clock(p.inbound.oldestQueuedSec ?? 0) })}
+        </span>
+      )}
       <span className="spacer" />
       <span className="muted small">{t('O-UI-SHORTCUTS')}</span>
       {p.onMyStatus && (

@@ -343,7 +343,7 @@ describe('Asla SOS/FALL', () => {
 });
 
 describe('WATCH_OFF', () => {
-  it('saat takılmadı (bekleme doldu) → ön eleme; "evet" → OK kapanır', async () => {
+  it('saat takılmadı → ön eleme; "evet" olayı KAPATMAZ: hatırlatma + bekleme uzar; ikinci dolumda operatör (bulgu 7)', async () => {
     await contacts(PERSON, [{ role: 'ELDER', phone: phone('2') }]);
     await deliver(sig('OFF_BODY', { protectedPersonId: PERSON, occurredAt: '2026-11-10T09:00:00.000Z' }));
     const ev = await only();
@@ -351,6 +351,30 @@ describe('WATCH_OFF', () => {
     await timers.fire(ev.id, 'watch-off-operator');
     expect(fake.screens).toHaveLength(1);
     await settle();
+    const waiting = await events.get(ev.id);
+    expect(waiting).toMatchObject({ state: 'DEVICE_PROMPT' });
+    expect(new Date(waiting.devicePromptUntil!).getTime()).toBeGreaterThan(Date.now() + 119 * 60_000);
+    expect(timers.pendingIds()).toContain(`${ev.id}.watch-off-operator`);
+    const codes = (
+      await h.rows<{ envelope: { payload: { code: string; audience: string } } }>(
+        "SELECT envelope FROM event.outbox WHERE topic = 'notify.requested'",
+      )
+    ).map((r) => `${r.envelope.payload.audience}:${r.envelope.payload.code}`);
+    expect(codes).toContain('ELDER:P-WATCH-OFF-2H');
+
+    // Uzatılan bekleme de dolarsa ikinci ön eleme yok → operatör kuyruğu.
+    await timers.fire(ev.id, 'watch-off-operator');
+    expect(fake.screens).toHaveLength(1);
+    expect(await events.get(ev.id)).toMatchObject({ state: 'OPERATOR_QUEUE' });
+  });
+
+  it('ön eleme "evet" sonrası saat takılınca olay kendiliğinden kapanır', async () => {
+    await contacts(PERSON, [{ role: 'ELDER', phone: phone('2') }]);
+    await deliver(sig('OFF_BODY', { protectedPersonId: PERSON, occurredAt: '2026-11-10T09:00:00.000Z' }));
+    const ev = await only();
+    await timers.fire(ev.id, 'watch-off-operator');
+    await settle();
+    await deliver(sig('ON_BODY', { protectedPersonId: PERSON }));
     expect(await events.get(ev.id)).toMatchObject({ state: 'CLOSED', confirmedOutcome: 'OK' });
   });
 });

@@ -10,6 +10,7 @@ import {
 } from './lib/api';
 import type { Backend } from './lib/backend';
 import { action, t } from './lib/i18n';
+import { clock } from './lib/sla';
 
 const pct = (x: number) => `%${Math.round(x * 100)}`;
 const sec = (n: number | null | undefined) => (n === null || n === undefined ? null : t('O-UI-SUP-SECONDS', { n }));
@@ -103,6 +104,19 @@ export function SupervisorBoard({
         <main className="sup-grid">
           <section className="sup-tiles" aria-label={t('O-UI-SUP-TITLE')}>
             <Tile label={t('O-UI-SUP-WAITING')} value={waiting} testId="tile-waiting" />
+            <Tile
+              label={t('O-UI-SUP-INBOUND')}
+              value={d.inbound.queued}
+              testId="tile-inbound"
+              note={
+                d.inbound.queued || d.inbound.ringing
+                  ? t('O-UI-SUP-INBOUND-NOTE', {
+                      ringing: d.inbound.ringing,
+                      wait: d.inbound.oldestQueuedSec === null ? '–' : clock(d.inbound.oldestQueuedSec),
+                    })
+                  : undefined
+              }
+            />
             <Tile label={t('O-UI-SUP-IN-PROGRESS')} value={d.inProgress} />
             <Tile label={t('O-UI-SUP-ACTIVE-OPS')} value={d.activeOperators} />
             <Tile label={t('O-UI-SUP-CLOSED-24H')} value={d.last24h.closed} />

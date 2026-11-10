@@ -730,3 +730,12 @@ table.breaches tr.live td:first-child {
 .desk-112 p {
   margin: 4px 0;
 }
+
+/* İnceleme bulgusu 8: kuyrukta bekleyen gelen SOS araması */
+.inbound-waiting {
+  background: var(--help);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-weight: 600;
+}

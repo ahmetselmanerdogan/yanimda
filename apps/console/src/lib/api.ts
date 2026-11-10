@@ -166,6 +166,19 @@ export interface SupervisorDashboard {
   slaBreaches: SlaBreach[];
   sla: { claimSec: number; firstCallSec: number };
   overflow: { enabled: boolean; changedAt: string | null; changedBy: string | null };
+  inbound: {
+    queued: number;
+    ringing: number;
+    oldestQueuedSec: number | null;
+    calls: {
+      id: string;
+      status: 'routing' | 'ringing' | 'queued';
+      eventId: string | null;
+      person: string | null;
+      operatorId: string | null;
+      waitSec: number;
+    }[];
+  };
 }
 
 export class ApiError extends Error {
