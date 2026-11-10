@@ -207,7 +207,8 @@ export class ScreeningService implements VoiceScreener, OnModuleInit {
     }
     const r = classifyScreening(p, row.config as StoredConfig);
     await this.events.resolveScreening(row.eventId, r);
-    return sayAndHangupTwiml(t(r.status === 'OK' ? 'V-SCREEN-OK' : 'V-SCREEN-HELP'));
+    const ok = row.eventType === 'WATCH_OFF' ? 'V-SCREEN-OK-WATCH' : 'V-SCREEN-OK';
+    return sayAndHangupTwiml(t(r.status === 'OK' ? ok : 'V-SCREEN-HELP'));
   }
 
   // ---- ölçüm (T-072 adım 3) ----

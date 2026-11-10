@@ -6,7 +6,8 @@ export type ServerMessage =
   | { type: 'upsert'; item: QueueItem }
   | { type: 'remove'; eventId: string }
   | { type: 'alert'; alert: { code: string; eventId: string; eventType: string; operatorId?: string; at: string } }
-  | { type: 'dashboard'; dashboard: SupervisorDashboard };
+  | { type: 'dashboard'; dashboard: SupervisorDashboard }
+  | { type: 'inbound'; queued: number; oldestQueuedSec: number | null };
 
 export interface LiveHandlers {
   onMessage(m: ServerMessage): void;

@@ -376,7 +376,30 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       u.after.push(() => this.timers.cancel(eventId, 'voice-screen-expire'));
       if (opts.hangup) u.after.push(() => screener.hangup(eventId));
       if (!live) return true; // olay başka yoldan ilerledi; sonuç yalnız kayıtlı
-      if (r.status === 'OK') {
+      if (r.status === 'OK' && WAITING_TYPES.has(u.ev.type)) {
+        // İnceleme bulgusu 7: "iyiyim" saatin takıldığı anlamına gelmez. Olay kapanmaz: kişiye hatırlatma gider,
+        // bekleme bir kez uzar (remindAfterMin); saat takılınca (ON_BODY) kendiliğinden kapanır, yoksa ikinci ön
+        // eleme yapılmaz (olay başına bir) → operatör.
+        const rule = ruleFor(pack, u.ev.type);
+        const ms = (rule?.remindAfterMin ?? 120) * 60_000;
+        u.ev.devicePromptUntil = new Date(Date.now() + ms).toISOString();
+        u.dirty = true;
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'SYSTEM',
+          action: 'event.wait_extended',
+          entityId: u.ev.id,
+          data: { reason: 'VOICE_SCREENING_OK', minutes: ms / 60_000 },
+        });
+        u.publishes.push({
+          topic: TOPICS.eventUpdated,
+          payload: { eventId: u.ev.id, devicePromptUntil: u.ev.devicePromptUntil, reason: 'SCREENING_OK_WAIT' },
+        });
+        await this.notify(u.tx, u.ev.protectedPersonId, [{ code: 'P-WATCH-OFF-2H', audience: 'ELDER' }], {
+          dedupeBase: `watch-off-screen-ok:${u.ev.id}`,
+          eventId: u.ev.id,
+        });
+        await this.timers.schedule(u.ev.id, 'watch-off-operator', ms); // commit'ten önce (bkz. sınıf notu)
+      } else if (r.status === 'OK') {
         this.transition(u, 'CANCELLED_BY_USER', 'SYSTEM', undefined, `${SCREENING_NOTE.OK} (${r.input ?? '-'})`);
         this.close(u, 'OK', 'sesli ön eleme', 'SYSTEM');
         u.after.push(() => this.cancelWaitTimers(eventId));
@@ -684,10 +707,36 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     this.log.warn(`KUYRUK: ${u.ev.type} P${u.ev.priority} olay=${u.ev.id}`);
   }
 
+  /**
+   * Cihaz sorusuna cevap (CANCEL / OK). İnceleme bulgusu 9: cevap soruya bağlanır —
+   *  - sunucuya soru açıldıktan SONRA ulaşmış olmalı (receivedAt ≥ DEVICE_PROMPT geçişi; sunucu saati). Geciken veya
+   *    outbox'tan yeniden teslim edilen eski bir cevap sonradan açılan yeni olayı iptal etmez;
+   *  - cihaz `payload.eventId` gönderiyorsa açık olayla aynı olmalı.
+   * Uymayan cevap yok sayılır (audit `event.answer_ignored`).
+   */
   private async onUserAnswer(s: Signal) {
     await this.withOpenEvent(s.protectedPersonId, async (u) => {
       // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY) kapanır.
       if (u.ev.state !== 'DEVICE_PROMPT' || WAITING_TYPES.has(u.ev.type)) return;
+      const askedAt = [...u.ev.transitions].reverse().find((t) => t.to === 'DEVICE_PROMPT')?.at;
+      const answeredAt = s.receivedAt ?? s.occurredAt;
+      const forEvent = typeof s.payload?.eventId === 'string' ? s.payload.eventId : undefined;
+      const reason =
+        forEvent !== undefined && forEvent !== u.ev.id
+          ? 'OTHER_EVENT'
+          : askedAt && Date.parse(answeredAt) < Date.parse(askedAt)
+            ? 'BEFORE_PROMPT'
+            : null;
+      if (reason) {
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'SYSTEM',
+          action: 'event.answer_ignored',
+          entityId: u.ev.id,
+          data: { reason, kind: s.kind, idempotencyKey: s.idempotencyKey },
+        });
+        this.log.warn(`Cevap yok sayıldı (${reason}) olay=${u.ev.id}`);
+        return;
+      }
       this.transition(u, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
       this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM', undefined, 'USER_CANCEL');
       u.after.push(() => this.cancelWaitTimers(u.ev.id));

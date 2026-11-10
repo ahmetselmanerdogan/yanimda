@@ -176,6 +176,27 @@ describe('Cihaz taraması: BATTERY_DEAD ve CONNECTION_LOST', () => {
       ON CONFLICT (id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at, battery_pct = EXCLUDED.battery_pct;`);
   };
 
+  it('iptal edilmiş cihaz sessizliği olay açmaz (bulgu 6)', async () => {
+    await setDevice(400, 60);
+    await h.pg.exec(`UPDATE device.device SET revoked_at = now() WHERE id = '${deviceId}'`);
+    expect(await events.sweepDevices(day)).toBe(0);
+    await setDevice(130, 3);
+    expect(await events.sweepDevices(day)).toBe(0);
+  });
+
+  it('yerine aynı türden daha yeni görülen cihaz takılmışsa eski cihaz olay açmaz (bulgu 6)', async () => {
+    await setDevice(400, 60);
+    await h.pg.exec(`
+      INSERT INTO device.device (id, protected_person_id, kind, last_seen_at, battery_pct)
+      VALUES ('00000000-0000-0000-0000-00000000d002', '${person}', 'WEAROS_WATCH', '${day.toISOString()}', 80)`);
+    expect(await events.sweepDevices(day)).toBe(0);
+    // Farklı türdeki (telefon) yeni cihaz eski saati gizlemez.
+    await h.pg.exec(
+      `UPDATE device.device SET kind = 'ANDROID_PHONE' WHERE id = '00000000-0000-0000-0000-00000000d002'`,
+    );
+    expect(await events.sweepDevices(day)).toBe(1);
+  });
+
   it('pil ≤5 ve 120 dk sessizlik → BATTERY_DEAD (operatöre)', async () => {
     await setDevice(121, 4);
     expect(await events.sweepDevices(day)).toBe(1);
@@ -213,5 +234,33 @@ describe('Cihaz taraması: BATTERY_DEAD ve CONNECTION_LOST', () => {
     await h.pg.exec(`UPDATE event.event SET state = 'CLOSED' WHERE id = '${ev.id}'`); // operatör kapattı
     expect(await events.sweepDevices(day)).toBe(0);
     expect(await events.all()).toHaveLength(1);
+  });
+});
+
+describe('Cihaz sorusu cevabı soruya bağlıdır (bulgu 9)', () => {
+  it('soru açılmadan önce sunucuya ulaşmış (geciken / yeniden teslim) CANCEL yeni FALL olayını iptal etmez', async () => {
+    const stale = sig('CANCEL', { receivedAt: new Date(Date.now() - 60_000).toISOString() });
+    await deliver(sig('FALL'));
+    const fall = await only();
+    expect(fall.state).toBe('DEVICE_PROMPT');
+    await deliver(stale);
+    expect((await only()).state).toBe('DEVICE_PROMPT');
+    const [a] = await h.rows<{ data: { reason: string } }>(
+      "SELECT data FROM audit.log WHERE action = 'event.answer_ignored' AND entity_id = $1",
+      [fall.id],
+    );
+    expect(a!.data.reason).toBe('BEFORE_PROMPT');
+    // Sorudan sonra gelen cevap geçerli.
+    await deliver(sig('CANCEL', { receivedAt: new Date(Date.now() + 1000).toISOString() }));
+    expect((await only()).state).toBe('CLOSED');
+  });
+
+  it('başka olaya ait cevap (payload.eventId) yok sayılır; aynı olayınki kapatır', async () => {
+    await deliver(sig('FALL'));
+    const fall = await only();
+    await deliver(sig('OK', { payload: { eventId: '00000000-0000-7000-8000-000000000999' } }));
+    expect((await only()).state).toBe('DEVICE_PROMPT');
+    await deliver(sig('OK', { payload: { eventId: fall.id } }));
+    expect((await only()).state).toBe('CLOSED');
   });
 });

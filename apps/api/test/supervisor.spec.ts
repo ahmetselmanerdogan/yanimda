@@ -140,6 +140,33 @@ describe('pano içeriği', () => {
   });
 });
 
+describe('gelen SOS aramaları (bulgu 8)', () => {
+  const insertCall = (id: string, status: string, person: string | null, at: Date) =>
+    h.pg.query(
+      `INSERT INTO telephony.inbound_call (id, provider, provider_call_id, protected_person_id, status, queued_at, created_at)
+       VALUES ($1::uuid, 'fake', $1::text, $2, $3, $4, $5)`,
+      [id, person, status, status === 'queued' ? at : null, at],
+    );
+
+  it('kuyruktaki ve çalan aramalar panoda; kişi adı var, numara yok; bitenler yok', async () => {
+    const now = new Date();
+    const person = '01960000-0000-7000-8000-0000000000f1';
+    await h.pg.query("INSERT INTO profile.protected_person (id, display_name) VALUES ($1, 'Ayşe Y.')", [person]);
+    await insertCall('01960000-0000-7000-8000-0000000000e1', 'queued', person, new Date(now.getTime() - 45_000));
+    await insertCall('01960000-0000-7000-8000-0000000000e2', 'queued', null, new Date(now.getTime() - 10_000));
+    await insertCall('01960000-0000-7000-8000-0000000000e3', 'ringing', null, now);
+    await insertCall('01960000-0000-7000-8000-0000000000e4', 'completed', null, now);
+    const d = await sup.dashboard(now);
+    expect(d.inbound).toMatchObject({ queued: 2, ringing: 1, oldestQueuedSec: 45 });
+    expect(d.inbound.calls.map((c) => [c.status, c.person])).toEqual([
+      ['queued', 'Ayşe Y.'],
+      ['queued', null],
+      ['ringing', null],
+    ]);
+    expect(JSON.stringify(d.inbound)).not.toMatch(/\+90|phone/i);
+  });
+});
+
 describe('eylemler', () => {
   it('operatör durumu: geçerli değerler, audit; geçersiz 400', async () => {
     const r = await sup.setStatus('op-9', 'OFFLINE', 'sup-1');
@@ -203,6 +230,18 @@ describe('WebSocket pano itmesi', () => {
       await new Promise((r) => setTimeout(r, 20));
     }
   };
+
+  it('operatöre kuyruktaki gelen arama sayısı: bağlanınca ve değişince (bulgu 8)', async () => {
+    const opMsgs = client(idp.token({ sub: 'op-in', name: 'Zeynep' }));
+    const inbound = () => opMsgs.filter((m) => m.type === 'inbound') as Extract<QueueMessage, { type: 'inbound' }>[];
+    await until(() => inbound().length >= 1);
+    expect(inbound()[0]).toMatchObject({ queued: 0 });
+    await h.pg.query(
+      `INSERT INTO telephony.inbound_call (id, provider, provider_call_id, status, queued_at)
+       VALUES ('01960000-0000-7000-8000-0000000000e9', 'fake', 'x9', 'queued', now())`,
+    );
+    await until(() => inbound().some((m) => m.queued === 1));
+  });
 
   it('amire bağlanınca ve aralıkla dashboard; operatöre gitmez; operatör "görüldü" olur', async () => {
     const opMsgs = client(idp.token({ sub: 'op-ws', name: 'Zeynep' }));

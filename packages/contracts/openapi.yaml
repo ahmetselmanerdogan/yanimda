@@ -73,7 +73,8 @@ paths:
         `/v1/ws/queue`: bağlanınca ilk mesaj `{"type":"auth","token":"<operatör erişim token'ı>"}` (5 sn içinde; token
         yenilenince tekrar). Sunucu `ready`, `snapshot` (tam liste), ardından `upsert {item}`, `remove {eventId}`,
         `alert {alert}` (amir uyarısı) gönderir. Amire (SUPERVISOR) ayrıca bağlanınca ve `SUPERVISOR_PUSH_MS` (5 sn)
-        aralıkla `dashboard {dashboard}` (GET /supervisor/dashboard ile aynı gövde; T-074). Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
+        aralıkla `dashboard {dashboard}` (GET /supervisor/dashboard ile aynı gövde; T-074). Tüm personele bağlanınca
+        ve değişince `inbound {queued, oldestQueuedSec}` (kuyrukta bekleyen gelen SOS araması; ad/numara yok). Kapanış kodları: 4400 bozuk mesaj, 4401 kimlik yok/geçersiz/süresi
         doldu, 4403 rol yetmiyor. Yeniden bağlanınca tam liste gelir.
       operationId: getQueue
       security: [{ operatorToken: [] }]
@@ -933,6 +934,25 @@ paths:
                     type: object
                     properties: { claimSec: { type: integer }, firstCallSec: { type: integer } }
                   overflow: { $ref: '#/components/schemas/OverflowFlag' }
+                  inbound:
+                    type: object
+                    description: Bağlanmamış gelen SOS aramaları (routing/ringing/queued); arayan numara yok.
+                    properties:
+                      queued: { type: integer }
+                      ringing: { type: integer }
+                      oldestQueuedSec: { type: [integer, 'null'] }
+                      calls:
+                        type: array
+                        description: En eski önce, en çok 20.
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, format: uuid }
+                            status: { type: string, enum: [routing, ringing, queued] }
+                            eventId: { type: [string, 'null'], format: uuid }
+                            person: { type: [string, 'null'], description: Eşleşen kişinin görünen adı }
+                            operatorId: { type: [string, 'null'] }
+                            waitSec: { type: integer }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /supervisor/operators/{sub}/status:

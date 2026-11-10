@@ -49,7 +49,10 @@
         "appVersion": { "type": "string" }
       }
     },
-    "payload": { "type": "object" }
+    "payload": {
+      "type": "object",
+      "description": "Türe özel ek alanlar. CANCEL/OK: isteğe bağlı eventId (cihaz sorusunun olay kimliği); verilirse açık olayla eşleşmeli, yoksa cevap yok sayılır."
+    }
   },
   "additionalProperties": false
 }

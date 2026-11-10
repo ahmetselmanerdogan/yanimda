@@ -472,6 +472,10 @@
     "text": "Operatör kilidi doldu; olayı devralabilirsiniz.",
     "action": "Devral"
   },
+  "O-UI-INBOUND-WAITING": {
+    "channel": "console",
+    "text": "{n} gelen SOS araması bekliyor (en eski {wait}). Müsait olan ilk operatöre bağlanır."
+  },
   "O-UI-MINE": {
     "channel": "console",
     "text": "Sizde"
@@ -871,6 +875,10 @@
     "channel": "voice",
     "text": "Teşekkür ederiz. İyi günler dileriz."
   },
+  "V-SCREEN-OK-WATCH": {
+    "channel": "voice",
+    "text": "Teşekkür ederiz. Sizi koruyabilmemiz için lütfen saatinizi takın."
+  },
   "V-SCREEN-HELP": {
     "channel": "voice",
     "text": "Operatörümüz sizi birazdan arayacak."
@@ -958,6 +966,14 @@
   "O-UI-SUP-WAITING": {
     "channel": "console",
     "text": "Kuyrukta bekleyen"
+  },
+  "O-UI-SUP-INBOUND": {
+    "channel": "console",
+    "text": "Kuyrukta gelen SOS araması"
+  },
+  "O-UI-SUP-INBOUND-NOTE": {
+    "channel": "console",
+    "text": "Çalıyor: {ringing} · en eski bekleyen {wait}"
   },
   "O-UI-SUP-IN-PROGRESS": {
     "channel": "console",

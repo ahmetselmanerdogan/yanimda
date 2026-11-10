@@ -37,7 +37,12 @@ export type QueueMessage =
   | { type: 'remove'; eventId: string }
   | { type: 'alert'; alert: SupervisorAlert }
   /** T-074: yalnız amire, bağlanınca ve SUPERVISOR_PUSH_MS (5 sn) aralıkla. */
-  | { type: 'dashboard'; dashboard: SupervisorDashboard };
+  | { type: 'dashboard'; dashboard: SupervisorDashboard }
+  /**
+   * İnceleme bulgusu 8: tüm personele kuyrukta bekleyen gelen SOS araması sayısı (bağlanınca ve değişince;
+   * SUPERVISOR_PUSH_MS aralıkla denetlenir). Kişi adı / numara yok.
+   */
+  | { type: 'inbound'; queued: number; oldestQueuedSec: number | null };
 
 /** Örnekler arası yayın: değişen olay kimliği veya amir uyarısı. */
 type Fanout = { eventId: string } | { alert: SupervisorAlert };
@@ -102,7 +107,10 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     this.ping.unref();
     const every = Number(this.env.SUPERVISOR_PUSH_MS ?? 5_000);
     if (this.supervisor && every > 0) {
-      this.push = setInterval(() => void this.pushDashboard(), every);
+      this.push = setInterval(() => {
+        void this.pushDashboard();
+        void this.pushInbound();
+      }, every);
       this.push.unref();
     }
   }
@@ -169,6 +177,26 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     this.send(c, { type: 'snapshot', items, total });
     await this.markSeen(c);
     if (isSupervisor(c)) await this.pushDashboard(c);
+    await this.pushInbound(c);
+  }
+
+  private lastInbound = '';
+
+  /** Gelen arama kuyruğu özeti: bağlanana hemen, diğerlerine yalnız değişince. Hata fırlatmaz. */
+  private async pushInbound(only?: Client) {
+    if (!this.supervisor || (!only && !this.clients.size)) return;
+    try {
+      const s = await this.supervisor.inbound();
+      const m: QueueMessage = { type: 'inbound', queued: s.queued, oldestQueuedSec: s.oldestQueuedSec };
+      const key = `${s.queued}`;
+      if (only) return this.send(only, m);
+      // Sayı değişince yayınla; kuyruk doluyken bekleme süresi de güncel kalsın (her turda).
+      if (key === this.lastInbound && s.queued === 0) return;
+      this.lastInbound = key;
+      this.broadcast(m);
+    } catch (e) {
+      this.log.warn(`Gelen arama özeti yayını başarısız: ${safeError(e)}`);
+    }
   }
 
   /** T-074: amir istemcilerine pano (tek hesap, hepsine aynı). Hata fırlatmaz. */
