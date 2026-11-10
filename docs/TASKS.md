@@ -61,7 +61,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 
 ## Epik 6 · Aile ve web (S6)
 - [ ] T-060 family-web: paket, ödeme, hesap (C-01)
-- [ ] T-061 Aile uygulaması ekranları (C-04…C-10)
+- [x] T-061 Aile uygulaması ekranları (C-04…C-10) — yerel repo `yanimda-family` (Flutter); gerçek Firebase/APNs push, Maps anahtarı, kritik uyarı başvurusu ve mağaza dağıtımı açık
 - [x] T-062 Günlük özet + F-DAILY (C-07, B-10) — aile ve telefon ekranları T-061/T-044
 - [x] T-063 Test SOS akışı (C-05) — aile ilerleme ekranı T-061
 
