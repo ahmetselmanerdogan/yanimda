@@ -139,7 +139,7 @@ export class FamilyService {
       })),
       operatorNote: closed && ev.isTest && ev.closeReason ? ev.closeReason : null,
       feedback: fb ? { real: fb.real } : null,
-      canFeedback: closed && !ev.isTest && !!subject && !fb,
+      canFeedback: closed && !ev.isTest && ev.confirmedOutcome !== 'EMERGENCY' && !!subject && !fb,
     };
   }
 

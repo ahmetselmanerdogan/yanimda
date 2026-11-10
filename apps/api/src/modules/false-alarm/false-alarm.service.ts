@@ -122,7 +122,8 @@ export class FalseAlarmService implements OnModuleInit, OnModuleDestroy {
       if (review) {
         if (!row?.reviewAt)
           await tx.update(falseAlarm).set({ reviewAt: now }).where(eq(falseAlarm.eventId, fa.eventId));
-        await this.notify(tx, fa, 'F-EVT-OK', `event:${fa.eventId}:F-EVT-OK`); // olay bildirimiyle aynı anahtar
+        // F-EVT-OK ("saatini iptal etti") yalnız kişi iptalinde doğru; operatör / aile kaynaklı kayıtta gönderilmez.
+        if (fa.cause === 'USER_CANCEL') await this.notify(tx, fa, 'F-EVT-OK', `event:${fa.eventId}:F-EVT-OK`); // olay bildirimiyle aynı anahtar
         await this.notify(tx, fa, 'F-FA-REVIEW', `false-alarm-review:${fa.eventId}`, {
           count: c!.n,
           windowDays,
@@ -154,12 +155,15 @@ export class FalseAlarmService implements OnModuleInit, OnModuleDestroy {
         type: event.type,
         state: event.state,
         isTest: event.isTest,
+        confirmedOutcome: event.confirmedOutcome,
       })
       .from(event)
       .where(eq(event.id, eventId));
     if (!ev) throw new NotFoundException('Olay yok');
     await this.authorize(actor, ev.protectedPersonId); // başka ailenin olayı: 404
     if (ev.state !== 'CLOSED') throw new ConflictException('Olay henüz kapanmadı');
+    // Bulgu 11: operatörün acil olarak teyit ettiği (112 / sevk) olay aile görüşüyle yanlış alarm sayılmaz.
+    if (ev.confirmedOutcome === 'EMERGENCY') throw new ConflictException('Acil olarak teyit edilmiş olay');
     await this.db.transaction(async (tx) => {
       await tx
         .insert(familyFeedback)

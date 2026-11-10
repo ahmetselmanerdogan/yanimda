@@ -142,6 +142,17 @@ describe('koruma durumu ve konum (C-08)', () => {
       idempotencyKey: `loc:${p}`,
     });
     expect((await protection.locationOf(p))!).toMatchObject({ lat: 41.01, lng: 28.97 });
+    // Bulgu 14: daha yeni ama konumu null sinyal son bilinen konumu gizlemez.
+    await h.db.insert(signal).values({
+      time: new Date(Date.now() + 1000),
+      deviceId: 'w1',
+      protectedPersonId: p,
+      kind: 'HEARTBEAT',
+      value: null,
+      payload: { location: null },
+      idempotencyKey: `hb:${p}`,
+    });
+    expect((await protection.locationOf(p))!).toMatchObject({ lat: 41.01, lng: 28.97 });
     await profile.update(ALICE, p, { locationSharing: false });
     expect(await protection.locationOf(p)).toBeNull();
     expect((await profile.get(ALICE, p)).locationSharing).toBe(false);

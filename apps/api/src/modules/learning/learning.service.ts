@@ -53,6 +53,11 @@ export interface LearningSummary {
 /** Öğrenmenin baktığı sinyaller (hareket ve "veri var" günleri). */
 const KINDS = ['STEPS', 'ON_BODY', 'OFF_BODY', 'HEARTBEAT', 'HEART_RATE'];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Aile uyku penceresinin en uzun süresi (dk). */
+export const MAX_SLEEP_WINDOW_MIN = 12 * 60;
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+/** SS:DD → SS:DD pencere süresi (gece yarısını aşabilir). */
+export const windowMinutes = (start: string, end: string) => (minutesOf(end) - minutesOf(start) + 1440) % 1440;
 /** T-061 (C-09): düşme sorusu cevap süresi sınırları (sn). Migration 0015'teki CHECK ile aynı. */
 const FALL_PROMPT_MIN = 30;
 const FALL_PROMPT_MAX = 90;
@@ -86,7 +91,7 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(OutboxBus) private readonly outbox: OutboxBus,
-    @Optional() @Inject(ProfileService) private readonly profile?: Pick<ProfileService, 'authorize'>,
+    @Optional() @Inject(ProfileService) private readonly profile?: Pick<ProfileService, 'authorize' | 'authorizeOwner'>,
     @Optional() @Inject(RULES) rules?: RulesProvider,
   ) {
     this.rules = rules ?? staticRules(loadRulePack());
@@ -170,7 +175,11 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
     await this.db.transaction(async (tx) => {
       const row = await this.lockRow(tx, protectedPersonId);
       const set: Partial<typeof threshold.$inferInsert> = { learnedAt: now, learnedDays: learned.days, updatedAt: now };
-      if (learned.sleep && row.sleepSource !== 'FAMILY')
+      if (
+        learned.sleep &&
+        row.sleepSource !== 'FAMILY' &&
+        windowMinutes(learned.sleep.start, learned.sleep.end) <= MAX_SLEEP_WINDOW_MIN
+      )
         Object.assign(set, { sleepStart: learned.sleep.start, sleepEnd: learned.sleep.end, sleepSource: 'LEARNED' });
       if (learnInactivity && learned.inactivityMin !== null && row.inactivitySource !== 'FAMILY')
         Object.assign(set, { inactivityMin: learned.inactivityMin, inactivitySource: 'LEARNED' });
@@ -275,7 +284,9 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
    * kaldırır (varsayılana döner, öğrenme yeniden yazabilir).
    */
   async setThresholds(actor: Actor, id: string, body: unknown, now = new Date()): Promise<LearningSummary> {
-    await this.authorize(actor, id);
+    if (!this.profile) throw new Error('ProfileService yok');
+    await this.profile.authorizeOwner(actor, id); // bulgu 10: MEMBER güvenlik eşiklerini değiştiremez
+
     const b = (body && typeof body === 'object' && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
     const set: Partial<typeof threshold.$inferInsert> = { updatedAt: now };
     if (b.sleepWindow === null)
@@ -286,6 +297,9 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
         throw new BadRequestException('sleepWindow {start, end} gerekli');
       if (!HHMM.test(w.start) || !HHMM.test(w.end) || w.start === w.end)
         throw new BadRequestException('sleepWindow saatleri SS:DD olmalı ve farklı olmalı');
+      // Bulgu 10: uyku penceresinde hareketsizlik/bağlantı uyarısı bastırılır; günü kaplayan pencere korumayı kapatır.
+      if (windowMinutes(w.start, w.end) > MAX_SLEEP_WINDOW_MIN)
+        throw new BadRequestException(`sleepWindow en çok ${MAX_SLEEP_WINDOW_MIN / 60} saat olabilir`);
       Object.assign(set, { sleepStart: w.start, sleepEnd: w.end, sleepSource: 'FAMILY' satisfies ThresholdSource });
     }
     if (b.inactivityMin === null) Object.assign(set, { inactivityMin: null, inactivitySource: 'DEFAULT' });

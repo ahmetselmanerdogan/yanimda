@@ -113,7 +113,8 @@ export class ProtectionService {
       SELECT s.time, (s.payload->'location'->>'lat')::float8 AS lat, (s.payload->'location'->>'lng')::float8 AS lng,
              (s.payload->'location'->>'accuracyM')::float8 AS acc
       FROM signal.signal s
-      WHERE s.protected_person_id = ${protectedPersonId} AND s.payload ? 'location' AND s.time > now() - interval '24 hours'
+      WHERE s.protected_person_id = ${protectedPersonId} AND jsonb_typeof(s.payload->'location') = 'object'
+        AND s.time > now() - interval '24 hours'
         AND NOT EXISTS (SELECT 1 FROM profile.protected_person p
                         WHERE p.id::text = ${protectedPersonId} AND NOT p.location_sharing)
       ORDER BY s.time DESC LIMIT 1`)) as unknown as {

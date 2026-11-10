@@ -150,6 +150,30 @@ describe('Günlük öğrenme işi (sentetik 30 gün)', () => {
     expect((await thresholdRow(id))!.inactivity_source).toBe('LEARNED');
   });
 
+  it('güvenlik eşiklerini yalnız sahip değiştirir (MEMBER 403); uyku penceresi en çok 12 saat (bulgu 10)', async () => {
+    const id = await person(new Date());
+    await h.pg.query(
+      "INSERT INTO profile.family_member (id, protected_person_id, subject, role) VALUES (gen_random_uuid(), $1, 'fam-member', 'MEMBER')",
+      [id],
+    );
+    const MEMBER: Actor = { kind: 'FAMILY', id: 'fam-member' };
+    const status = (p: Promise<unknown>) => p.then(() => 200).catch((e: { status?: number }) => e.status);
+    expect(await status(learning.setThresholds(MEMBER, id, { inactivityMin: 60 }))).toBe(403);
+    expect(await status(learning.setThresholds(MEMBER, id, { sleepWindow: { start: '20:00', end: '19:00' } }))).toBe(
+      403,
+    );
+    expect(await status(learning.setThresholds(BOB, id, { inactivityMin: 60 }))).toBe(404);
+    expect(await status(learning.summary(MEMBER, id))).toBe(200); // görüntüleme serbest
+    // 23 saatlik pencere (korumayı fiilen kapatır) reddedilir; 12 saat kabul.
+    expect(await status(learning.setThresholds(ALICE, id, { sleepWindow: { start: '20:00', end: '19:00' } }))).toBe(
+      400,
+    );
+    expect(await status(learning.setThresholds(ALICE, id, { sleepWindow: { start: '20:00', end: '08:00' } }))).toBe(
+      200,
+    );
+    expect(await status(learning.setThresholds({ kind: 'ADMIN' }, id, { inactivityMin: 60 }))).toBe(200);
+  });
+
   it('aile eşik ayarı doğrulanır; başka ailenin kişisi 404', async () => {
     const id = await person(new Date());
     const status = (p: Promise<unknown>) => p.then(() => 200).catch((e: { status?: number }) => e.status);

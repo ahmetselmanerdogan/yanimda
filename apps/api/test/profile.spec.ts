@@ -273,6 +273,18 @@ describe('rehber (C-03, zincir numaraları)', () => {
     expect(JSON.stringify(audit)).not.toContain('+90555');
   });
 
+  it('aranacak kişileri yalnız sahip (veya yönetici) değiştirir; MEMBER 403 (bulgu 10)', async () => {
+    const p = await create();
+    await h.pg.query(
+      "INSERT INTO profile.family_member (id, protected_person_id, subject, role) VALUES (gen_random_uuid(), $1, 'fam-member', 'MEMBER')",
+      [p.id],
+    );
+    const body = [{ role: 'CONTACT', priority: 1, phone: '+905550000001', name: 'Ali' }];
+    expect(await status(profile.setContacts({ kind: 'FAMILY', id: 'fam-member' }, p.id, body))).toBe(403);
+    expect(await status(profile.contacts({ kind: 'FAMILY', id: 'fam-member' }, p.id))).toBe('ok');
+    expect(await status(profile.setContacts(ALICE, p.id, body))).toBe('ok');
+  });
+
   it.each([
     ['6 yakın', Array.from({ length: 6 }, (_, i) => ({ role: 'CONTACT', phone: `+90555000003${i}` }))],
     [

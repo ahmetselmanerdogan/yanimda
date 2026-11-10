@@ -1,4 +1,12 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { t } from '@yanimda/messages';
 import { and, asc, count, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -252,7 +260,8 @@ export class ProfileService {
 
   async setContacts(actor: Actor, id: string, body: unknown) {
     // Yönetici: simülatör kişileri (uuid olmayan kimlik) için de yazabilir; aile yalnız kendi kişisine.
-    if (actor.kind !== 'ADMIN') await this.access(actor, id);
+    // Aranacak kişiler acil zincirini belirler: yalnız sahip değiştirir (bulgu 10).
+    if (actor.kind !== 'ADMIN') await this.authorizeOwner(actor, id);
     return replaceContacts(this.db, id, body, actor);
   }
 
@@ -375,6 +384,16 @@ export class ProfileService {
   /** Diğer modüller (T-070/T-071 aile uçları) için erişim denetimi: yoksa veya yetki yoksa 404. */
   async authorize(actor: Actor, id: string): Promise<void> {
     await this.access(actor, id);
+  }
+
+  /**
+   * İnceleme bulgusu 10: güvenlik ayarları (eşikler, uyku penceresi, aranacak kişiler) yalnız hesap sahibi (OWNER)
+   * veya yönetici tarafından değiştirilir. MEMBER 403, erişimi olmayan 404.
+   */
+  async authorizeOwner(actor: Actor, id: string): Promise<void> {
+    const { role } = await this.access(actor, id);
+    if (actor.kind === 'FAMILY' && role !== 'OWNER')
+      throw new ForbiddenException('Bu ayarı yalnız hesap sahibi değiştirir');
   }
 
   /** Erişim: ADMIN her kişiyi; FAMILY yalnız üyesi olduğu kişiyi. Diğer her durum 404. */
