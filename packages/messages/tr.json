@@ -702,6 +702,18 @@
     "channel": "voice",
     "text": "Bu görüşme kaydedilmektedir."
   },
+  "V-SCREEN-ASK": {
+    "channel": "voice",
+    "text": "Yanımda: iyi misiniz? İyiyseniz 'evet' deyin veya 1'e basın."
+  },
+  "V-SCREEN-OK": {
+    "channel": "voice",
+    "text": "Teşekkür ederiz. İyi günler dileriz."
+  },
+  "V-SCREEN-HELP": {
+    "channel": "voice",
+    "text": "Operatörümüz sizi birazdan arayacak."
+  },
   "O-CALL-queued": {
     "channel": "console",
     "text": "Arama başlatılıyor"
