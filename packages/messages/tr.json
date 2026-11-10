@@ -970,6 +970,335 @@
     "channel": "console",
     "text": "Güncellendi {time}"
   },
+  "P-SUB-PAY": {
+    "channel": "phone",
+    "text": "Ödeme bekleniyor. Koruma devam ediyor; ailenize haber verdik."
+  },
+  "P-SUB-OFF": {
+    "channel": "phone",
+    "text": "Yanımda koruması kapalı. Ailenizle görüşün."
+  },
+  "W-SUB-OFF": {
+    "channel": "watch",
+    "text": "Koruma kapalı."
+  },
+  "F-SUB-SUSPENDED": {
+    "channel": "family",
+    "text": "Ödeme alınamadığı için {name} için koruma durduruldu. Ödemeyi tamamlayınca hemen açılır.",
+    "action": "Ödeme"
+  },
+  "S-SIGNUP-CODE": {
+    "channel": "sms",
+    "text": "Yanımda doğrulama kodunuz: {code}. Kodu kimseyle paylaşmayın."
+  },
+  "F-WEB-TITLE": {
+    "channel": "family",
+    "text": "Yanımda'ya abone olun"
+  },
+  "F-WEB-STEP-1": {
+    "channel": "family",
+    "text": "Paket"
+  },
+  "F-WEB-STEP-2": {
+    "channel": "family",
+    "text": "Hesap ve ödeme"
+  },
+  "F-WEB-STEP-3": {
+    "channel": "family",
+    "text": "Uygulamayı indirin"
+  },
+  "F-WEB-STEP-OF": {
+    "channel": "family",
+    "text": "Adım {n}/3"
+  },
+  "F-WEB-COUNTRY": {
+    "channel": "family",
+    "text": "Ülke"
+  },
+  "F-WEB-COUNTRY-TR": {
+    "channel": "family",
+    "text": "Türkiye"
+  },
+  "F-WEB-COUNTRY-US": {
+    "channel": "family",
+    "text": "Amerika Birleşik Devletleri"
+  },
+  "F-WEB-PLAN-STANDARD": {
+    "channel": "family",
+    "text": "Aylık"
+  },
+  "F-WEB-PLAN-STANDARD_YEARLY": {
+    "channel": "family",
+    "text": "Yıllık"
+  },
+  "F-WEB-PER-month": {
+    "channel": "family",
+    "text": "/ay"
+  },
+  "F-WEB-PER-year": {
+    "channel": "family",
+    "text": "/yıl"
+  },
+  "F-WEB-PLAN-INCLUDES": {
+    "channel": "family",
+    "text": "7/24 operatör, düşme ve SOS algılama, aile bildirimleri"
+  },
+  "F-WEB-TRIAL": {
+    "channel": "family",
+    "text": "İlk {days} gün ücretsiz deneme. Deneme ilk olayda ya da {days}. günde biter."
+  },
+  "F-WEB-PRICE-PLACEHOLDER": {
+    "channel": "family",
+    "text": "Fiyatlar taslaktır."
+  },
+  "F-WEB-CHOOSE": {
+    "channel": "family",
+    "text": "Bu paketi seç"
+  },
+  "F-WEB-CONTINUE": {
+    "channel": "family",
+    "text": "Devam"
+  },
+  "F-WEB-BACK": {
+    "channel": "family",
+    "text": "Geri"
+  },
+  "F-WEB-ACCOUNT": {
+    "channel": "family",
+    "text": "Sizin bilgileriniz"
+  },
+  "F-WEB-FIRST-NAME": {
+    "channel": "family",
+    "text": "Adınız"
+  },
+  "F-WEB-LAST-NAME": {
+    "channel": "family",
+    "text": "Soyadınız"
+  },
+  "F-WEB-EMAIL": {
+    "channel": "family",
+    "text": "E-posta"
+  },
+  "F-WEB-PHONE": {
+    "channel": "family",
+    "text": "Cep telefonu"
+  },
+  "F-WEB-PHONE-HINT": {
+    "channel": "family",
+    "text": "Ülke koduyla, örn. +90 5xx xxx xx xx"
+  },
+  "F-WEB-ELDER": {
+    "channel": "family",
+    "text": "Kimi koruyacağız?"
+  },
+  "F-WEB-ELDER-NAME": {
+    "channel": "family",
+    "text": "Adı (örn. Ayşe Teyze)"
+  },
+  "F-WEB-KVKK-NOTICE": {
+    "channel": "family",
+    "text": "KVKK aydınlatma metni"
+  },
+  "F-WEB-KVKK-READ": {
+    "channel": "family",
+    "text": "Aydınlatma metnini okudum."
+  },
+  "F-WEB-CONSENT": {
+    "channel": "family",
+    "text": "Sağlık ve konum verilerinin acil yardım için işlenmesine açık rıza veriyorum."
+  },
+  "F-WEB-CONSENT-TEXT": {
+    "channel": "family",
+    "text": "Açık rıza metni"
+  },
+  "F-WEB-LEGAL-PENDING": {
+    "channel": "family",
+    "text": "Taslak metin — hukuk onayı bekliyor."
+  },
+  "F-WEB-KVKK-BODY": {
+    "channel": "family",
+    "text": "[YER TUTUCU] Veri sorumlusu, işlenen kişisel veriler, işleme amaçları, aktarım, saklama süresi ve KVKK md. 11 kapsamındaki haklarınız burada yer alacak."
+  },
+  "F-WEB-CONSENT-BODY": {
+    "channel": "family",
+    "text": "[YER TUTUCU] Sağlık verisi (tıbbi özet) ve konum verisinin yalnız acil durumda operatör ve 112 ile paylaşılmasına ilişkin açık rıza metni burada yer alacak."
+  },
+  "F-WEB-CREATE-ACCOUNT": {
+    "channel": "family",
+    "text": "Hesabı oluştur"
+  },
+  "F-WEB-PHONE-CODE": {
+    "channel": "family",
+    "text": "Telefonunuza gelen 6 haneli kod"
+  },
+  "F-WEB-PHONE-CODE-SENT": {
+    "channel": "family",
+    "text": "{phone} numarasına kod gönderdik."
+  },
+  "F-WEB-PHONE-VERIFY": {
+    "channel": "family",
+    "text": "Doğrula"
+  },
+  "F-WEB-PHONE-RESEND": {
+    "channel": "family",
+    "text": "Kodu yeniden gönder"
+  },
+  "F-WEB-PHONE-OK": {
+    "channel": "family",
+    "text": "Telefon doğrulandı."
+  },
+  "F-WEB-DEV-CODE": {
+    "channel": "family",
+    "text": "Geliştirme kodu: {code}"
+  },
+  "F-WEB-EMAIL-SENT": {
+    "channel": "family",
+    "text": "E-postanıza bir bağlantı gönderdik: e-postanızı doğrulayıp parolanızı belirleyin."
+  },
+  "F-WEB-BILLING": {
+    "channel": "family",
+    "text": "Fatura adresi"
+  },
+  "F-WEB-BILLING-CITY": {
+    "channel": "family",
+    "text": "İl"
+  },
+  "F-WEB-BILLING-ADDRESS": {
+    "channel": "family",
+    "text": "Adres"
+  },
+  "F-WEB-PAY": {
+    "channel": "family",
+    "text": "Ödemeye geç"
+  },
+  "F-WEB-PAY-LATER": {
+    "channel": "family",
+    "text": "Denemeyle başla, sonra öde"
+  },
+  "F-WEB-PAY-SECURE": {
+    "channel": "family",
+    "text": "Kart bilgileriniz ödeme kuruluşunun sayfasında alınır; bize gelmez."
+  },
+  "F-WEB-PAY-FAILED": {
+    "channel": "family",
+    "text": "Ödeme tamamlanamadı. Tekrar deneyebilirsiniz."
+  },
+  "F-WEB-PAY-WAITING": {
+    "channel": "family",
+    "text": "Ödeme onayı bekleniyor…"
+  },
+  "F-WEB-FAKE-TITLE": {
+    "channel": "family",
+    "text": "Sahte ödeme sayfası (geliştirme)"
+  },
+  "F-WEB-FAKE-PAY": {
+    "channel": "family",
+    "text": "Öde"
+  },
+  "F-WEB-FAKE-FAIL": {
+    "channel": "family",
+    "text": "Reddet"
+  },
+  "F-WEB-DONE": {
+    "channel": "family",
+    "text": "Hazırsınız!"
+  },
+  "F-WEB-DONE-ACTIVE": {
+    "channel": "family",
+    "text": "Aboneliğiniz etkin."
+  },
+  "F-WEB-DONE-TRIAL": {
+    "channel": "family",
+    "text": "Deneme süreniz başladı: {date} tarihine kadar."
+  },
+  "F-WEB-DOWNLOAD": {
+    "channel": "family",
+    "text": "Aile uygulamasını indirin, giriş yapın ve saati kurun."
+  },
+  "F-WEB-STORE-IOS": {
+    "channel": "family",
+    "text": "App Store"
+  },
+  "F-WEB-STORE-ANDROID": {
+    "channel": "family",
+    "text": "Google Play"
+  },
+  "F-WEB-ACCOUNT-PAGE": {
+    "channel": "family",
+    "text": "Aboneliğim"
+  },
+  "F-WEB-LOGIN": {
+    "channel": "family",
+    "text": "Giriş yap"
+  },
+  "F-WEB-LOGOUT": {
+    "channel": "family",
+    "text": "Çıkış"
+  },
+  "F-WEB-STATUS-TRIAL": {
+    "channel": "family",
+    "text": "Deneme"
+  },
+  "F-WEB-STATUS-ACTIVE": {
+    "channel": "family",
+    "text": "Etkin"
+  },
+  "F-WEB-STATUS-PAYMENT_PENDING": {
+    "channel": "family",
+    "text": "Ödeme bekleniyor — koruma {date} tarihine kadar sürer"
+  },
+  "F-WEB-STATUS-SUSPENDED": {
+    "channel": "family",
+    "text": "Askıda — koruma kapalı"
+  },
+  "F-WEB-STATUS-CANCELED": {
+    "channel": "family",
+    "text": "İptal edildi — koruma kapalı"
+  },
+  "F-WEB-CANCEL": {
+    "channel": "family",
+    "text": "Aboneliği iptal et"
+  },
+  "F-WEB-CANCEL-CONFIRM": {
+    "channel": "family",
+    "text": "İptal edilsin mi? Koruma hemen kapanır."
+  },
+  "F-WEB-CANCELED": {
+    "channel": "family",
+    "text": "Aboneliğiniz iptal edildi. Koruma kapandı."
+  },
+  "F-WEB-COMPLETE-PAYMENT": {
+    "channel": "family",
+    "text": "Ödemeyi tamamla"
+  },
+  "F-WEB-NO-SUBSCRIPTION": {
+    "channel": "family",
+    "text": "Bu hesapta abonelik yok."
+  },
+  "F-WEB-ERROR": {
+    "channel": "family",
+    "text": "Bir sorun oldu. Lütfen tekrar deneyin."
+  },
+  "F-WEB-ERROR-EMAIL-TAKEN": {
+    "channel": "family",
+    "text": "Bu e-posta ile bir hesap var. Giriş yapın."
+  },
+  "F-WEB-ERROR-CODE": {
+    "channel": "family",
+    "text": "Kod hatalı ya da süresi doldu."
+  },
+  "F-WEB-ERROR-TOO-MANY": {
+    "channel": "family",
+    "text": "Çok fazla deneme. Biraz sonra tekrar deneyin."
+  },
+  "F-WEB-ERROR-INVALID": {
+    "channel": "family",
+    "text": "Lütfen alanları kontrol edin."
+  },
+  "F-WEB-REQUIRED": {
+    "channel": "family",
+    "text": "Zorunlu alan"
+  },
   "F-UI-APP-TITLE": {
     "channel": "family",
     "text": "Yanımda"

@@ -1260,7 +1260,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages]
+                required:
+                  [deviceId, protectedPersonId, kind, rulesVersion, sleepWindow, devicePrompt, messages, subscription]
                 properties:
                   deviceId: { type: string }
                   protectedPersonId: { type: string }
@@ -1278,6 +1279,17 @@ paths:
                       fallWindowSec: { type: [integer, 'null'] }
                       inactivityWindowSec: { type: [integer, 'null'] }
                   inactivityThresholdMin: { type: [integer, 'null'] }
+                  subscription:
+                    type: object
+                    description: |
+                      T-060. protectionActive=false (askıda / iptal) iken cihaz "koruma kapalı" gösterir; metin
+                      `messages[messageCode]` (P-SUB-PAY, P-SUB-OFF, W-SUB-OFF). status null = abonelik dışı kişi.
+                    required: [status, protectionActive, until, messageCode]
+                    properties:
+                      status: { enum: [TRIAL, ACTIVE, PAYMENT_PENDING, SUSPENDED, CANCELED, null] }
+                      protectionActive: { type: boolean }
+                      until: { type: [string, 'null'], format: date-time }
+                      messageCode: { type: [string, 'null'] }
                   messages:
                     type: object
                     description: Katalog metinleri (telefon P-*, saat W-*)
@@ -1350,6 +1362,237 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  # ---- T-060 (C-01) web abonelik ----
+  /plans:
+    get:
+      summary: Paketler (adım 1). T-060
+      description: >-
+        Tutarlar yer tutucudur (`placeholder: true`, ürün/finans onayı bekliyor); fiyatın kendisi sağlayıcı panosunda.
+      operationId: listPlans
+      security: []
+      parameters: [{ name: country, in: query, schema: { enum: [TR, US], default: TR } }]
+      responses:
+        '200':
+          description: Paketler
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [country, trialDays, kvkkNoticeVersion, plans]
+                properties:
+                  country: { enum: [TR, US] }
+                  trialDays: { type: integer, example: 30 }
+                  kvkkNoticeVersion: { type: string, description: Kayıtta geri gönderilecek aydınlatma metni sürümü }
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, interval, nameCode, currency, amountMinor, placeholder]
+                      properties:
+                        code: { type: string, example: STANDARD }
+                        interval: { enum: [month, year] }
+                        nameCode: { type: string, description: Mesaj kataloğu kodu }
+                        currency: { type: string, example: TRY }
+                        amountMinor: { type: integer, description: Kuruş / sent }
+                        placeholder: { type: boolean }
+  /signup:
+    post:
+      summary: Hesap aç (adım 2) — Keycloak consumers hesabı + korunan kişi + TRIAL abonelik. T-060
+      description: |
+        Parola bu uçtan geçmez: Keycloak hesabı VERIFY_EMAIL + UPDATE_PASSWORD gerekli eylemleriyle açılır ve kullanıcıya
+        e-posta bağlantısı gider. Telefona 6 haneli kod SMS'lenir (10 dk). Deneme 30 gün veya ilk olaya kadar.
+        KVKK aydınlatma sürümü güncel olmalı ve açık rıza `true` olmalı (metinler hukuk onayı bekliyor).
+        IP başına saatte 10 kayıt. Aynı e-posta 409 (yarım kişi kalmaz).
+      operationId: signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, country, account, protectedPerson, consents]
+              properties:
+                plan: { type: string, example: STANDARD }
+                country: { enum: [TR, US] }
+                account:
+                  type: object
+                  required: [firstName, lastName, email, phone]
+                  properties:
+                    firstName: { type: string, maxLength: 60 }
+                    lastName: { type: string, maxLength: 60 }
+                    email: { type: string, format: email }
+                    phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
+                protectedPerson:
+                  type: object
+                  required: [displayName]
+                  properties: { displayName: { type: string, maxLength: 100 } }
+                consents:
+                  type: object
+                  required: [kvkkNoticeVersion, explicitConsent]
+                  properties:
+                    kvkkNoticeVersion: { type: string }
+                    explicitConsent: { const: true }
+      responses:
+        '201':
+          description: Hesap açıldı
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [subscriptionId, protectedPersonId, signupToken, signupTokenExpiresAt, trialEndsAt, phoneVerification]
+                properties:
+                  subscriptionId: { type: string, format: uuid }
+                  protectedPersonId: { type: string, format: uuid }
+                  signupToken: { type: string, description: 'Sonraki kayıt adımlarında `x-signup-token` (2 saat)' }
+                  signupTokenExpiresAt: { type: string, format: date-time }
+                  trialEndsAt: { type: string, format: date-time }
+                  phoneVerification: { enum: [SENT, UNAVAILABLE] }
+                  devCode: { type: string, description: Yalnız geliştirmede, sahte SMS sağlayıcısıyla }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/phone/code:
+    post:
+      summary: Telefon doğrulama kodunu yeniden gönder (saatte 5). T-060
+      operationId: resendSignupCode
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { description: Gönderildi }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/phone/verify:
+    post:
+      summary: Telefonu doğrula → Keycloak `phone_number_verified=true`. T-060
+      description: 5 hatalı denemede kod geçersizleşir (yeni kod istenir).
+      operationId: verifySignupPhone
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string, pattern: '^\d{6}$' } } }
+      responses:
+        '200': { description: Doğrulandı }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/checkout:
+    post:
+      summary: 'Ödeme sayfası (adım 2) — iyzico Checkout Form (TR, gömülü) / Stripe Checkout (US, yönlendirme). T-060'
+      description: Telefon doğrulanmış olmalı (409). Kart bilgisi bize gelmez. iyzico için fatura adresi zorunlu.
+      operationId: createSignupCheckout
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CheckoutSession' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /signup/{id}/subscription:
+    get:
+      summary: Kayıt akışındaki aboneliğin durumu (adım 3). T-060
+      operationId: getSignupSubscription
+      security: [{ signupToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /webhooks/payments:
+    post:
+      summary: Ödeme sağlayıcısı webhook'u (imza doğrulamalı, idempotent). T-060
+      description: |
+        Sağlayıcı başlıktan bulunur: Stripe `Stripe-Signature` (HMAC-SHA256, 5 dk tolerans; checkout.session.completed,
+        invoice.paid, invoice.payment_failed, customer.subscription.deleted), iyzico `X-IYZ-SIGNATURE-V3`
+        (subscription.order.success / failure), geliştirme `X-Fake-Signature`. İmza ham gövde üzerinden; geçersizse 400.
+        (sağlayıcı, olay kimliği) bir kez işlenir; tekrar 200 `duplicate: true`. Sıra dışı eski olay durumu değiştirmez;
+        CANCELED son durumdur. PAST_DUE girişinde aileye F-SUB-PAY (outbox, aynı transaction).
+      operationId: paymentWebhook
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200':
+          description: Alındı
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, duplicate, outcome]
+                properties:
+                  received: { const: true }
+                  duplicate: { type: boolean }
+                  outcome: { enum: [applied, stale, terminal, ignored, unmatched, duplicate] }
+        '400': { $ref: '#/components/responses/Problem' }
+  /payments/iyzico/callback:
+    post:
+      summary: iyzico Checkout Form tarayıcı dönüşü → sonuç iyzico'dan okunur → web adım 3'e 303. T-060
+      operationId: iyzicoCallback
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses:
+        '303': { description: Web'e yönlendirme }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /payments/fake/{ref}/pay:
+    post:
+      summary: Sahte ödeme sayfasının düğmesi (yalnız PAYMENT_PROVIDER=fake; üretimde yok). T-060
+      operationId: fakePay
+      security: []
+      parameters: [{ name: ref, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { outcome: { enum: [success, fail] } } }
+      responses:
+        '200': { description: 'İmzalı webhook gerçek yoldan işlendi; `redirect` web adresi' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription:
+    get:
+      summary: Abonelik durumu (aile üyesi / yönetici). T-060
+      operationId: getSubscription
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription/cancel:
+    post:
+      summary: Tek tık iptal (yalnız OWNER) → CANCELED, koruma kapanır (cihaz config). T-060
+      description: Sağlayıcıdaki abonelik önce sonlandırılır; ulaşılamazsa 502 ve yerel durum değişmez (ücret sürmesin).
+      operationId: cancelSubscription
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Subscription' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/subscription/checkout:
+    post:
+      summary: Sonradan ödeme (deneme bitti / ödeme bekliyor) — yalnız OWNER. T-060
+      operationId: createSubscriptionCheckout
+      security: [{ userToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CheckoutSession' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '502': { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }
@@ -1370,12 +1613,47 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Keycloak `consumers` realm erişim token'ı (ELDER, FAMILY).
+    signupToken:
+      type: apiKey
+      in: header
+      name: x-signup-token
+      description: T-060 kayıt akışı token'ı (POST /signup yanıtı; tek aboneliğe bağlı, 2 saat).
+  requestBodies:
+    CheckoutInput:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              billing:
+                type: object
+                description: Fatura adresi (iyzico zorunlu). Saklanmaz, yalnız sağlayıcıya iletilir.
+                required: [city, address]
+                properties:
+                  city: { type: string, maxLength: 60 }
+                  address: { type: string, maxLength: 200 }
   parameters:
     EventId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     StepN: { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
     PersonId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
+    Subscription:
+      description: Abonelik
+      content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } }
+    CheckoutSession:
+      description: Barındırılan ödeme sayfası
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                required: [kind, url, checkoutRef]
+                properties: { kind: { const: redirect }, url: { type: string }, checkoutRef: { type: string } }
+              - type: object
+                description: iyzico checkoutFormContent (script) — sayfaya eklenir
+                required: [kind, html, checkoutRef]
+                properties: { kind: { const: embed }, html: { type: string }, checkoutRef: { type: string } }
     CallView:
       description: Arama (numarasız)
       content:
@@ -1411,6 +1689,35 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    Subscription:
+      type: object
+      required:
+        [
+          id,
+          protectedPersonId,
+          plan,
+          countryCode,
+          status,
+          effectiveStatus,
+          protectionActive,
+          provider,
+          paymentMethodOnFile,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        protectedPersonId: { type: string, format: uuid }
+        plan: { type: string }
+        countryCode: { enum: [TR, US] }
+        status: { enum: [TRIAL, ACTIVE, PAST_DUE, CANCELED] }
+        effectiveStatus:
+          description: TRIAL (deneme) · ACTIVE · PAYMENT_PENDING (ödeme bekliyor, 7 gün koruma) · SUSPENDED (askıda, koruma kapalı) · CANCELED
+          enum: [TRIAL, ACTIVE, PAYMENT_PENDING, SUSPENDED, CANCELED, null]
+        protectionActive: { type: boolean }
+        until: { type: [string, 'null'], format: date-time, description: Deneme sonu / bekleme sonu / yenileme }
+        trialEndsAt: { type: [string, 'null'], format: date-time }
+        canceledAt: { type: [string, 'null'], format: date-time }
+        provider: { enum: [IYZICO, STRIPE, FAKE, null] }
+        paymentMethodOnFile: { type: boolean }
     FamilyEventSummary:
       type: object
       properties:
