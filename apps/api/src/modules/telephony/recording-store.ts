@@ -4,6 +4,8 @@ import { createHash, createHmac } from 'node:crypto';
 export interface RecordingStore {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   exists(key: string): Promise<boolean>;
+  /** Yönetim paneli dinleme (yetki ve denetim çağıranda). Yoksa null. */
+  get(key: string): Promise<{ body: Buffer; contentType: string } | null>;
 }
 
 export class MemoryRecordingStore implements RecordingStore {
@@ -13,6 +15,9 @@ export class MemoryRecordingStore implements RecordingStore {
   }
   async exists(key: string) {
     return this.objects.has(key);
+  }
+  async get(key: string) {
+    return this.objects.get(key) ?? null;
   }
 }
 
@@ -72,6 +77,13 @@ export class S3RecordingStore implements RecordingStore {
   async exists(key: string) {
     const r = await this.send('HEAD', `/${this.cfg.bucket}/${key}`, {}, Buffer.alloc(0));
     return r.ok;
+  }
+
+  async get(key: string) {
+    const r = await this.send('GET', `/${this.cfg.bucket}/${key}`, {}, Buffer.alloc(0));
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(`S3 GET başarısız: HTTP ${r.status}`);
+    return { body: Buffer.from(await r.arrayBuffer()), contentType: r.headers.get('content-type') ?? 'audio/mpeg' };
   }
 
   /** Geliştirme: kovayı nesne kilidiyle oluştur (varsa dokunma). */

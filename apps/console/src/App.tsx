@@ -1,8 +1,9 @@
 import type { User } from 'oidc-client-ts';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
+import { AdminBoard } from './Admin';
 import { Console } from './Console';
-import { OPERATOR_ROLES, restoreSession, rolesOf, sessionLost, userManager } from './lib/auth';
+import { MANAGEMENT_ROLES, OPERATOR_ROLES, restoreSession, rolesOf, sessionLost, userManager } from './lib/auth';
 import { realBackend } from './lib/backend';
 import { action, t } from './lib/i18n';
 import { trainingRequested } from './lib/training-flag';
@@ -10,6 +11,10 @@ import { SupervisorBoard } from './Supervisor';
 
 /** T-074: amir panosu `/supervisor` (giriş dönüşü köke düşer; konsoldaki düğmeyle geçilir). */
 const SUPERVISOR_PATH = '/supervisor';
+/** Yönetim ve çağrı merkezi paneli (amir, yönetici). */
+const ADMIN_PATH = '/yonetim';
+type View = 'console' | 'board' | 'admin';
+const viewOf = (path: string): View => (path === SUPERVISOR_PATH ? 'board' : path === ADMIN_PATH ? 'admin' : 'console');
 
 type Phase = { kind: 'loading' } | { kind: 'anonymous'; failed?: boolean } | { kind: 'ready'; user: User };
 
@@ -29,13 +34,13 @@ export function App() {
 function LiveApp() {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [backend] = useState(realBackend);
-  const [board, setBoard] = useState(() => window.location.pathname === SUPERVISOR_PATH);
-  const go = (on: boolean) => {
-    window.history.pushState(null, '', on ? SUPERVISOR_PATH : '/');
-    setBoard(on);
+  const [view, setView] = useState<View>(() => viewOf(window.location.pathname));
+  const go = (v: View) => {
+    window.history.pushState(null, '', v === 'board' ? SUPERVISOR_PATH : v === 'admin' ? ADMIN_PATH : '/');
+    setView(v);
   };
   useEffect(() => {
-    const pop = () => setBoard(window.location.pathname === SUPERVISOR_PATH);
+    const pop = () => setView(viewOf(window.location.pathname));
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
   }, []);
@@ -92,15 +97,28 @@ function LiveApp() {
     );
   const p = phase.user.profile;
   const name = String(p.name ?? p.preferred_username ?? '');
-  const supervisor = rolesOf(phase.user).includes('SUPERVISOR');
-  if (supervisor && board)
-    return <SupervisorBoard backend={backend} operatorName={name} onBack={() => go(false)} onLogout={logout} />;
+  const roles = rolesOf(phase.user);
+  const supervisor = roles.includes('SUPERVISOR');
+  const manager = roles.some((r) => MANAGEMENT_ROLES.includes(r));
+  if (manager && view === 'admin')
+    return <AdminBoard backend={backend} operatorName={name} onBack={() => go('console')} onLogout={logout} />;
+  if (supervisor && view === 'board')
+    return (
+      <SupervisorBoard
+        backend={backend}
+        operatorName={name}
+        onBack={() => go('console')}
+        onLogout={logout}
+        onAdmin={() => go('admin')}
+      />
+    );
   return (
     <Console
       operator={{ sub: p.sub, name }}
       backend={backend}
       onLogout={logout}
-      {...(supervisor ? { onSupervisor: () => go(true) } : {})}
+      {...(supervisor ? { onSupervisor: () => go('board') } : {})}
+      {...(manager ? { onAdmin: () => go('admin') } : {})}
     />
   );
 }

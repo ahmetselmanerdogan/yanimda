@@ -524,3 +524,30 @@ export const dispatchUpdate = eventSchema.table('dispatch_update', {
   source: text('source').notNull(),
   note: text('note'),
 });
+
+/** 0023: düzenli "yanınızdayız" arama planı ve dönem satırları. */
+export const checkPlan = profileSchema.table('check_plan', {
+  protectedPersonId: uuid('protected_person_id').primaryKey(),
+  enabled: boolean('enabled').notNull().default(true),
+  frequency: text('frequency').notNull().default('WEEKLY'),
+  weekday: integer('weekday').notNull().default(3),
+  localTime: text('local_time').notNull().default('11:00'),
+  channel: text('channel').notNull().default('BOTH'),
+  windowMin: integer('window_min').notNull().default(120),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+});
+
+export const checkCall = eventSchema.table('check_call', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  dueAt: timestamptz('due_at').notNull(),
+  windowUntil: timestamptz('window_until').notNull(),
+  channel: text('channel').notNull(),
+  status: text('status').notNull().default('SCHEDULED'),
+  eventId: uuid('event_id'),
+  startedAt: timestamptz('started_at'),
+  completedAt: timestamptz('completed_at'),
+  operatorId: text('operator_id'),
+  outcome: text('outcome'),
+});

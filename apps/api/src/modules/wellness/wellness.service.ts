@@ -1,0 +1,438 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import { type KafkaEnvelope, type NotifyRequest, type SupervisorAlert, TOPICS } from '@yanimda/contracts';
+import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
+
+import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { OutboxBus } from '../../common/outbox';
+import { safeError } from '../../common/safe-error';
+import { DB, type Db, type Tx } from '../../db/client';
+import { auditLog, checkCall, checkPlan, event, protectedPerson } from '../../db/schema';
+import { EventService } from '../event/event.service';
+import { DEFAULT_TIMEZONE } from '../event/night';
+import type { Actor } from '../profile/contacts';
+import { ProfileService } from '../profile/profile.service';
+import { type Frequency, nextDue } from './schedule';
+
+/**
+ * Düzenli "yanınızdayız" aramaları ve bildirimleri.
+ *  - Plan (kişi başına): sıklık (günlük / haftalık / iki haftalık), gün, yerel saat, kanal (arama / bildirim / ikisi),
+ *    tamamlanma penceresi. Aile sahibi (OWNER) veya operasyon (amir/yönetici) ayarlar.
+ *  - Tarama (`WELLNESS_SWEEP_MS`, 60 sn): her plan için sıradaki dönem satırı; zamanı gelende kişiye P-WELLNESS
+ *    bildirimi ve/veya operatör kuyruğunda P4 geri arama (CALLBACK, kaynak `wellness:<id>`); pencere dolunca
+ *    KAÇIRILDI + amire O-WELLNESS-MISSED.
+ *  - Sonuç: geri arama olayı kapanınca (yan şerit) iyi → DONE_OK, acil → DONE_HELP, ulaşılamadı → MISSED (+ uyarı).
+ *  - Uyum: kişi ve merkez bazında planlanan / yapılan / kaçırılan (yönetim paneli).
+ * Log'a yalnız kimlik; not ve ad yazılmaz.
+ */
+export type CheckStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'DONE_OK' | 'DONE_HELP' | 'NOTIFIED' | 'MISSED' | 'SKIPPED';
+export type Channel = 'CALL' | 'NOTIFY' | 'BOTH';
+export interface PlanView {
+  protectedPersonId: string;
+  enabled: boolean;
+  frequency: Frequency;
+  weekday: number;
+  localTime: string;
+  channel: Channel;
+  windowMin: number;
+  nextDueAt: string | null;
+}
+export interface CheckView {
+  id: string;
+  protectedPersonId: string;
+  person: string | null;
+  dueAt: string;
+  windowUntil: string;
+  channel: Channel;
+  status: CheckStatus;
+  eventId: string | null;
+  operatorId: string | null;
+  completedAt: string | null;
+  outcome: string | null;
+}
+export interface Compliance {
+  days: number;
+  planned: number;
+  done: number;
+  help: number;
+  notified: number;
+  missed: number;
+  /** (yapılan + bildirildi + yardım) / (planlanan − bekleyen); bekleyen yoksa 1. */
+  ratio: number;
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const OPEN: CheckStatus[] = ['SCHEDULED', 'IN_PROGRESS'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type Rows<T> = { rows: T[] };
+
+@Injectable()
+export class WellnessService implements OnModuleInit, OnModuleDestroy {
+  private readonly log = new Logger('Wellness');
+  private timer?: NodeJS.Timeout;
+  private unsub?: () => void;
+
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(OutboxBus) private readonly outbox: OutboxBus,
+    @Inject(EventService) private readonly events: EventService,
+    @Optional() @Inject(ProfileService) private readonly profile?: ProfileService,
+  ) {}
+
+  onModuleInit() {
+    this.subscribe();
+    const every = Number(process.env.WELLNESS_SWEEP_MS ?? 60_000);
+    if (every > 0) {
+      this.timer = setInterval(() => void this.sweep().catch((e) => this.log.warn(`Tarama: ${safeError(e)}`)), every);
+      this.timer.unref();
+    }
+  }
+
+  onModuleDestroy() {
+    this.unsub?.();
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /** Geri arama olayı kapanınca sonuç (yan şerit: istatistik/takip, SOS'u bekletmez). Testler için ayrı bus. */
+  subscribe(bus: LocalBus = globalBus) {
+    this.unsub?.();
+    this.unsub = bus.subscribe<{ id: string; confirmedOutcome?: string; operatorId?: string; closedAt?: string }>(
+      TOPICS.eventClosed,
+      (e) => this.onEventClosed(e.payload).then(() => undefined),
+      { lane: 'side', name: 'wellness.result' },
+    );
+  }
+
+  // ---- plan ----
+
+  async plan(actor: Actor, personId: string, now = new Date()): Promise<PlanView | null> {
+    await this.authorize(actor, personId, false);
+    const [p] = await this.db.select().from(checkPlan).where(eq(checkPlan.protectedPersonId, personId));
+    return p ? this.planView(p, await this.timezoneOf(personId), now) : null;
+  }
+
+  async setPlan(actor: Actor, personId: string, body: unknown, now = new Date()): Promise<PlanView> {
+    await this.authorize(actor, personId, true);
+    const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    const set: Partial<typeof checkPlan.$inferInsert> = {};
+    if (b.enabled !== undefined) {
+      if (typeof b.enabled !== 'boolean') throw new BadRequestException('enabled true/false');
+      set.enabled = b.enabled;
+    }
+    if (b.frequency !== undefined) {
+      if (!['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(b.frequency as string)) throw new BadRequestException('frequency');
+      set.frequency = b.frequency as Frequency;
+    }
+    if (b.weekday !== undefined) {
+      if (!Number.isInteger(b.weekday) || (b.weekday as number) < 1 || (b.weekday as number) > 7)
+        throw new BadRequestException('weekday 1–7');
+      set.weekday = b.weekday as number;
+    }
+    if (b.localTime !== undefined) {
+      if (typeof b.localTime !== 'string' || !HHMM.test(b.localTime)) throw new BadRequestException('localTime SS:DD');
+      set.localTime = b.localTime;
+    }
+    if (b.channel !== undefined) {
+      if (!['CALL', 'NOTIFY', 'BOTH'].includes(b.channel as string)) throw new BadRequestException('channel');
+      set.channel = b.channel as Channel;
+    }
+    if (b.windowMin !== undefined) {
+      if (!Number.isInteger(b.windowMin) || (b.windowMin as number) < 15 || (b.windowMin as number) > 1440)
+        throw new BadRequestException('windowMin 15–1440');
+      set.windowMin = b.windowMin as number;
+    }
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(checkPlan)
+        .values({ protectedPersonId: personId, ...set, updatedAt: now, updatedBy: actor.id ?? actor.kind })
+        .onConflictDoUpdate({
+          target: checkPlan.protectedPersonId,
+          set: { ...set, updatedAt: now, updatedBy: actor.id ?? actor.kind },
+        });
+      // Plan değişti: bekleyen (henüz başlamamış) dönem yeniden hesaplanır.
+      await tx
+        .delete(checkCall)
+        .where(and(eq(checkCall.protectedPersonId, personId), eq(checkCall.status, 'SCHEDULED')));
+      await this.audit(tx, actor.kind, actor.id ?? null, 'wellness.plan_set', personId, { fields: Object.keys(set) });
+    });
+    await this.ensureNext(personId, now);
+    return (await this.plan(actor, personId, now))!;
+  }
+
+  // ---- tarama ----
+
+  /** Dönem satırlarını kurar, zamanı geleni başlatır, penceresi dolanı kaçırıldı yapar. Değişen sayısı. */
+  async sweep(now = new Date()): Promise<number> {
+    let n = 0;
+    const plans = await this.db
+      .select({ id: checkPlan.protectedPersonId })
+      .from(checkPlan)
+      .where(eq(checkPlan.enabled, true));
+    for (const p of plans) if (await this.ensureNext(p.id, now)) n++;
+
+    const due = await this.db
+      .select()
+      .from(checkCall)
+      .where(and(eq(checkCall.status, 'SCHEDULED'), lte(checkCall.dueAt, now)));
+    for (const c of due) if (await this.start(c, now)) n++;
+
+    const late = await this.db
+      .select()
+      .from(checkCall)
+      .where(and(inArray(checkCall.status, OPEN), lte(checkCall.windowUntil, now)));
+    for (const c of late) if (await this.miss(c.id, 'WINDOW', now)) n++;
+    if (n) this.outbox.notifyCommitted();
+    return n;
+  }
+
+  private async ensureNext(personId: string, now: Date): Promise<boolean> {
+    const [p] = await this.db.select().from(checkPlan).where(eq(checkPlan.protectedPersonId, personId));
+    if (!p?.enabled) return false;
+    const [pending] = await this.db
+      .select({ id: checkCall.id })
+      .from(checkCall)
+      .where(and(eq(checkCall.protectedPersonId, personId), eq(checkCall.status, 'SCHEDULED')));
+    if (pending) return false;
+    const [last] = await this.db
+      .select({ dueAt: checkCall.dueAt })
+      .from(checkCall)
+      .where(eq(checkCall.protectedPersonId, personId))
+      .orderBy(desc(checkCall.dueAt))
+      .limit(1);
+    const from = last && last.dueAt > now ? last.dueAt : now;
+    const tz = await this.timezoneOf(personId);
+    const dueAt = nextDue(
+      { frequency: p.frequency as Frequency, weekday: p.weekday, localTime: p.localTime, timezone: tz },
+      from,
+    );
+    const ins = await this.db
+      .insert(checkCall)
+      .values({
+        id: uuidv7(),
+        protectedPersonId: personId,
+        dueAt,
+        windowUntil: new Date(dueAt.getTime() + p.windowMin * 60_000),
+        channel: p.channel,
+      })
+      .onConflictDoNothing()
+      .returning({ id: checkCall.id });
+    return ins.length > 0;
+  }
+
+  private async start(c: typeof checkCall.$inferSelect, now: Date): Promise<boolean> {
+    const notify = c.channel !== 'CALL';
+    const call = c.channel !== 'NOTIFY';
+    const claimed = await this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(checkCall).where(eq(checkCall.id, c.id)).for('update');
+      if (row?.status !== 'SCHEDULED') return false;
+      await tx
+        .update(checkCall)
+        .set({ status: call ? 'IN_PROGRESS' : 'NOTIFIED', startedAt: now, ...(call ? {} : { completedAt: now }) })
+        .where(eq(checkCall.id, c.id));
+      if (notify) await this.notify(tx, c.protectedPersonId, 'P-WELLNESS', 'ELDER', `wellness:${c.id}`, now);
+      await this.audit(tx, 'SYSTEM', null, 'wellness.started', c.protectedPersonId, {
+        check: c.id,
+        channel: c.channel,
+      });
+      return true;
+    });
+    if (!claimed || !call) return claimed;
+    const source = `wellness:${c.id}`;
+    await this.events.raiseCallback(c.protectedPersonId, source, 'düzenli arama (yanınızdayız)');
+    const [ev] = await this.db
+      .select({ id: event.id })
+      .from(event)
+      .where(sql`${event.sourceSignalIds} @> ARRAY[${source}]::text[]`);
+    if (ev) await this.db.update(checkCall).set({ eventId: ev.id }).where(eq(checkCall.id, c.id));
+    return true;
+  }
+
+  private async miss(id: string, reason: string, now: Date, operatorId?: string | null): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(checkCall).where(eq(checkCall.id, id)).for('update');
+      if (!row || !OPEN.includes(row.status as CheckStatus)) return false;
+      await tx
+        .update(checkCall)
+        .set({ status: 'MISSED', completedAt: now, outcome: reason, ...(operatorId ? { operatorId } : {}) })
+        .where(eq(checkCall.id, id));
+      const alert: SupervisorAlert = {
+        code: 'O-WELLNESS-MISSED',
+        eventId: row.eventId ?? row.id,
+        eventType: 'CALLBACK',
+        at: now.toISOString(),
+      };
+      await this.outbox.publish(
+        TOPICS.supervisorAlert,
+        this.envelope(TOPICS.supervisorAlert, row.protectedPersonId, alert, now),
+        tx,
+      );
+      await this.audit(tx, 'SYSTEM', null, 'wellness.missed', row.protectedPersonId, { check: id, reason });
+      return true;
+    });
+  }
+
+  /** Geri arama olayı kapandı → dönem sonucu. */
+  async onEventClosed(ev: { id: string; confirmedOutcome?: string; operatorId?: string; closedAt?: string }) {
+    if (!UUID.test(ev.id)) return;
+    const [row] = await this.db.select().from(checkCall).where(eq(checkCall.eventId, ev.id));
+    if (!row || !OPEN.includes(row.status as CheckStatus)) return;
+    const at = ev.closedAt ? new Date(ev.closedAt) : new Date();
+    if (ev.confirmedOutcome === 'UNREACHABLE') {
+      await this.miss(row.id, 'UNREACHABLE', at, ev.operatorId);
+      this.outbox.notifyCommitted();
+      return;
+    }
+    const status: CheckStatus = ev.confirmedOutcome === 'EMERGENCY' ? 'DONE_HELP' : 'DONE_OK';
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(checkCall)
+        .set({ status, completedAt: at, operatorId: ev.operatorId ?? null, outcome: ev.confirmedOutcome ?? null })
+        .where(and(eq(checkCall.id, row.id), inArray(checkCall.status, OPEN)));
+      await this.audit(tx, 'SYSTEM', null, 'wellness.done', row.protectedPersonId, { check: row.id, status });
+    });
+  }
+
+  // ---- görünümler ----
+
+  async checks(
+    opts: { personId?: string; status?: CheckStatus[]; from?: Date; to?: Date; limit?: number } = {},
+  ): Promise<CheckView[]> {
+    const conds = [
+      opts.personId ? eq(checkCall.protectedPersonId, opts.personId) : undefined,
+      opts.status?.length ? inArray(checkCall.status, opts.status) : undefined,
+      opts.from ? sql`${checkCall.dueAt} >= ${opts.from}` : undefined,
+      opts.to ? sql`${checkCall.dueAt} < ${opts.to}` : undefined,
+    ].filter(Boolean);
+    const rows = await this.db
+      .select({ c: checkCall, person: protectedPerson.displayName })
+      .from(checkCall)
+      .leftJoin(protectedPerson, eq(protectedPerson.id, checkCall.protectedPersonId))
+      .where(conds.length ? and(...(conds as never[])) : undefined)
+      .orderBy(desc(checkCall.dueAt))
+      .limit(Math.min(opts.limit ?? 200, 1000));
+    return rows.map(({ c, person }) => ({
+      id: c.id,
+      protectedPersonId: c.protectedPersonId,
+      person,
+      dueAt: c.dueAt.toISOString(),
+      windowUntil: c.windowUntil.toISOString(),
+      channel: c.channel as Channel,
+      status: c.status as CheckStatus,
+      eventId: c.eventId,
+      operatorId: c.operatorId,
+      completedAt: c.completedAt?.toISOString() ?? null,
+      outcome: c.outcome,
+    }));
+  }
+
+  /** Son `days` günde planlanan dönemlerin uyumu (kişi veya tüm merkez). */
+  async compliance(personId?: string, days = 30, now = new Date()): Promise<Compliance> {
+    const since = new Date(now.getTime() - days * 86_400_000);
+    const r = (await this.db.execute(sql`
+      SELECT count(*)::int AS planned,
+             count(*) FILTER (WHERE status = 'DONE_OK')::int AS done,
+             count(*) FILTER (WHERE status = 'DONE_HELP')::int AS help,
+             count(*) FILTER (WHERE status = 'NOTIFIED')::int AS notified,
+             count(*) FILTER (WHERE status = 'MISSED')::int AS missed,
+             count(*) FILTER (WHERE status IN ('SCHEDULED', 'IN_PROGRESS'))::int AS pending
+      FROM event.check_call
+      WHERE due_at >= ${since} AND due_at <= ${now}
+        ${personId ? sql`AND protected_person_id = ${personId}::uuid` : sql``}`)) as unknown as Rows<{
+      planned: number;
+      done: number;
+      help: number;
+      notified: number;
+      missed: number;
+      pending: number;
+    }>;
+    const x = r.rows[0] ?? { planned: 0, done: 0, help: 0, notified: 0, missed: 0, pending: 0 };
+    const closed = x.planned - x.pending;
+    return {
+      days,
+      planned: x.planned,
+      done: x.done,
+      help: x.help,
+      notified: x.notified,
+      missed: x.missed,
+      ratio: closed > 0 ? (x.done + x.help + x.notified) / closed : 1,
+    };
+  }
+
+  // ---- iç ----
+
+  private planView(p: typeof checkPlan.$inferSelect, tz: string, now: Date): PlanView {
+    return {
+      protectedPersonId: p.protectedPersonId,
+      enabled: p.enabled,
+      frequency: p.frequency as Frequency,
+      weekday: p.weekday,
+      localTime: p.localTime,
+      channel: p.channel as Channel,
+      windowMin: p.windowMin,
+      nextDueAt: p.enabled
+        ? nextDue(
+            { frequency: p.frequency as Frequency, weekday: p.weekday, localTime: p.localTime, timezone: tz },
+            now,
+          ).toISOString()
+        : null,
+    };
+  }
+
+  private async timezoneOf(personId: string): Promise<string> {
+    const [r] = await this.db
+      .select({ tz: protectedPerson.timezone })
+      .from(protectedPerson)
+      .where(eq(protectedPerson.id, personId));
+    return r?.tz || DEFAULT_TIMEZONE;
+  }
+
+  /** Aile: okuma üye, yazma yalnız sahip; operasyon rolleri (ADMIN olarak gelir) her kişi. */
+  private async authorize(actor: Actor, personId: string, write: boolean) {
+    if (!UUID.test(personId)) throw new BadRequestException('Kişi kimliği');
+    if (actor.kind === 'ADMIN' || !this.profile) return;
+    if (write) await this.profile.authorizeOwner(actor, personId);
+    else await this.profile.authorize(actor, personId);
+  }
+
+  private async notify(
+    tx: Tx,
+    personId: string,
+    code: string,
+    audience: 'ELDER' | 'FAMILY',
+    dedupe: string,
+    now: Date,
+  ) {
+    const payload: NotifyRequest = { code, audience, protectedPersonId: personId, dedupeKey: `${dedupe}:${code}` };
+    await this.outbox.publish(
+      TOPICS.notifyRequested,
+      this.envelope(TOPICS.notifyRequested, personId, payload, now),
+      tx,
+    );
+  }
+
+  private envelope<T>(topic: string, subject: string, payload: T, now: Date): KafkaEnvelope<T> {
+    return {
+      eventId: uuidv7(),
+      type: topic,
+      version: 1,
+      occurredAt: now.toISOString(),
+      countryCode: 'TR',
+      subjectUserId: subject,
+      payload,
+    };
+  }
+
+  private async audit(tx: Tx, actorKind: string, actorId: string | null, action: string, id: string, data: unknown) {
+    await tx
+      .insert(auditLog)
+      .values({ actorKind, actorId, action, entityType: 'protected_person', entityId: id, data });
+  }
+}

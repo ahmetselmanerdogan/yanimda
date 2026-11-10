@@ -264,6 +264,19 @@ export class TrainingSim {
       throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
     },
     dispatches: async () => [],
+    // Yönetim paneli eğitim modunda yok.
+    adminCalls: async () => [],
+    adminAnalytics: async () => {
+      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+    },
+    adminHealth: async () => {
+      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+    },
+    adminAudit: async () => [],
+    wellnessChecks: async () => [],
+    recordingUrl: async () => {
+      throw new ApiError(404, 'Eğitim modunda kayıt yok');
+    },
     close: async (id, outcome: CloseOutcome) => {
       const d = this.mine(id);
       const emergency = outcome === 'EMERGENCY';

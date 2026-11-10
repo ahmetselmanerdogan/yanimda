@@ -53,6 +53,120 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+  /protected-persons/{id}/check-plan:
+    get:
+      summary: Düzenli "yanınızdayız" arama planı (aile üyesi okur; amir/yönetici)
+      operationId: getCheckPlan
+      security: [{ familyToken: [] }, { operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200': { description: Plan (yoksa null) }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Planı kur/değiştir (aile yalnız OWNER; MEMBER 403). Bekleyen dönem yeniden hesaplanır
+      description: |
+        Sıklık DAILY / WEEKLY / BIWEEKLY (ISO hafta çift), gün 1–7, kişinin saat diliminde yerel saat, kanal
+        CALL / NOTIFY / BOTH, tamamlanma penceresi 15–1440 dk. Zamanı gelince kişiye P-WELLNESS bildirimi ve/veya
+        operatör kuyruğunda P4 geri arama (kaynak `wellness:<id>`); olay kapanınca DONE_OK / DONE_HELP, ulaşılamadı veya
+        pencere doldu → MISSED + amire O-WELLNESS-MISSED.
+      operationId: setCheckPlan
+      security: [{ familyToken: [] }, { operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                frequency: { enum: [DAILY, WEEKLY, BIWEEKLY] }
+                weekday: { type: integer, minimum: 1, maximum: 7 }
+                localTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+                channel: { enum: [CALL, NOTIFY, BOTH] }
+                windowMin: { type: integer, minimum: 15, maximum: 1440 }
+      responses:
+        '200': { description: Plan ve sıradaki zaman (nextDueAt) }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /wellness/checks:
+    get:
+      summary: Düzenli arama dönemleri (son N gün + önümüzdeki 14 gün); durum süzgeci
+      operationId: listWellnessChecks
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: personId, in: query, schema: { type: string, format: uuid } }
+        - {
+            name: status,
+            in: query,
+            schema: { type: string },
+            description: 'Virgülle: SCHEDULED,IN_PROGRESS,DONE_OK,DONE_HELP,NOTIFIED,MISSED,SKIPPED',
+          }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365 } }
+      responses:
+        '200': { description: Dönemler }
+  /wellness/compliance:
+    get:
+      summary: Uyum (planlanan / yapılan / yardım / bildirildi / kaçırılan, oran) — kişi veya merkez
+      operationId: wellnessCompliance
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: personId, in: query, schema: { type: string, format: uuid } }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365 } }
+      responses:
+        '200': { description: Uyum }
+  /admin/calls:
+    get:
+      summary: Çağrı kaydı — kim kimi aradı (rehber rolü ve sırası; numara yok), cevap, süre, sonuç, kayıt var mı
+      operationId: adminCalls
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: operatorId, in: query, schema: { type: string } }
+        - { name: eventId, in: query, schema: { type: string, format: uuid } }
+        - { name: answered, in: query, schema: { type: string, enum: ['true', 'false'] } }
+      responses:
+        '200': { description: Giden (zincir) ve gelen (SOS) çağrılar, en yeni önce }
+        '403': { $ref: '#/components/responses/Problem' }
+  /admin/calls/{callId}/recording:
+    get:
+      summary: Ses kaydı (amir/yönetici). Her dinleme audit.log `recording.played` (kim, gerekçe)
+      operationId: adminRecording
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CallId' }
+        - { name: reason, in: query, schema: { type: string, maxLength: 200 } }
+      responses:
+        '200': { description: Ses, content: { audio/mpeg: { schema: { type: string, format: binary } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /admin/analytics:
+    get:
+      summary: Analiz — olaylar, SLA, arama cevap oranı (rehber rolüne göre), gelen aramalar, 112 varış, düzenli aramalar, operatör performansı, günlük seri
+      operationId: adminAnalytics
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365 } }]
+      responses:
+        '200': { description: Analiz }
+  /admin/audit:
+    get:
+      summary: Denetim kaydı (append-only), işlem öneki / kişi / kayıt süzgeci
+      operationId: adminAudit
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: actorId, in: query, schema: { type: string } }
+        - { name: entityId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Kayıtlar }
+  /admin/health:
+    get:
+      summary: Sistem sağlığı — outbox şeritleri ve DLQ, kuyruk, açık / geciken 112, kaçırılan düzenli arama, bağlı personel
+      operationId: adminHealth
+      security: [{ operatorToken: [] }]
+      responses:
+        '200': { description: Sağlık }
   /queue:
     get:
       summary: Operatör kuyruğu (öncelik → yaş, sayfalı). E-02, T-022

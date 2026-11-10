@@ -225,6 +225,100 @@ export interface DispatchUpdate {
   source?: Exclude<DispatchSource, 'SYSTEM'>;
 }
 
+/** Yönetim paneli. */
+export interface AdminCall {
+  id: string;
+  direction: 'OUT' | 'IN';
+  at: string;
+  eventId: string | null;
+  eventType: string | null;
+  person: string | null;
+  operatorId: string | null;
+  party: string;
+  stepN: number | null;
+  status: string;
+  answered: boolean;
+  durationSec: number | null;
+  result: string | null;
+  recording: boolean;
+}
+export interface AdminAnalytics {
+  days: number;
+  events: { total: number; real: number; byType: Record<string, number>; byOutcome: Record<string, number> };
+  sla: {
+    claimP50Sec: number | null;
+    claimP95Sec: number | null;
+    firstCallP50Sec: number | null;
+    firstCallP95Sec: number | null;
+  };
+  calls: {
+    total: number;
+    answered: number;
+    answerRate: number;
+    avgTalkSec: number | null;
+    byParty: Record<string, { total: number; answered: number }>;
+  };
+  inbound: { total: number; answered: number; abandoned: number; avgWaitSec: number | null };
+  dispatch: {
+    total: number;
+    arrived: number;
+    arrivalP50Min: number | null;
+    arrivalP90Min: number | null;
+    late: number;
+    cancelled: number;
+  };
+  wellness: { planned: number; done: number; help: number; notified: number; missed: number };
+  falseAlarmRatio: number;
+  operators: {
+    operatorId: string;
+    claims: number;
+    closed: number;
+    calls: number;
+    answered: number;
+    avgClaimSec: number | null;
+    avgHandleMin: number | null;
+  }[];
+  daily: { day: string; events: number; emergencies: number; calls: number }[];
+}
+export interface AdminHealth {
+  at: string;
+  outbox: {
+    core: number;
+    coreOldestSec: number | null;
+    side: number;
+    sideOldestSec: number | null;
+    dlq: number;
+    sideDead: number;
+  };
+  queue: { waiting: number; oldestSec: number | null };
+  dispatch: { open: number; late: number };
+  wellness: { missed24h: number };
+  staffOnline: number;
+}
+export interface AuditRow {
+  id: string;
+  at: string;
+  actorKind: string;
+  actorId: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  data: unknown;
+}
+export interface WellnessCheck {
+  id: string;
+  protectedPersonId: string;
+  person: string | null;
+  dueAt: string;
+  windowUntil: string;
+  channel: 'CALL' | 'NOTIFY' | 'BOTH';
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'DONE_OK' | 'DONE_HELP' | 'NOTIFIED' | 'MISSED' | 'SKIPPED';
+  eventId: string | null;
+  operatorId: string | null;
+  completedAt: string | null;
+  outcome: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -294,6 +388,25 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     dispatch: (id: string) => req<DispatchView>('GET', `${ev(id)}/dispatch`),
     updateDispatch: (id: string, b: DispatchUpdate) => req<DispatchView>('POST', `${ev(id)}/dispatch`, b),
     dispatches: (open = true) => req<DispatchView[]>('GET', `/events/dispatches${open ? '?open=1' : ''}`),
+    adminCalls: (days: number, answered?: boolean) =>
+      req<AdminCall[]>('GET', `/admin/calls?days=${days}${answered === undefined ? '' : `&answered=${answered}`}`),
+    adminAnalytics: (days: number) => req<AdminAnalytics>('GET', `/admin/analytics?days=${days}`),
+    adminHealth: () => req<AdminHealth>('GET', '/admin/health'),
+    adminAudit: (days: number, action?: string) =>
+      req<AuditRow[]>('GET', `/admin/audit?days=${days}${action ? `&action=${encodeURIComponent(action)}` : ''}`),
+    wellnessChecks: (days: number) => req<WellnessCheck[]>('GET', `/wellness/checks?days=${days}`),
+    /** Ses kaydı (denetimli): Blob URL; çağıran URL.revokeObjectURL ile bırakır. */
+    recordingUrl: async (callId: string, reason: string) => {
+      const t = await token();
+      const r = await fetch(
+        `${base}/admin/calls/${encodeURIComponent(callId)}/recording?reason=${encodeURIComponent(reason)}`,
+        {
+          headers: t ? { authorization: `Bearer ${t}` } : {},
+        },
+      );
+      if (!r.ok) throw new ApiError(r.status, String(r.status));
+      return URL.createObjectURL(await r.blob());
+    },
   };
 }
 export type Api = ReturnType<typeof createApi>;

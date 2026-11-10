@@ -42,6 +42,10 @@
     "channel": "phone",
     "text": "Saatinizi takmayı unutmayın."
   },
+  "P-WELLNESS": {
+    "channel": "phone",
+    "text": "Merhaba, bugün nasılsınız? Yanımda her zaman yanınızda. Bir ihtiyacınız olursa SOS'a basın; birazdan sizi arayabiliriz."
+  },
   "P-PERM": {
     "channel": "phone",
     "text": "Bir izin eksik. Sorun yok, yardım edeceğiz."
@@ -425,6 +429,10 @@
     "channel": "console",
     "text": "112 süreci açık ({type}). Son durumu girin ya da tamamlayın."
   },
+  "O-WELLNESS-MISSED": {
+    "channel": "console",
+    "text": "Düzenli \"yanınızdayız\" araması yapılamadı ({type}). Kişiyi arayın ya da nedenini girin."
+  },
   "O-UI-TITLE": {
     "channel": "console",
     "text": "Yanımda Operatör Konsolu"
@@ -629,6 +637,314 @@
   "O-UI-DISPATCH-NONE": {
     "channel": "console",
     "text": "Süren 112 süreci yok."
+  },
+  "O-UI-ADM-TITLE": {
+    "channel": "console",
+    "text": "Yönetim"
+  },
+  "O-UI-ADM-PERIOD": {
+    "channel": "console",
+    "text": "Dönem"
+  },
+  "O-UI-ADM-DAYS": {
+    "channel": "console",
+    "text": "Son {n} gün"
+  },
+  "O-UI-ADM-TAB-OVERVIEW": {
+    "channel": "console",
+    "text": "Genel bakış"
+  },
+  "O-UI-ADM-TAB-CALLS": {
+    "channel": "console",
+    "text": "Çağrılar"
+  },
+  "O-UI-ADM-TAB-DISPATCH": {
+    "channel": "console",
+    "text": "112 süreçleri"
+  },
+  "O-UI-ADM-TAB-WELLNESS": {
+    "channel": "console",
+    "text": "Yanınızdayız aramaları"
+  },
+  "O-UI-ADM-TAB-AUDIT": {
+    "channel": "console",
+    "text": "Denetim kaydı"
+  },
+  "O-UI-ADM-EVENTS": {
+    "channel": "console",
+    "text": "Gerçek olay"
+  },
+  "O-UI-ADM-EMERGENCIES": {
+    "channel": "console",
+    "text": "{n} acil"
+  },
+  "O-UI-ADM-CLAIM-SLA": {
+    "channel": "console",
+    "text": "Üstlenme p50 / p95"
+  },
+  "O-UI-ADM-FIRST-CALL": {
+    "channel": "console",
+    "text": "İlk arama p50 / p95"
+  },
+  "O-UI-ADM-ANSWER-RATE": {
+    "channel": "console",
+    "text": "Aramalarda cevap oranı"
+  },
+  "O-UI-ADM-CALLS": {
+    "channel": "console",
+    "text": "{n} arama"
+  },
+  "O-UI-ADM-112-ARRIVAL": {
+    "channel": "console",
+    "text": "112 varış p50 / p90"
+  },
+  "O-UI-ADM-112-COUNT": {
+    "channel": "console",
+    "text": "{n} süreç · {late} gecikti"
+  },
+  "O-UI-ADM-WELLNESS": {
+    "channel": "console",
+    "text": "Yanınızdayız uyumu"
+  },
+  "O-UI-ADM-WELLNESS-MISSED": {
+    "channel": "console",
+    "text": "{n} kaçırıldı"
+  },
+  "O-UI-ADM-INBOUND": {
+    "channel": "console",
+    "text": "Gelen SOS araması"
+  },
+  "O-UI-ADM-INBOUND-NOTE": {
+    "channel": "console",
+    "text": "{answered} cevaplandı · {abandoned} vazgeçti"
+  },
+  "O-UI-ADM-FALSE-ALARM": {
+    "channel": "console",
+    "text": "Yanlış alarm"
+  },
+  "O-UI-ADM-HEALTH": {
+    "channel": "console",
+    "text": "Sistem sağlığı"
+  },
+  "O-UI-ADM-HEALTH-QUEUE": {
+    "channel": "console",
+    "text": "Kuyruk · en eski"
+  },
+  "O-UI-ADM-HEALTH-STAFF": {
+    "channel": "console",
+    "text": "Bağlı personel"
+  },
+  "O-UI-ADM-HEALTH-OUTBOX": {
+    "channel": "console",
+    "text": "Outbox bekleyen (kritik / yan) · DLQ"
+  },
+  "O-UI-ADM-HEALTH-112": {
+    "channel": "console",
+    "text": "Açık 112 süreci"
+  },
+  "O-UI-ADM-WELLNESS-MISSED-24H": {
+    "channel": "console",
+    "text": "Son 24 saatte kaçırılan arama"
+  },
+  "O-UI-ADM-DAILY": {
+    "channel": "console",
+    "text": "Günlük olay · acil"
+  },
+  "O-UI-ADM-OPERATORS": {
+    "channel": "console",
+    "text": "Operatör performansı"
+  },
+  "O-UI-ADM-COL-OPERATOR": {
+    "channel": "console",
+    "text": "Operatör"
+  },
+  "O-UI-ADM-COL-CLAIMS": {
+    "channel": "console",
+    "text": "Üstlenme"
+  },
+  "O-UI-ADM-COL-CLOSED": {
+    "channel": "console",
+    "text": "Kapanış"
+  },
+  "O-UI-ADM-COL-CALLS": {
+    "channel": "console",
+    "text": "Arama (cevap)"
+  },
+  "O-UI-ADM-COL-CLAIM-AVG": {
+    "channel": "console",
+    "text": "Ort. üstlenme"
+  },
+  "O-UI-ADM-COL-HANDLE": {
+    "channel": "console",
+    "text": "Ort. işlem"
+  },
+  "O-UI-ADM-COL-TIME": {
+    "channel": "console",
+    "text": "Zaman"
+  },
+  "O-UI-ADM-COL-DIRECTION": {
+    "channel": "console",
+    "text": "Yön"
+  },
+  "O-UI-ADM-COL-PERSON": {
+    "channel": "console",
+    "text": "Kişi"
+  },
+  "O-UI-ADM-COL-PARTY": {
+    "channel": "console",
+    "text": "Aranan / arayan"
+  },
+  "O-UI-ADM-COL-ANSWER": {
+    "channel": "console",
+    "text": "Cevap"
+  },
+  "O-UI-ADM-COL-DURATION": {
+    "channel": "console",
+    "text": "Süre"
+  },
+  "O-UI-ADM-COL-CHANNEL": {
+    "channel": "console",
+    "text": "Kanal"
+  },
+  "O-UI-ADM-COL-STATUS": {
+    "channel": "console",
+    "text": "Durum"
+  },
+  "O-UI-ADM-COL-ACTOR": {
+    "channel": "console",
+    "text": "Kim"
+  },
+  "O-UI-ADM-COL-ACTION": {
+    "channel": "console",
+    "text": "İşlem"
+  },
+  "O-UI-ADM-COL-ENTITY": {
+    "channel": "console",
+    "text": "Kayıt"
+  },
+  "O-UI-ADM-RECORDING": {
+    "channel": "console",
+    "text": "Ses kaydı"
+  },
+  "O-UI-ADM-PLAY": {
+    "channel": "console",
+    "text": "Dinle"
+  },
+  "O-UI-ADM-PLAY-REASON": {
+    "channel": "console",
+    "text": "Kaydı dinleme gerekçesi (denetim kaydına yazılır):"
+  },
+  "O-UI-ADM-FILTER": {
+    "channel": "console",
+    "text": "Süzgeç"
+  },
+  "O-UI-ADM-CALLS-ALL": {
+    "channel": "console",
+    "text": "Tümü"
+  },
+  "O-UI-ADM-CALLS-ANSWERED": {
+    "channel": "console",
+    "text": "Cevaplanan"
+  },
+  "O-UI-ADM-CALLS-MISSED": {
+    "channel": "console",
+    "text": "Cevapsız"
+  },
+  "O-UI-ADM-DIR-OUT": {
+    "channel": "console",
+    "text": "Giden"
+  },
+  "O-UI-ADM-DIR-IN": {
+    "channel": "console",
+    "text": "Gelen"
+  },
+  "O-UI-ADM-ANSWERED": {
+    "channel": "console",
+    "text": "Cevaplandı"
+  },
+  "O-UI-ADM-NOT-ANSWERED": {
+    "channel": "console",
+    "text": "Cevapsız"
+  },
+  "O-UI-ADM-EMPTY": {
+    "channel": "console",
+    "text": "Kayıt yok."
+  },
+  "O-UI-ADM-PARTY-CALL_WATCH": {
+    "channel": "console",
+    "text": "Saat"
+  },
+  "O-UI-ADM-PARTY-CALL_PHONE": {
+    "channel": "console",
+    "text": "Telefon"
+  },
+  "O-UI-ADM-PARTY-CALL_CONTACT": {
+    "channel": "console",
+    "text": "Yakın"
+  },
+  "O-UI-ADM-PARTY-CALL_NEIGHBOR": {
+    "channel": "console",
+    "text": "Komşu"
+  },
+  "O-UI-ADM-PARTY-CALL_112": {
+    "channel": "console",
+    "text": "112"
+  },
+  "O-UI-ADM-PARTY-INBOUND": {
+    "channel": "console",
+    "text": "Gelen SOS araması"
+  },
+  "O-UI-ADM-PARTY-STEP": {
+    "channel": "console",
+    "text": "Adım"
+  },
+  "O-UI-ADM-PARTY-NOTIFY_FAMILY": {
+    "channel": "console",
+    "text": "Aile bildirimi"
+  },
+  "O-UI-ADM-CHANNEL-CALL": {
+    "channel": "console",
+    "text": "Arama"
+  },
+  "O-UI-ADM-CHANNEL-NOTIFY": {
+    "channel": "console",
+    "text": "Bildirim"
+  },
+  "O-UI-ADM-CHANNEL-BOTH": {
+    "channel": "console",
+    "text": "Bildirim + arama"
+  },
+  "O-UI-ADM-CHECK-SCHEDULED": {
+    "channel": "console",
+    "text": "Planlandı"
+  },
+  "O-UI-ADM-CHECK-IN_PROGRESS": {
+    "channel": "console",
+    "text": "Kuyrukta"
+  },
+  "O-UI-ADM-CHECK-DONE_OK": {
+    "channel": "console",
+    "text": "Görüşüldü, iyi"
+  },
+  "O-UI-ADM-CHECK-DONE_HELP": {
+    "channel": "console",
+    "text": "Yardım gerekti"
+  },
+  "O-UI-ADM-CHECK-NOTIFIED": {
+    "channel": "console",
+    "text": "Bildirim gönderildi"
+  },
+  "O-UI-ADM-CHECK-MISSED": {
+    "channel": "console",
+    "text": "Kaçırıldı"
+  },
+  "O-UI-ADM-CHECK-SKIPPED": {
+    "channel": "console",
+    "text": "Atlandı"
+  },
+  "O-UI-ADM-AUDIT-ACTION": {
+    "channel": "console",
+    "text": "İşlem önekiyle süz"
   },
   "O-DISPATCH-STAGE-NOTIFIED": {
     "channel": "console",

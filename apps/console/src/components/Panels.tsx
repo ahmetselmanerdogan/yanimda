@@ -30,6 +30,7 @@ export function TopBar(p: {
   inbound?: { queued: number; oldestQueuedSec: number | null };
   onLogout(): void;
   onSupervisor?(): void;
+  onAdmin?(): void;
   myStatus?: OperatorStatus | null;
   onMyStatus?(s: SelfStatus): void;
 }) {
@@ -67,6 +68,11 @@ export function TopBar(p: {
           ))}
           {p.myStatus === 'OFFLINE' && <span className="warn small">{t('O-UI-SUP-STATUS-OFFLINE')}</span>}
         </span>
+      )}
+      {p.onAdmin && (
+        <button type="button" onClick={p.onAdmin}>
+          {t('O-UI-ADM-TITLE')}
+        </button>
       )}
       {p.onSupervisor && (
         <button type="button" onClick={p.onSupervisor}>

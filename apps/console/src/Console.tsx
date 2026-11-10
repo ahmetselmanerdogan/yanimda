@@ -46,6 +46,7 @@ export function Console({
   training = false,
   onLogout,
   onSupervisor,
+  onAdmin,
 }: {
   operator: Operator;
   backend: Backend;
@@ -53,6 +54,8 @@ export function Console({
   onLogout(): void;
   /** T-074: amir ise panoya geçiş. */
   onSupervisor?(): void;
+  /** Amir / yönetici: yönetim paneline geçiş. */
+  onAdmin?(): void;
 }) {
   const me = operator.sub;
   const operatorName = operator.name;
@@ -397,6 +400,7 @@ export function Console({
         myStatus={myStatus}
         onMyStatus={changeMyStatus}
         {...(onSupervisor ? { onSupervisor } : {})}
+        {...(onAdmin ? { onAdmin } : {})}
       />
       <QueueList
         items={queue.items}
