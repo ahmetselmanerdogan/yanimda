@@ -30,11 +30,14 @@ export function SupervisorBoard({
   operatorName,
   onBack,
   onLogout,
+  onAdmin,
 }: {
   backend: Backend;
   operatorName: string;
   onBack(): void;
   onLogout(): void;
+  /** Yönetim paneline geçiş. */
+  onAdmin?(): void;
 }) {
   const api = backend.api;
   const [d, setD] = useState<SupervisorDashboard | null>(null);
@@ -97,6 +100,11 @@ export function SupervisorBoard({
         </span>
         {d && <span className="muted small">{t('O-UI-SUP-UPDATED', { time: hhmm(d.at) })}</span>}
         <span className="spacer" />
+        {onAdmin && (
+          <button type="button" onClick={onAdmin}>
+            {t('O-UI-ADM-TITLE')}
+          </button>
+        )}
         <button type="button" onClick={onBack}>
           {t('O-UI-SUP-BACK')}
         </button>

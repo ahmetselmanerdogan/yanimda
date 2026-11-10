@@ -957,3 +957,137 @@ table.breaches tr.live td:first-child {
   flex: 1 1 45%;
   min-height: 48px;
 }
+
+/* Yönetim paneli (/yonetim) */
+.admin {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.admin .topbar {
+  min-height: 48px;
+  flex-wrap: wrap;
+}
+.admin .period select {
+  background: var(--surface-2);
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-left: 6px;
+}
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+.admin-tabs button {
+  border-radius: 6px 6px 0 0;
+  white-space: nowrap;
+}
+.admin-tabs button.on {
+  background: var(--surface);
+  box-shadow: inset 0 -3px 0 var(--brand);
+  font-weight: 700;
+}
+.admin-main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.admin-main > .sup-tiles,
+.admin-main > .sup-panel.wide {
+  grid-column: 1 / -1;
+}
+.tile.warn strong {
+  color: var(--help);
+}
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.kv dd {
+  margin: 0;
+}
+.kv .late,
+td.late,
+tr.late td {
+  color: var(--help);
+}
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.bars li {
+  display: grid;
+  grid-template-columns: 44px 1fr 60px;
+  gap: 8px;
+  align-items: center;
+}
+.bars .bar {
+  height: 10px;
+  background: var(--brand);
+  border-radius: 3px;
+  min-width: 2px;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-table, 12px);
+}
+table.data th,
+table.data td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.dispatch-closed {
+  margin: 4px 0;
+  color: var(--muted);
+}
+/* Telefon: tablolar karta döner (her hücre etiketiyle) */
+@media (max-width: 767px) {
+  .admin-main {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+  table.data thead {
+    display: none;
+  }
+  table.data,
+  table.data tbody,
+  table.data tr,
+  table.data td {
+    display: block;
+    width: 100%;
+  }
+  table.data tr {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    background: var(--surface);
+  }
+  table.data td {
+    border: 0;
+    padding: 2px 0;
+    display: grid;
+    grid-template-columns: 40% 1fr;
+    gap: 8px;
+  }
+  table.data td::before {
+    content: attr(data-label);
+    color: var(--muted);
+  }
+}

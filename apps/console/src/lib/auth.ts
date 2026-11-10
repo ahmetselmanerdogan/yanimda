@@ -18,7 +18,9 @@ export const userManager = new UserManager({
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
 });
 
-export const OPERATOR_ROLES = ['OPERATOR', 'SUPERVISOR'];
+export const OPERATOR_ROLES = ['OPERATOR', 'SUPERVISOR', 'ADMIN'];
+/** Yönetim paneli (/yonetim): amir ve yönetici. */
+export const MANAGEMENT_ROLES = ['SUPERVISOR', 'ADMIN'];
 
 /** Erişim token'ındaki realm rolleri (yalnız arayüz kararı; yetki API'de denetlenir). */
 export function rolesOf(user: User): string[] {

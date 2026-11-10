@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { CoreModule } from './core.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ChainModule } from './modules/chain/chain.module';
 import { DeviceModule } from './modules/device/device.module';
@@ -19,6 +20,7 @@ import { RulesModule } from './modules/rules/rules.module';
 import { ScreeningModule } from './modules/screening/screening.module';
 import { SignalModule } from './modules/signal/signal.module';
 import { InboundModule } from './modules/telephony/inbound.module';
+import { WellnessModule } from './modules/wellness/wellness.module';
 
 // 03-teknik-mimari.md "Servis haritası": modüler monolit. Diğer modüller (identity, profile, health, device,
 // chain, notify, telephony, report) ilgili görevlerde (docs/TASKS.md) eklenir.
@@ -32,6 +34,8 @@ import { InboundModule } from './modules/telephony/inbound.module';
     EnrollmentModule,
     SignalModule,
     ProfileModule,
+    WellnessModule,
+    AdminModule,
     ChainModule,
     QueueModule,
     MetricsModule,
