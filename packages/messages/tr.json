@@ -1173,7 +1173,7 @@
   },
   "F-WEB-TRIAL": {
     "channel": "family",
-    "text": "İlk {days} gün ücretsiz deneme. Deneme ilk olayda ya da {days}. günde biter."
+    "text": "İlk {days} gün ücretsiz deneme. Deneme ilk gerçek acil durumda (yardım çağrısı, düşme, hareketsizlik) ya da {days}. günde biter."
   },
   "F-WEB-PRICE-PLACEHOLDER": {
     "channel": "family",
