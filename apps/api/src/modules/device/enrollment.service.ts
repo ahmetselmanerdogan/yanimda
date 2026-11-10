@@ -20,7 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
-import { device, invite } from '../../db/schema';
+import { contact, device, invite } from '../../db/schema';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
 import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -73,6 +73,24 @@ export interface DeviceConfig {
   inactivityThresholdMin: number | null;
   /** Cihazın göstereceği / seslendireceği metinler (katalog; saat W-*, telefon P-*). */
   messages: Record<string, { text: string; action?: string }>;
+  /**
+   * Operatörün arayan numaraları (T-054: telefon bu numaradan gelen aramayı hoparlöre alır, rehbere "Yanımda"
+   * olarak ekler) ve ana ekranda gösterilen ad (P-HOME-OK `{operator}`). Ortam: OPERATOR_CALLER_IDS
+   * (virgüllü E.164; yoksa TWILIO_FROM_NUMBER), OPERATOR_DISPLAY_NAME.
+   */
+  operator: { name: string | null; callerIds: string[] };
+  /** Telefon ana ekranı aile kısayolu: ilk sıradaki yakın (B-04). Yalnız telefonlara. */
+  familyContact: { displayName: string | null; phone: string } | null;
+}
+
+/** Operatör arayan numaraları ve adı (ortamdan; .env.example). */
+export function operatorInfo(env: NodeJS.ProcessEnv = process.env): DeviceConfig['operator'] {
+  const raw = env.OPERATOR_CALLER_IDS || env.TWILIO_FROM_NUMBER || '';
+  const callerIds = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^\+?[0-9 ]{7,20}$/.test(s));
+  return { name: env.OPERATOR_DISPLAY_NAME?.trim() || null, callerIds };
 }
 
 const hashCode = (code: string) => createHash('sha256').update(`yanimda-invite:${code}`).digest('hex');
@@ -185,7 +203,7 @@ export class EnrollmentService {
     this.log.log(`Cihaz kaydedildi: ${req.kind}${result.created ? '' : ' (yeniden deneme)'}`);
     return {
       created: result.created,
-      body: this.issue({ deviceId: req.deviceId, protectedPersonId: result.personId, kind: req.kind }, now),
+      body: this.issueToken({ deviceId: req.deviceId, protectedPersonId: result.personId, kind: req.kind }, now),
     };
   }
 
@@ -226,7 +244,8 @@ export class EnrollmentService {
     }
   }
 
-  private issue(p: DevicePrincipal, now: Date): TokenResponse {
+  /** Cihaz token'ı üretir (kayıt, yenileme ve telefonun saat kaydı — CompanionService). */
+  issueToken(p: DevicePrincipal, now: Date): TokenResponse {
     const { token, claims } = signDeviceToken(
       { sub: p.deviceId, pp: p.protectedPersonId, kind: p.kind },
       this.secret,
@@ -287,7 +306,7 @@ export class EnrollmentService {
   }
 
   refresh(p: DevicePrincipal, now = new Date()): TokenResponse {
-    return this.issue(p, now);
+    return this.issueToken(p, now);
   }
 
   /** Aile "cihazı kaldır" (T-020'ye kadar yönetici token'ıyla). Sonrasında token 401. */
@@ -330,6 +349,16 @@ export class EnrollmentService {
 
   // MARK: Yapılandırma
 
+  private async firstContact(protectedPersonId: string): Promise<DeviceConfig['familyContact']> {
+    const [c] = await this.db
+      .select({ displayName: contact.displayName, phone: contact.phoneE164 })
+      .from(contact)
+      .where(and(eq(contact.protectedPersonId, protectedPersonId), eq(contact.role, 'CONTACT')))
+      .orderBy(contact.priority)
+      .limit(1);
+    return c ? { displayName: c.displayName ?? null, phone: c.phone } : null;
+  }
+
   async config(p: DevicePrincipal): Promise<{ etag: string; body: DeviceConfig }> {
     const pack = this.rules.current();
     const fall = ruleFor(pack, 'FALL');
@@ -352,6 +381,8 @@ export class EnrollmentService {
       },
       inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
       messages,
+      operator: operatorInfo(),
+      familyContact: PHONE_KINDS.includes(p.kind) ? await this.firstContact(p.protectedPersonId) : null,
     };
     const etag = `"${createHash('sha256').update(JSON.stringify(body)).digest('base64url').slice(0, 22)}"`;
     return { etag, body };

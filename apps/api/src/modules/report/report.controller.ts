@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, Param, Query, Req, UseGuards } from '@nestjs/common';
 
+import { CompanionService } from '../device/companion.service';
 import { DeviceTokenGuard } from '../device/device-token.guard';
 import type { DevicePrincipal } from '../device/enrollment.service';
 import { EnrollmentService } from '../device/enrollment.service';
@@ -37,5 +38,22 @@ export class DeviceSummaryController {
     EnrollmentService.assertSelf(req.device!, id);
     const [today] = await this.daily.recent(req.device!.protectedPersonId, 1);
     return today;
+  }
+}
+
+/** T-042 aile ekranı: kişinin cihazlarının kurulum durumu (eksik izinler). Başka ailenin kişisi 404. */
+@Controller('protected-persons')
+@UseGuards(ProfileGuard)
+export class SetupStateController {
+  constructor(
+    @Inject(CompanionService) private readonly companion: CompanionService,
+    @Inject(ProfileService) private readonly profile: ProfileService,
+  ) {}
+
+  /** GET /v1/protected-persons/{id}/setup-state */
+  @Get(':id/setup-state')
+  async list(@Param('id') id: string, @Req() req: { actor?: Actor }) {
+    await this.profile.get(req.actor!, id);
+    return this.companion.setupStates(id);
   }
 }

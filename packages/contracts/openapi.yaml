@@ -28,7 +28,9 @@ paths:
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
         T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
         T-041: `Authorization: Bearer <cihaz token>`. Token'lı cihaz yalnız kendi deviceId ve protectedPersonId'si
-        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). Token'sız istek yalnız simülatör açıkken
+        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). T-043 köprü (B-03): eşlikçi telefonun
+        (ANDROID_PHONE/IOS_PHONE) token'ı aynı kişinin etkin WEAROS_WATCH cihazlarının sinyallerini saatin deviceId'si
+        ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
         '202':
@@ -1056,6 +1058,18 @@ paths:
                       properties:
                         text: { type: string }
                         action: { type: string }
+                  operator:
+                    type: object
+                    description: T-054 operatörün arayan numaraları (telefon hoparlör + rehber) ve gösterilen adı
+                    properties:
+                      name: { type: [string, 'null'] }
+                      callerIds: { type: array, items: { type: string } }
+                  familyContact:
+                    type: [object, 'null']
+                    description: Telefon ana ekranı aile kısayolu (ilk yakın); saate gönderilmez
+                    properties:
+                      displayName: { type: [string, 'null'] }
+                      phone: { type: string }
         '304': { description: Değişmedi (If-None-Match eşleşti) }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1081,6 +1095,92 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/companions:
+    post:
+      summary: Eşlikçi telefon saatini kaydeder (saatte kod yazılmaz). B-03, T-043
+      description: |
+        Telefon token'ı ile (yol = telefonun kendi kimliği). Saat kendi UUID'sini üretir, Data Layer ile telefona
+        iletir; telefon burada aynı kişiye WEAROS_WATCH olarak kaydeder ve saat token'ını Data Layer ile saate verir.
+        Aynı kişinin etkin saati yeniden → 200 + yeni token; kaldırılmış saat yeniden etkinleşir (eski token'lar 401);
+        başka kişinin cihazı 409; telefon olmayan token 403.
+      operationId: enrollCompanion
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId]
+              properties:
+                deviceId: { type: string, format: uuid }
+                kind: { enum: [WEAROS_WATCH] }
+                model: { type: string, maxLength: 100 }
+                osVersion: { type: string, maxLength: 50 }
+                appVersion: { type: string, maxLength: 50 }
+      responses:
+        '201': { $ref: '#/components/responses/DeviceToken' }
+        '200': { $ref: '#/components/responses/DeviceToken' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/setup-state:
+    patch:
+      summary: Kurulum sihirbazı ilerlemesi (aile uygulamasına). B-02, T-042
+      description: |
+        Son durum saklanır (aile `GET /protected-persons/{id}/setup-state`). `completed=true` ve `missing` boş değilse
+        aileye F-PERM bildirimi (aynı gün aynı eksik kümesi için bir kez).
+      operationId: putSetupState
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetupStateInput' }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/status:
+    get:
+      summary: Kişinin koruma durumu, cihaz token'ıyla (telefon ana ekranı senkronu). D-05, T-044
+      operationId: deviceProtectionStatus
+      security: [{ deviceToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: '`GET /protected-persons/{id}/status` ile aynı gövde'
+          content: { application/json: { schema: { type: object } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/setup-state:
+    get:
+      summary: Kişinin cihazlarının kurulum durumu (aile). B-02, T-042
+      operationId: listSetupStates
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Cihaz başına son durum
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/SetupStateInput'
+                    - type: object
+                      required: [deviceId, kind, updatedAt]
+                      properties:
+                        deviceId: { type: string }
+                        kind: { type: string }
+                        updatedAt: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/Problem' }
   /devices/{id}:
     delete:
       summary: Cihazı kaldır (token iptal → 401). T-041
@@ -1233,6 +1333,16 @@ components:
         operatorNote: { type: [string, 'null'], description: Kapanışta operatörün notu }
         createdAt: { type: string, format: date-time }
         closedAt: { type: [string, 'null'], format: date-time }
+    SetupStateInput:
+      type: object
+      required: [step, completed]
+      properties:
+        step: { type: string, pattern: '^[A-Z_]+$', example: BATTERY }
+        completed: { type: boolean }
+        missing:
+          type: array
+          items: { enum: [NOTIFICATIONS, CALLS, LOCATION, LOCATION_BACKGROUND, MOTION, BATTERY, WATCH, HEALTH] }
+        watchPaired: { type: [boolean, 'null'] }
     DailySummary:
       type: object
       required: [day, wristMinutes, partial]
