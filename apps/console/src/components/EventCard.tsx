@@ -21,8 +21,8 @@ interface Props {
   dispatch: DispatchScript | null;
   /** T-052: masa sabit hattı (112 geri arama numarası), ulusal gösterim. */
   deskLine?: string | null;
-  noteRef: RefObject<HTMLTextAreaElement>;
-  skipRef: RefObject<HTMLInputElement>;
+  noteRef: RefObject<HTMLTextAreaElement | null>;
+  skipRef: RefObject<HTMLInputElement | null>;
   onNote(v: string): void;
   onSkipReason(v: string): void;
   onClaim(): void;

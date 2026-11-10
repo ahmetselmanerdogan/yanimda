@@ -4,9 +4,9 @@
 #     -t yanimda-console:staging .
 # VITE_* derleme anında gömülür → ortam başına imaj. VITE_API_BASE boş: aynı köken (/v1; Caddy/Ingress yönlendirir).
 
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /repo
-RUN corepack enable
+RUN npm install -g pnpm@9.12.0
 COPY . .
 ARG VITE_OIDC_AUTHORITY
 ARG VITE_OIDC_CLIENT_ID=console

@@ -156,7 +156,7 @@ services:
   # Sentetik izleme (T-083 §5): 5 dk'da bir TEST SOS'u + sağlık uçları. Ayrıntı: infra/README.md "Sentetik".
   # Uygulama sırları (.env.prod) bu kaba verilmez; yalnız sondanın değişkenleri.
   synthetic:
-    image: node:20-alpine
+    image: node:26-alpine
     restart: unless-stopped
     user: node
     read_only: true

@@ -1,11 +1,12 @@
-# T-007: çok aşamalı API imajı (node:20-alpine). Repo kökünden kurulur:
+# T-007: çok aşamalı API imajı (node:26-alpine, LTS). Repo kökünden kurulur:
 #   docker build -f apps/api/Dockerfile -t yanimda-api .
 # Çalışma anı düzeni monorepo ile aynıdır: dist/ kural paketini (packages/rules/*.yaml) ve
 # sinyal şemasını (packages/contracts/schemas) göreli yoldan okur.
 
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /repo
-RUN corepack enable
+# Node 25+ corepack içermez: pnpm sürümü package.json packageManager ile aynı.
+RUN npm install -g pnpm@9.12.0
 COPY . .
 RUN pnpm install --frozen-lockfile \
  && pnpm --filter @yanimda/api... build \
@@ -15,7 +16,7 @@ RUN pnpm install --frozen-lockfile \
  && cp -r packages/contracts/schemas /out/packages/contracts/schemas \
  && cp packages/rules/*.yaml packages/rules/schema.json /out/packages/rules/
 
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production PORT=3000
 # Güvenlik (Trivy): işletim sistemi paketlerini yamala; çalışma anında gerekmeyen npm/corepack/yarn'ı kaldır
 # (açıkların çoğu npm'in kendi paketlerindeydi: tar, glob, minimatch, cross-spawn …).
