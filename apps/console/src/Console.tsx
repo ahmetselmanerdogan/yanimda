@@ -19,7 +19,7 @@ import {
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
-import { keepSelection, queueReducer } from './lib/queue';
+import { canTakeOver, keepSelection, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
 import { alertSound } from './lib/sound';
 
@@ -247,7 +247,11 @@ export function Console({
     [load],
   );
 
-  const claim = () => selected && item?.state === 'OPERATOR_QUEUE' && void run(() => api.claim(selected));
+  const claim = () =>
+    selected &&
+    item &&
+    (item.state === 'OPERATOR_QUEUE' || canTakeOver(item, me, now)) &&
+    void run(() => api.claim(selected));
   const call = () => mine && current && void run(() => api.call(selected!, current.n));
   const send = async (body: Omit<StepResultBody, 'note'>) => {
     if (!mine || !current) return;

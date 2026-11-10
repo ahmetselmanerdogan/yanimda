@@ -344,6 +344,11 @@
     "channel": "console",
     "text": "Başka operatörde"
   },
+  "O-UI-TAKEOVER": {
+    "channel": "console",
+    "text": "Operatör kilidi doldu; olayı devralabilirsiniz.",
+    "action": "Devral"
+  },
   "O-UI-MINE": {
     "channel": "console",
     "text": "Sizde"
