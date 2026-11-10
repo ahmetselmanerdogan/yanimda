@@ -544,6 +544,14 @@
     "channel": "console",
     "text": "Kişi"
   },
+  "O-UI-NAV": {
+    "channel": "console",
+    "text": "Bölümler"
+  },
+  "O-UI-NAV-EVENT": {
+    "channel": "console",
+    "text": "Olay"
+  },
   "O-UI-PERSON-UNKNOWN": {
     "channel": "console",
     "text": "Kişi bilgisi yok"

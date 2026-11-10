@@ -101,6 +101,7 @@ export function PersonPanel({ item, card, mine }: { item: QueueItem | null; card
     ) : null;
   return (
     <aside
+      id="person-panel"
       className="person no-copy"
       aria-labelledby="person-title"
       onCopy={(e) => {
