@@ -9,6 +9,7 @@ import {
   type DispatchScript,
   type EventRecord,
   type EventWithChain,
+  type OperatorStatus,
   type PersonCard,
   type QueueItem,
   type StepResultBody,
@@ -68,6 +69,7 @@ export class TrainingSim {
   private listener?: LiveHandlers;
   private seq = 0;
   private timer?: ReturnType<typeof setInterval>;
+  private status: OperatorStatus = 'AVAILABLE';
 
   constructor(
     private readonly me = 'egitim',
@@ -219,6 +221,13 @@ export class TrainingSim {
       ttlSec: 3600,
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     }),
+    telephonyConfig: async () => ({ softphone: true, inbound: false, deskLine: null, emergencyNumber: '112' }),
+    // Eğitimde durum yerel (gelen arama yönlendirmesi yok).
+    myStatus: async () => ({ subject: this.me, status: this.status, statusAt: null }),
+    setMyStatus: async (status) => {
+      this.status = status;
+      return { subject: this.me, status, statusAt: new Date().toISOString() };
+    },
     hold: async (callId, on) => {
       const c = this.talking(callId);
       Object.assign(c, { held: on, conference: true });

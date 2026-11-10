@@ -18,6 +18,8 @@ interface Props {
   skipReason: string;
   scriptVars: Record<string, string | number | null | undefined>;
   dispatch: DispatchScript | null;
+  /** T-052: masa sabit hattı (112 geri arama numarası), ulusal gösterim. */
+  deskLine?: string | null;
   noteRef: RefObject<HTMLTextAreaElement>;
   skipRef: RefObject<HTMLInputElement>;
   onNote(v: string): void;
@@ -132,7 +134,12 @@ export function EventCard(p: Props) {
         <section className="step-actions" aria-label={stepLabel(current)}>
           <div className="row">
             <button type="button" onClick={p.onCall} disabled={p.busy}>
-              {current.calledAt ? t('O-UI-CALLING') : t('O-UI-CALL')} <kbd>A</kbd>
+              {current.kind === 'CALL_112'
+                ? t('O-CALL-112-DONE')
+                : current.calledAt
+                  ? t('O-UI-CALLING')
+                  : t('O-UI-CALL')}{' '}
+              <kbd>A</kbd>
             </button>
             {RESULT_KEYS.map(([k, r]) => (
               <button type="button" key={r} onClick={() => p.onResult(r)} disabled={p.busy}>
@@ -144,7 +151,18 @@ export function EventCard(p: Props) {
             </button>
           </div>
           {call && <CallStatusLine call={call} onApply={(r) => r && p.onResult(r)} />}
-          {current.kind === 'CALL_112' && <p className="muted small">{t('O-CALL-MANUAL')}</p>}
+          {current.kind === 'CALL_112' && (
+            <div className="desk-112" role="note" data-testid="desk-112">
+              <p>
+                <strong>{t('O-CALL-112-DESK')}</strong>
+                <span className="badge-manual">{t('O-CALL-112-BADGE')}</span>
+              </p>
+              {p.deskLine && <p>{t('O-CALL-112-CALLBACK', { desk: p.deskLine })}</p>}
+              <p className="muted small">
+                {t('O-CALL-MANUAL')} {t('O-CALL-112-STEPS')}
+              </p>
+            </div>
+          )}
           {p.mode === 'assess' && (
             <div className="row assess" role="group" aria-label={t('O-UI-ASSESS')}>
               <span>{t('O-UI-ASSESS')}</span>
@@ -223,7 +241,10 @@ function StepRow({ step, current }: { step: ChainStep; current: boolean }) {
       aria-current={current ? 'step' : undefined}
     >
       <span className="step-n">{step.n}</span>
-      <span className="step-label">{stepLabel(step)}</span>
+      <span className="step-label">
+        {stepLabel(step)}
+        {step.kind === 'CALL_112' && <span className="badge-manual">{t('O-CALL-112-BADGE')}</span>}
+      </span>
       <span className="step-result small">
         {step.result ? t(`O-RES-${step.result}`) : current && step.calledAt ? t('O-UI-CALLING') : ''}
         {step.assessment && ` · ${t(`O-ASSESS-${step.assessment}`)}`}

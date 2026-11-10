@@ -19,10 +19,21 @@ export type DeviceState =
   | 'unavailable'
   | 'error';
 
+export interface IncomingSos {
+  /** Sunucudaki gelen arama kaydı. */
+  inboundId: string;
+  /** Arayanın açık olayı (rehberdeki saat/telefon numarasıyla eşleştiyse). */
+  eventId: string | null;
+}
+
 export interface PhoneSnapshot {
   device: DeviceState;
   /** Cihazdaki ses bağlantısı (yalnız gerçek cihazda). */
   connected: boolean;
+  /** Çalan gelen SOS araması (cevap bekliyor). */
+  incoming?: IncomingSos | null;
+  /** Süren bağlantı gelen SOS araması. */
+  inbound?: boolean;
 }
 
 export interface Softphone {
@@ -30,6 +41,9 @@ export interface Softphone {
   subscribe(fn: (s: PhoneSnapshot) => void): () => void;
   /** Cihazdaki görüşmeyi bırak (sunucu tarafı ayrıca kapatılır). */
   hangup(): void;
+  /** Çalan gelen SOS aramasını aç / reddet (reddedilince sunucu sıradaki operatörü dener). */
+  accept(): void;
+  reject(): void;
   destroy(): void;
 }
 
@@ -60,6 +74,9 @@ export async function checkMicrophone(
 export interface VoiceCall {
   accept(): void;
   disconnect(): void;
+  reject(): void;
+  /** Sunucunun `<Client><Parameter>` ile verdiği değerler (gelen SOS: inboundId, eventId). */
+  customParameters?: Map<string, string>;
   on(event: 'disconnect' | 'cancel' | 'reject' | 'error', fn: () => void): unknown;
 }
 export interface VoiceDevice {
@@ -88,10 +105,11 @@ export interface SoftphoneDeps {
 }
 
 class Phone implements Softphone {
-  private state: PhoneSnapshot = { device: 'starting', connected: false };
+  private state: PhoneSnapshot = { device: 'starting', connected: false, incoming: null, inbound: false };
   private readonly subs = new Set<(s: PhoneSnapshot) => void>();
   private device?: VoiceDevice;
   private call?: VoiceCall;
+  private ringing?: VoiceCall;
   private dead = false;
 
   snapshot() {
@@ -109,6 +127,21 @@ class Phone implements Softphone {
   }
   hangup() {
     this.call?.disconnect();
+  }
+  accept() {
+    const c = this.ringing;
+    if (!c) return;
+    this.ringing = undefined;
+    this.call = c;
+    c.accept();
+    this.set({ incoming: null, connected: true, inbound: true });
+  }
+  reject() {
+    const c = this.ringing;
+    if (!c) return;
+    this.ringing = undefined;
+    c.reject();
+    this.set({ incoming: null });
   }
   destroy() {
     this.dead = true;
@@ -141,19 +174,32 @@ class Phone implements Softphone {
           .then((t) => dev.updateToken(t.token))
           .catch(() => this.set({ device: 'error' }));
       });
-      // Gelen arama yalnız sunucunun bu operatöre açtığı köprü bacağıdır ("Ara"ya basınca): kendiliğinden açılır.
+      // Gelen arama iki türlü: (1) sunucunun "Ara"ya basınca açtığı köprü bacağı — kendiliğinden açılır;
+      // (2) gelen SOS araması (`inboundId` parametresi) — çalar, operatör Cevapla / Reddet ile karar verir.
       dev.on('incoming', (call) => {
-        this.call = call;
+        const inboundId = call.customParameters?.get('inboundId');
         const end = () => {
-          if (this.call === call) this.call = undefined;
-          this.set({ connected: false });
+          if (this.ringing === call) {
+            this.ringing = undefined;
+            this.set({ incoming: null });
+          }
+          if (this.call === call) {
+            this.call = undefined;
+            this.set({ connected: false, inbound: false });
+          }
         };
         call.on('disconnect', end);
         call.on('cancel', end);
         call.on('reject', end);
         call.on('error', end);
+        if (inboundId) {
+          this.ringing = call;
+          this.set({ incoming: { inboundId, eventId: call.customParameters?.get('eventId') ?? null } });
+          return;
+        }
+        this.call = call;
         call.accept();
-        this.set({ connected: true });
+        this.set({ connected: true, inbound: false });
       });
       await dev.register();
     } catch {

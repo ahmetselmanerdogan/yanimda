@@ -104,6 +104,21 @@ export interface DispatchScript {
 
 /** T-074 amir panosu (`GET /v1/supervisor/dashboard`; canlıda WS `dashboard` mesajı, 5 sn). */
 export type OperatorStatus = 'AVAILABLE' | 'BREAK' | 'OFFLINE';
+/** Operatörün kendi seçebildiği durumlar (konsol üst barı); OFFLINE amir işidir. */
+export type SelfStatus = 'AVAILABLE' | 'BREAK';
+export const SELF_STATUSES: SelfStatus[] = ['AVAILABLE', 'BREAK'];
+export interface MyStatus {
+  subject: string;
+  status: OperatorStatus;
+  statusAt: string | null;
+}
+/** T-052: masa sabit hattı (ulusal gösterim) ve 112; yazılım telefonu ve gelen arama açık mı. */
+export interface TelephonyConfig {
+  softphone: boolean;
+  inbound: boolean;
+  deskLine: string | null;
+  emergencyNumber: string;
+}
 export const OPERATOR_STATUSES: OperatorStatus[] = ['AVAILABLE', 'BREAK', 'OFFLINE'];
 export interface OperatorCard {
   subject: string;
@@ -203,6 +218,9 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
         ...(followUpAfterHours ? { followUpAfterHours } : {}),
       }),
     telephonyToken: () => req<VoiceToken>('GET', '/telephony/token'),
+    telephonyConfig: () => req<TelephonyConfig>('GET', '/telephony/config'),
+    myStatus: () => req<MyStatus>('GET', '/operators/me'),
+    setMyStatus: (status: SelfStatus) => req<MyStatus>('PUT', '/operators/me/status', { status }),
     hold: (callId: string, on: boolean) => req<CallView>('POST', `${tc(callId)}/hold`, { on }),
     conference: (callId: string, contactIndex = 1) =>
       req<CallView>('POST', `${tc(callId)}/conference`, { contactIndex }),

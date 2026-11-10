@@ -32,6 +32,29 @@ test('konsol: üstlen, cevap yok, kapat', async ({ page }) => {
   await expect(row).toHaveCount(0);
 });
 
+test('operatör kendi durumunu seçer (PUT /v1/operators/me/status); yenileyince korunur', async ({ page }) => {
+  await login(page);
+  const group = page.getByRole('group', { name: 'Durumum' });
+  await expect(group.getByRole('button', { name: 'Müsait' })).toBeVisible();
+  const put = page.waitForResponse(
+    (r) => r.url().endsWith('/v1/operators/me/status') && r.request().method() === 'PUT',
+  );
+  await group.getByRole('button', { name: 'Molada' }).click();
+  expect((await put).status()).toBe(200);
+  await expect(group.getByRole('button', { name: 'Molada' })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Durumum' }).getByRole('button', { name: 'Molada' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  // Sonraki testler için müsait bırak.
+  await page.getByRole('group', { name: 'Durumum' }).getByRole('button', { name: 'Müsait' }).click();
+  await expect(page.getByRole('group', { name: 'Durumum' }).getByRole('button', { name: 'Müsait' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+
 test('konsol: erişilebilirlik (axe) ciddi/kritik hata yok', async ({ page }) => {
   await login(page);
   const before = await rowIds(page);
