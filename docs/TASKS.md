@@ -47,17 +47,17 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 ## Epik 4 · Eşlikçi Android + profil (S4)
 - [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti açık
 - [x] T-041 /v1/devices/enroll, cihaz token, /config — aile "cihazı kaldır" T-020'ye kadar yönetici token'ıyla
-- [ ] T-042 phone: davet → 6 ekran kurulum (B-01, B-02)
-- [ ] T-043 phone: köprü ve tampon (B-03)
-- [ ] T-044 phone: ana ekran, foreground service, koruma ve gece modu (B-04, B-05, B-06, B-09)
-- [ ] T-045 Uçtan uca cihaz testi <5 sn
+- [x] T-042 phone: davet → 6 ekran kurulum (B-01, B-02) — yerel repo yanimda-android; setup-state + F-PERM; 5 yaşlı kullanıcı testi ve assetlinks/Play sayfası (T-060) açık
+- [x] T-043 phone: köprü ve tampon (B-03) — /companions saat kaydı, telefon token'ıyla köprü; gerçek saatle BLE denemesi yanimda-wear ile açık
+- [x] T-044 phone: ana ekran, foreground service, koruma ve gece modu (B-04, B-05, B-06, B-09) — adb servis öldürme ve saat çıkarma testleri gerçek cihazda açık
+- [ ] T-045 Uçtan uca cihaz testi <5 sn — emülatör + sahte saat 20 tur p95 1,6 sn (test-reports/2026-11-10-t045-android-phone.md); gerçek saat, uçak modu, pil 24 saat açık
 
 ## Epik 5 · Telefoni ve bildirim (S5)
 - [x] T-050 telephony: CPaaS giden arama, webhook, kayıt → S3 (E-05) — Twilio sandbox'ta gerçek arama hesap bekliyor; operatör ucu T-051'e kadar masa hattı
 - [x] T-051 Konsol WebRTC softphone — token, PhoneBar, konferans/bekletme; gelen SOS aramaları müsait operatöre yönlendirme + kuyruk, operatörün kendi durumu; gerçek Twilio (iki operatörle) denemesi hesap bekliyor
 - [x] T-052 TR numara / SIP trunk; 112 sabit hat prosedürü — numara biçimi + açılış denetimi, BYOC trunk, 112 adımı MANUEL (docs/telefoni-tr.md); TR numara, trunk sözleşmesi ve kabul aramaları hesap bekliyor
 - [x] T-053 notify: FCM/APNs, SMS, sesli; katalog; yedekleme (D-08) — gerçek FCM/APNs/Twilio hesaplarıyla deneme açık; aile uygulaması T-061
-- [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)
+- [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07) — Android telefon tarafı (hoparlör, rehber, saate CALL) yazıldı, gerçek aramada doğrulanmadı; saat T-037 ve iOS notu açık
 
 ## Epik 6 · Aile ve web (S6)
 - [x] T-060 family-web: paket, ödeme, hesap (C-01) — iyzico/Stripe gerçek sandbox'ta denenmedi (sahte sağlayıcı + imzalı olay testleri); KVKK metinleri yer tutucu (hukuk onayı)

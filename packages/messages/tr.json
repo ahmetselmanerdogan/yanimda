@@ -131,6 +131,125 @@
     "channel": "phone",
     "text": "Bu telefonun eşleşmesi kaldırıldı. Ailenizden yeni kod isteyin."
   },
+  "P-SETUP-WELCOME": {
+    "channel": "phone",
+    "text": "Merhaba. Yanımda, yardım gerektiğinde sizi operatörümüze bağlar. Birlikte kuralım.",
+    "action": "Başla"
+  },
+  "P-PERM-LOC-BG": {
+    "channel": "phone",
+    "text": "Son adım: açılan ekranda \"Her zaman izin ver\" seçeneğine dokunun.",
+    "action": "Ayarları aç"
+  },
+  "P-PERM-BATTERY": {
+    "channel": "phone",
+    "text": "Yanımda'nın her zaman çalışabilmesi için pil kısıtlamasını kaldırın.",
+    "action": "Kaldır"
+  },
+  "P-PERM-CALLS": {
+    "channel": "phone",
+    "text": "Operatörümüz aradığında tanıyabilmemiz için arama izni verin.",
+    "action": "İzin ver"
+  },
+  "P-PERM-FIX": {
+    "channel": "phone",
+    "text": "Eksik izni vermek için dokunun.",
+    "action": "İzin ver"
+  },
+  "P-SETUP-WATCH": {
+    "channel": "phone",
+    "text": "Saatinizi telefonunuzun yanına getirin. Bağlantıyı kontrol edelim.",
+    "action": "Kontrol et"
+  },
+  "P-SETUP-WATCH-INSTALL": {
+    "channel": "phone",
+    "text": "Saatinizde Yanımda uygulaması yok. Yüklemek için dokunun.",
+    "action": "Saate yükle"
+  },
+  "P-SETUP-WATCH-OK": {
+    "channel": "phone",
+    "text": "Saatiniz bağlı.",
+    "action": "Devam"
+  },
+  "P-SETUP-NO-WATCH": {
+    "channel": "phone",
+    "text": "Saatiniz yoksa telefonunuz sizi koruyabilir.",
+    "action": "Saatim yok"
+  },
+  "P-SETUP-CONTACT": {
+    "channel": "phone",
+    "text": "Operatörümüzün numarasını rehberinize ekleyelim; aradığımızda tanırsınız.",
+    "action": "Rehbere ekle"
+  },
+  "P-CONTACT-NAME": {
+    "channel": "phone",
+    "text": "Yanımda"
+  },
+  "P-SETUP-TEST": {
+    "channel": "phone",
+    "text": "Her şeyin çalıştığını görmek için bir deneme gönderelim. Operatörümüz sizi arayıp tanışacak.",
+    "action": "Deneme gönder"
+  },
+  "P-SETUP-TEST-OK": {
+    "channel": "phone",
+    "text": "Deneme ulaştı. Operatörümüz birazdan sizi arayacak.",
+    "action": "Devam"
+  },
+  "P-SETUP-TEST-FAIL": {
+    "channel": "phone",
+    "text": "Deneme gönderilemedi. İnternetinizi kontrol edip yeniden deneyin.",
+    "action": "Yeniden dene"
+  },
+  "P-SERVICE": {
+    "channel": "phone",
+    "text": "Yanımda sizi koruyor"
+  },
+  "P-CHANNEL-SERVICE": {
+    "channel": "phone",
+    "text": "Koruma"
+  },
+  "P-CHANNEL-ALERT": {
+    "channel": "phone",
+    "text": "Acil sorular"
+  },
+  "P-HOME-WATCH-OFF": {
+    "channel": "phone",
+    "text": "Saatiniz takılı değil. Telefonunuz sizi koruyor."
+  },
+  "P-HOME-WATCH-BATTERY": {
+    "channel": "phone",
+    "text": "Saatinizin pili bitti. Telefonunuz sizi koruyor."
+  },
+  "P-CALLBACK": {
+    "channel": "phone",
+    "text": "Operatörümüzün sizi aramasını isteyebilirsiniz.",
+    "action": "Beni arayın"
+  },
+  "P-CALLBACK-SENT": {
+    "channel": "phone",
+    "text": "İsteğiniz iletildi. Operatörümüz sizi arayacak."
+  },
+  "P-FAMILY": {
+    "channel": "phone",
+    "text": "Ailenizi arayın.",
+    "action": "Ailemi ara"
+  },
+  "P-SUMMARY-STEPS": {
+    "channel": "phone",
+    "text": "Bugün {steps} adım."
+  },
+  "P-SUMMARY-HR": {
+    "channel": "phone",
+    "text": "Ortalama nabız {hrAvg}."
+  },
+  "P-SUMMARY-WRIST": {
+    "channel": "phone",
+    "text": "Saat {hours} saat takılı."
+  },
+  "P-CALL-SPEAKER": {
+    "channel": "phone",
+    "text": "Yanımda arıyor. Hoparlör açık."
+  },
   "F-EVT-FALL": {
     "channel": "family",
     "text": "{name} düşmüş olabilir. Operatörümüz arıyor. Sizi bilgilendireceğiz.",
@@ -201,6 +320,10 @@
   "F-TEST-DONE": {
     "channel": "family",
     "text": "Test tamamlandı. {name} için koruma çalışıyor."
+  },
+  "F-PERM": {
+    "channel": "family",
+    "text": "{name} telefonunda bir izin eksik. Koruma tam çalışmayabilir; uygulamadan bakabilirsiniz."
   },
   "O-NEW-SOS": {
     "channel": "console",
