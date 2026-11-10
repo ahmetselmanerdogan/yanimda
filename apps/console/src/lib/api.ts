@@ -404,14 +404,11 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       req<AdminCall[]>('GET', `/admin/calls?days=${days}${answered === undefined ? '' : `&answered=${answered}`}`),
     adminAnalytics: (days: number) => req<AdminAnalytics>('GET', `/admin/analytics?days=${days}`),
     adminHealth: () => req<AdminHealth>('GET', '/admin/health'),
-<<<<<<< HEAD
     alerts: (open = true) => req<SupervisorAlertView[]>('GET', `/supervisor/alerts${open ? '?open=1' : ''}`),
     ackAlert: (id: string) => req<SupervisorAlertView>('POST', `/supervisor/alerts/${encodeURIComponent(id)}/ack`, {}),
-=======
     pushConfig: () => req<{ enabled: boolean; publicKey: string | null }>('GET', '/push/web/config'),
     pushSubscribe: (sub: PushSubscriptionJSON) => req<{ enabled: boolean }>('POST', '/push/web/subscriptions', sub),
     pushUnsubscribe: (endpoint: string) => req<void>('DELETE', '/push/web/subscriptions', { endpoint }),
->>>>>>> claude/dispatch-accuracy
     adminAudit: (days: number, action?: string) =>
       req<AuditRow[]>('GET', `/admin/audit?days=${days}${action ? `&action=${encodeURIComponent(action)}` : ''}`),
     wellnessChecks: (days: number) => req<WellnessCheck[]>('GET', `/wellness/checks?days=${days}`),

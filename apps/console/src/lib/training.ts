@@ -274,16 +274,13 @@ export class TrainingSim {
     },
     adminAudit: async () => [],
     wellnessChecks: async () => [],
-<<<<<<< HEAD
     alerts: async () => [],
     ackAlert: async () => {
       throw new ApiError(404, 'Eğitim modunda amir uyarısı yok');
     },
-=======
     pushConfig: async () => ({ enabled: false, publicKey: null }),
     pushSubscribe: async () => ({ enabled: false }),
     pushUnsubscribe: async () => undefined,
->>>>>>> claude/dispatch-accuracy
     recordingUrl: async () => {
       throw new ApiError(404, 'Eğitim modunda kayıt yok');
     },

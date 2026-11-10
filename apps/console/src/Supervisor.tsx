@@ -54,7 +54,6 @@ export function SupervisorBoard({
         .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message }))),
     [api],
   );
-<<<<<<< HEAD
   // Kalıcı amir uyarıları (gördüm): 15 sn'de bir ve WS uyarısı gelince.
   const [alerts, setAlerts] = useState<SupervisorAlertView[]>([]);
   const loadAlerts = useCallback(() => void api.alerts(true).then(setAlerts, () => undefined), [api]);
@@ -68,13 +67,11 @@ export function SupervisorBoard({
       () => setAlerts((xs) => xs.filter((x) => x.id !== id)),
       (e: Error) => setError(e.message),
     );
-=======
   // PWA web push: amir uyarıları bu cihaza.
   const [push, setPush] = useState<PushState>('unsupported');
   useEffect(() => void pushState(api).then(setPush, () => undefined), [api]);
   const togglePush = () =>
     void (push === 'on' ? disablePush(api) : enablePush(api)).then(setPush, (e: Error) => setError(e.message));
->>>>>>> claude/dispatch-accuracy
   // 112 süreçleri (olay kapansa da sürer): 15 sn'de bir.
   const [dispatches, setDispatches] = useState<DispatchView[]>([]);
   useEffect(() => {
