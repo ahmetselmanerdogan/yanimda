@@ -282,6 +282,9 @@ export class TrainingSim {
     ackAlert: async () => {
       throw new ApiError(404, 'Eğitim modunda amir uyarısı yok');
     },
+    pushConfig: async () => ({ enabled: false, publicKey: null }),
+    pushSubscribe: async () => ({ enabled: false }),
+    pushUnsubscribe: async () => undefined,
     recordingUrl: async () => {
       throw new ApiError(404, 'Eğitim modunda kayıt yok');
     },

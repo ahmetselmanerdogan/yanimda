@@ -12,6 +12,7 @@ import {
 } from './lib/api';
 import type { Backend } from './lib/backend';
 import { action, t } from './lib/i18n';
+import { disablePush, enablePush, type PushState, pushState } from './lib/push';
 import { clock } from './lib/sla';
 
 const pct = (x: number) => `%${Math.round(x * 100)}`;
@@ -66,6 +67,11 @@ export function SupervisorBoard({
       () => setAlerts((xs) => xs.filter((x) => x.id !== id)),
       (e: Error) => setError(e.message),
     );
+  // PWA web push: amir uyarıları bu cihaza.
+  const [push, setPush] = useState<PushState>('unsupported');
+  useEffect(() => void pushState(api).then(setPush, () => undefined), [api]);
+  const togglePush = () =>
+    void (push === 'on' ? disablePush(api) : enablePush(api)).then(setPush, (e: Error) => setError(e.message));
   // 112 süreçleri (olay kapansa da sürer): 15 sn'de bir.
   const [dispatches, setDispatches] = useState<DispatchView[]>([]);
   useEffect(() => {
@@ -113,6 +119,12 @@ export function SupervisorBoard({
         </span>
         {d && <span className="muted small">{t('O-UI-SUP-UPDATED', { time: hhmm(d.at) })}</span>}
         <span className="spacer" />
+        {(push === 'on' || push === 'off') && (
+          <button type="button" aria-pressed={push === 'on'} onClick={togglePush}>
+            {t(push === 'on' ? 'O-UI-PUSH-ON' : 'O-UI-PUSH-OFF')}
+          </button>
+        )}
+        {push === 'denied' && <span className="muted small">{t('O-UI-PUSH-DENIED')}</span>}
         {onAdmin && (
           <button type="button" onClick={onAdmin}>
             {t('O-UI-ADM-TITLE')}

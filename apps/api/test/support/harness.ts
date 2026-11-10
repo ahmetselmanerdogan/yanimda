@@ -73,7 +73,7 @@ export async function createHarness(bus: LocalBus = globalBus): Promise<Harness>
       bus.clear();
       await pg.exec(
         // audit.log append-only'dir (TRUNCATE reddedilir); testler kendi olay kimliğiyle süzer.
-        'TRUNCATE event.supervisor_alert, event.check_call, profile.check_plan, telephony.inbound_call, identity.operator, event.supervisor_flag, signal.daily_summary, notify.notification, notify.push_target, telephony.call, profile.contact, profile.subscription, health.medical_summary, profile.family_member, chain.chain_step, chain.chain_run, signal.signal, event.dispatch_update, event.dispatch, event.outbox, event.outbox_side, event.outbox_dlq, event.outbox_lease, event.protection_state, event.threshold, event.false_alarm, event.family_feedback, event.transition, event.event, profile.invite, device.device, profile.protected_person RESTART IDENTITY CASCADE',
+        'TRUNCATE identity.web_push_subscription, event.supervisor_alert, event.check_call, profile.check_plan, telephony.inbound_call, identity.operator, event.supervisor_flag, signal.daily_summary, notify.notification, notify.push_target, telephony.call, profile.contact, profile.subscription, health.medical_summary, profile.family_member, chain.chain_step, chain.chain_run, signal.signal, event.dispatch_update, event.dispatch, event.outbox, event.outbox_side, event.outbox_dlq, event.outbox_lease, event.protection_state, event.threshold, event.false_alarm, event.family_feedback, event.transition, event.event, profile.invite, device.device, profile.protected_person RESTART IDENTITY CASCADE',
       );
     },
     close: async () => {
