@@ -111,7 +111,9 @@ test.describe('senaryolar', () => {
     await dlg.getByLabel('Gerekçe (zorunlu)').press('Enter');
     await expect(page.locator('.state')).toHaveText('Acil');
     await expect(page.locator('.step').nth(1)).toContainText('Atla');
-    await page.getByRole('button', { name: 'Okundu olarak işaretle' }).click();
+    const read = page.getByRole('button', { name: 'Okundu olarak işaretle' });
+    await read.click();
+    await expect(read).toBeDisabled(); // istek bitmeden "1" basılırsa (busy) yok sayılıyordu: kararsız test
     await page.locator('main').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('1');
     await expect(page.locator('.state')).toHaveText('112 yönlendirildi');
