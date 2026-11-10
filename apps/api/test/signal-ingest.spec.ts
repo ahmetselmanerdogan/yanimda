@@ -327,6 +327,107 @@ describe('OutboxWorker', () => {
   });
 });
 
+describe('OutboxWorker side şeridi (inceleme bulgusu 3)', () => {
+  it('bozuk side abonesi core teslimi (SOS) bekletmez; side kendi kuyruğunda yeniden denenir', async () => {
+    const core: string[] = [];
+    const side: string[] = [];
+    let broken = true;
+    h.bus.subscribe<Signal>('signal.received', (e) => {
+      core.push(e.payload.kind);
+    });
+    h.bus.subscribe<Signal>(
+      'signal.received',
+      (e) => {
+        if (broken) throw new Error('istatistik db yok');
+        side.push(e.payload.kind);
+      },
+      { lane: 'side', name: 'stats' },
+    );
+    await h.signals.accept([sig('FALL'), sig('SOS')]);
+    expect(await h.worker().drainCore()).toBe(2);
+    expect(core).toEqual(['FALL', 'SOS']);
+    expect(await count('event.outbox WHERE processed_at IS NULL')).toBe(0);
+    expect(await count('event.outbox_side WHERE processed_at IS NULL')).toBe(2);
+
+    expect(await h.worker().drainSide()).toBe(0); // FALL satırı başarısız; SOS satırı aynı abonede beklemede
+    expect(side).toEqual([]);
+    broken = false;
+    expect(await h.worker({ now: () => new Date(Date.now() + 60_000) }).drainSide()).toBe(2);
+    expect(side).toEqual(['FALL', 'SOS']); // abone başına sıra korunur
+  });
+
+  it('side abonesi tıkanınca diğer side abone ilerler; maxAttempts sonra dead_at (abone DLQ)', async () => {
+    const ok: string[] = [];
+    h.bus.subscribe(
+      'signal.received',
+      () => {
+        throw new Error('zehirli');
+      },
+      { lane: 'side', name: 'bad' },
+    );
+    h.bus.subscribe<Signal>(
+      'signal.received',
+      (e) => {
+        ok.push(e.payload.kind);
+      },
+      { lane: 'side', name: 'good' },
+    );
+    await h.signals.accept([sig('SOS')]);
+    await h.worker().drainCore();
+    let t = Date.now();
+    for (let i = 0; i < 5; i++) {
+      t += 10 * 60_000;
+      await h.worker({ now: () => new Date(t) }).drainSide();
+    }
+    expect(ok).toEqual(['SOS']);
+    const dead = await h.rows<{ handler: string; attempts: number; last_error: string }>(
+      'SELECT handler, attempts, last_error FROM event.outbox_side WHERE dead_at IS NOT NULL',
+    );
+    expect(dead).toEqual([{ handler: 'bad', attempts: 5, last_error: 'zehirli' }]);
+  });
+
+  it('yeniden teslim edilen core satırı side satırını ikinci kez yazmaz', async () => {
+    h.bus.subscribe('signal.received', () => undefined, { lane: 'side', name: 'once' });
+    await h.signals.accept([sig('SOS')]);
+    await h.worker().drainCore();
+    await h.pg.exec('UPDATE event.outbox SET processed_at = NULL');
+    await h.worker().drainCore();
+    expect(await count("event.outbox_side WHERE handler = 'once'")).toBe(1);
+  });
+
+  it('yavaş side abonesi core döngüsünü bekletmez (ayrı döngü)', async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const got: string[] = [];
+    h.bus.subscribe('signal.received', () => slow, { lane: 'side', name: 'slow' });
+    h.bus.subscribe<Signal>('signal.received', (e) => {
+      got.push(e.payload.kind);
+    });
+    const w = h.worker({ pollMs: 60_000 });
+    w.start();
+    await h.signals.accept([sig('FALL')]);
+    await vi.waitFor(() => expect(got).toEqual(['FALL']));
+    await h.signals.accept([sig('SOS')]); // side FALL'da asılıyken
+    await vi.waitFor(() => expect(got).toEqual(['FALL', 'SOS']));
+    release();
+    w.stop();
+  });
+
+  it('outbox metrikleri: bekleyen, en eski yaş ve DLQ şerit başına', async () => {
+    const { MetricsService } = await import('../src/modules/metrics/metrics.service');
+    const m = new MetricsService(h.db, h.events());
+    await h.pg.exec(
+      "INSERT INTO event.outbox_dlq (id, topic, envelope, created_at, attempts) VALUES (999, 't', '{}', now(), 5)",
+    );
+    await h.signals.accept([sig('SOS')]);
+    const text = await m.registry.metrics();
+    expect(text).toMatch(/outbox_pending\{lane="core"\} 1/);
+    expect(text).toMatch(/outbox_dead\{lane="core"\} 1/);
+    expect(text).toMatch(/outbox_dead\{lane="side"\} 0/);
+    expect(text).toMatch(/outbox_oldest_pending_seconds\{lane="core"\} \d/);
+  });
+});
+
 describe('Migration geri alınabilir (X-05)', () => {
   it('down → up temiz çalışır', async () => {
     await down(h.exec, 99); // tüm migration'lar

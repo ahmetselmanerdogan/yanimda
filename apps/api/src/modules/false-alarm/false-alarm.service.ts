@@ -71,7 +71,14 @@ export class FalseAlarmService implements OnModuleInit, OnModuleDestroy {
   /** Testler için ayrı bus. */
   subscribe(bus: LocalBus = globalBus) {
     this.unsub?.();
-    this.unsub = bus.subscribe<FalseAlarm>(TOPICS.eventFalseAlarm, (e) => this.record(e.payload).then(() => undefined));
+    this.unsub = bus.subscribe<FalseAlarm>(
+      TOPICS.eventFalseAlarm,
+      (e) => this.record(e.payload).then(() => undefined),
+      {
+        lane: 'side',
+        name: 'false-alarm.record',
+      },
+    );
   }
 
   /**
