@@ -1,4 +1,4 @@
-import { createPublicKey, type JsonWebKey, type KeyObject, verify } from 'node:crypto';
+import { createPublicKey, type KeyObject, verify } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
 
@@ -63,11 +63,16 @@ const defaultFetch: FetchJson = async (url) => {
   return r.json();
 };
 
-interface Jwk extends JsonWebKey {
+/** JWKS anahtarı (RFC 7517). @types/node 26'da `node:crypto` JsonWebKey dışa vermez; kendi tipimiz. */
+interface Jwk {
+  kty?: string;
+  crv?: string;
   kid?: string;
   use?: string;
   alg?: string;
+  [k: string]: unknown;
 }
+type JwkInput = Extract<Parameters<typeof createPublicKey>[0], { format: 'jwk' }>;
 
 interface KeySet {
   keys: Map<string, { key: KeyObject; alg?: string }>;
@@ -172,7 +177,7 @@ export class OidcVerifier {
           if (k.use && k.use !== 'sig') continue;
           if (k.kty !== 'RSA' && !(k.kty === 'EC' && k.crv === 'P-256')) continue;
           try {
-            keys.set(k.kid ?? '', { key: createPublicKey({ key: k, format: 'jwk' }), alg: k.alg });
+            keys.set(k.kid ?? '', { key: createPublicKey({ key: k as JwkInput['key'], format: 'jwk' }), alg: k.alg });
           } catch {
             /* bozuk anahtar atlanır */
           }

@@ -15,14 +15,14 @@
     "@yanimda/messages": "workspace:*",
     "@yanimda/ui-tokens": "workspace:*",
     "next": "16.4.5",
-    "react": "19.2.9",
-    "react-dom": "19.2.9"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@types/node": "^22.7.0",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.7",
+    "@types/node": "^26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.2"
+    "vitest": "^5.1.0"
   }
 }

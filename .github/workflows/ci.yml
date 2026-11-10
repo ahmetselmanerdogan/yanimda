@@ -28,7 +28,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with: { version: 9.12.0 }
       - uses: actions/setup-node@v7
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 26, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Kural paketi doğrulaması (zorunlu)
         run: pnpm --filter @yanimda/rules test
@@ -46,7 +46,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with: { version: 9.12.0 }
       - uses: actions/setup-node@v7
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 26, cache: pnpm }
       - run: sudo apt-get update && sudo apt-get install -y redis-server && sudo systemctl stop redis-server || true
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @yanimda/contracts build
@@ -71,7 +71,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with: { version: 9.12.0 }
       - uses: actions/setup-node@v7
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 26, cache: pnpm }
       - run: sudo apt-get update && sudo apt-get install -y redis-server && sudo systemctl stop redis-server || true
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @yanimda/contracts build
@@ -195,7 +195,7 @@ jobs:
             -e SYNTHETIC_API_URL=https://api.example.test -e SYNTHETIC_OIDC_ISSUER=https://auth.example.test/realms/consumers \
             -e SYNTHETIC_CLIENT_ID=ci -e SYNTHETIC_CLIENT_SECRET=ci \
             -e SYNTHETIC_PERSON_IDS=00000000-0000-7000-8000-000000000001,00000000-0000-7000-8000-000000000002,00000000-0000-7000-8000-000000000003 \
-            node:20-alpine sh -c 'node --check /p/probe.mjs && node /p/probe.mjs --dry'
+            node:26-alpine sh -c 'node --check /p/probe.mjs && node /p/probe.mjs --dry'
           docker build --check -f infra/console/Dockerfile .
           docker build --check infra/backup
 
