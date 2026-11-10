@@ -274,6 +274,10 @@ export class TrainingSim {
     },
     adminAudit: async () => [],
     wellnessChecks: async () => [],
+    alerts: async () => [],
+    ackAlert: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir uyarısı yok');
+    },
     recordingUrl: async () => {
       throw new ApiError(404, 'Eğitim modunda kayıt yok');
     },

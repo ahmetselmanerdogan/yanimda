@@ -1122,6 +1122,29 @@ paths:
                             waitSec: { type: integer }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/alerts:
+    get:
+      summary: Kalıcı amir uyarıları (open=1 → görülmemişler), en yeni önce
+      description: |
+        Her supervisor.alert (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL / OPEN / ESCALATE, O-CLOSE-NO-112, O-QUEUE-UNCLAIMED,
+        O-WELLNESS-MISSED) çekirdek şeritten kaydedilir; tekrar teslim tekilleştirilir. O-QUEUE-UNCLAIMED: kuyrukta
+        önceliğin üstlenme hedefi (P1 10 sn, P2 30 sn, P3 120 sn, P4 600 sn) aşılınca kuyruğa her girişte bir kez.
+        WS `alert` yalnız SUPERVISOR/ADMIN'e (O-QUEUE-UNCLAIMED herkese).
+      operationId: listSupervisorAlerts
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: open, in: query, schema: { type: string, enum: ['1', 'true'] } }]
+      responses:
+        '200': { description: Uyarılar }
+  /supervisor/alerts/{id}/ack:
+    post:
+      summary: '"Gördüm" — kim, ne zaman (audit supervisor.alert_acked); zaten görüldüyse 409'
+      operationId: ackSupervisorAlert
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Görüldü }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /supervisor/operators/{sub}/status:
     put:
       summary: Amir — operatör durumunu değiştir (audit). E-11, T-074

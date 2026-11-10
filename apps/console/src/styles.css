@@ -1091,3 +1091,35 @@ table.data td {
     color: var(--muted);
   }
 }
+
+/* Kalıcı amir uyarıları */
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.alert-item {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-left: 3px solid var(--attention);
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+.alert-item.a-O-DISPATCH-ESCALATE,
+.alert-item.a-O-QUEUE-UNCLAIMED,
+.alert-item.a-O-DISPATCH-NO-ARRIVAL {
+  border-left-color: var(--help);
+}
+@media (max-width: 767px) {
+  .alert-item {
+    grid-template-columns: 1fr auto;
+  }
+  .alert-item time {
+    grid-column: 1 / -1;
+  }
+}

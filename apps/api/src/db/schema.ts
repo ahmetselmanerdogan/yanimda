@@ -551,3 +551,16 @@ export const checkCall = eventSchema.table('check_call', {
   operatorId: text('operator_id'),
   outcome: text('outcome'),
 });
+
+/** 0025: kalıcı amir uyarıları ve "gördüm". */
+export const supervisorAlert = eventSchema.table('supervisor_alert', {
+  id: uuid('id').primaryKey(),
+  dedupeKey: text('dedupe_key').notNull().unique(),
+  code: text('code').notNull(),
+  eventId: text('event_id').notNull(),
+  eventType: text('event_type').notNull(),
+  operatorId: text('operator_id'),
+  at: timestamptz('at').notNull(),
+  ackedAt: timestamptz('acked_at'),
+  ackedBy: text('acked_by'),
+});

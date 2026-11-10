@@ -260,7 +260,14 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
   private async deliver(f: Fanout) {
     if (!this.clients.size) return;
     try {
-      if ('alert' in f) return this.broadcast({ type: 'alert', alert: f.alert });
+      // Amir uyarıları yalnız SUPERVISOR/ADMIN'e; üstlenilmeyen kuyruk uyarısı herkese (operatör üstlenebilir).
+      if ('alert' in f)
+        return this.broadcast(
+          { type: 'alert', alert: f.alert },
+          f.alert.code === 'O-QUEUE-UNCLAIMED'
+            ? undefined
+            : (c) => !!c.user?.roles.some((r) => r === 'SUPERVISOR' || r === 'ADMIN'),
+        );
       const item = await this.events.queueItem(f.eventId);
       this.broadcast(item ? { type: 'upsert', item } : { type: 'remove', eventId: f.eventId });
     } catch (e) {
@@ -268,9 +275,10 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     }
   }
 
-  private broadcast(m: QueueMessage) {
+  private broadcast(m: QueueMessage, only?: (c: Client) => boolean) {
     const data = JSON.stringify(m);
-    for (const c of this.clients) if (c.user && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
+    for (const c of this.clients)
+      if (c.user && c.ws.readyState === WebSocket.OPEN && (!only || only(c))) c.ws.send(data);
   }
 
   private send(c: Client, m: QueueMessage) {

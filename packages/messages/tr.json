@@ -434,6 +434,10 @@
     "channel": "console",
     "text": "112 süreci açık ({type}). Son durumu girin ya da tamamlayın."
   },
+  "O-QUEUE-UNCLAIMED": {
+    "channel": "console",
+    "text": "Kuyrukta üstlenilmeyen olay ({type}) hedef süreyi aştı. Hemen üstlenin."
+  },
   "O-DISPATCH-ESCALATE": {
     "channel": "console",
     "text": "112 ekibi hâlâ ulaşmadı ({type}). 112'yi tekrar arayın, gecikmenin nedenini ve tahmini varışı girin."
@@ -650,6 +654,22 @@
   "O-UI-DISPATCH-NONE": {
     "channel": "console",
     "text": "Süren 112 süreci yok."
+  },
+  "O-UI-ALERTS": {
+    "channel": "console",
+    "text": "Açık uyarılar"
+  },
+  "O-UI-ALERTS-NONE": {
+    "channel": "console",
+    "text": "Açık uyarı yok."
+  },
+  "O-UI-ALERT-ACK": {
+    "channel": "console",
+    "text": "Gördüm"
+  },
+  "O-UI-ALERTS-ACKED": {
+    "channel": "console",
+    "text": "{by} gördü · {time}"
   },
   "O-UI-CLOSE-NOTIFIED-112": {
     "channel": "console",
