@@ -57,7 +57,7 @@ paths:
     get:
       summary: Düzenli "yanınızdayız" arama planı (aile üyesi okur; amir/yönetici)
       operationId: getCheckPlan
-      security: [{ familyToken: [] }, { operatorToken: [] }]
+      security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       responses:
         '200': { description: Plan (yoksa null) }
@@ -70,7 +70,7 @@ paths:
         operatör kuyruğunda P4 geri arama (kaynak `wellness:<id>`); olay kapanınca DONE_OK / DONE_HELP, ulaşılamadı veya
         pencere doldu → MISSED + amire O-WELLNESS-MISSED.
       operationId: setCheckPlan
-      security: [{ familyToken: [] }, { operatorToken: [] }]
+      security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       requestBody:
         content:
