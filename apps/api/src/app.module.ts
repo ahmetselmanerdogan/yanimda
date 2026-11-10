@@ -20,6 +20,7 @@ import { RulesModule } from './modules/rules/rules.module';
 import { ScreeningModule } from './modules/screening/screening.module';
 import { SignalModule } from './modules/signal/signal.module';
 import { InboundModule } from './modules/telephony/inbound.module';
+import { WebPushModule } from './modules/webpush/webpush.module';
 import { WellnessModule } from './modules/wellness/wellness.module';
 
 // 03-teknik-mimari.md "Servis haritası": modüler monolit. Diğer modüller (identity, profile, health, device,
@@ -36,6 +37,7 @@ import { WellnessModule } from './modules/wellness/wellness.module';
     ProfileModule,
     WellnessModule,
     AdminModule,
+    WebPushModule,
     ChainModule,
     QueueModule,
     MetricsModule,

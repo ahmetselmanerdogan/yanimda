@@ -651,6 +651,18 @@
     "channel": "console",
     "text": "Süren 112 süreci yok."
   },
+  "O-UI-PUSH-OFF": {
+    "channel": "console",
+    "text": "Bildirimleri aç"
+  },
+  "O-UI-PUSH-ON": {
+    "channel": "console",
+    "text": "Bildirimler açık"
+  },
+  "O-UI-PUSH-DENIED": {
+    "channel": "console",
+    "text": "Bildirim izni tarayıcıda kapalı"
+  },
   "O-UI-CLOSE-NOTIFIED-112": {
     "channel": "console",
     "text": "112 zincir dışında arandı (masa hattı / başka yol)"
