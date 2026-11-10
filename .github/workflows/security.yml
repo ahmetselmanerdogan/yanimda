@@ -59,7 +59,7 @@ jobs:
             -r api-report.html -J api-report.json -w api-report.md
       - uses: pnpm/action-setup@v4
         with: { version: 9.12.0 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Konsol (üretim derlemesi, vite preview)
