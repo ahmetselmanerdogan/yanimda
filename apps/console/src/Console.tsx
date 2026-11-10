@@ -22,6 +22,7 @@ import { commandFor, type Mode } from './lib/keys';
 import { canTakeOver, keepSelection, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
 import { alertSound } from './lib/sound';
+import { type Pane, useViewport } from './lib/viewport';
 
 const HEARTBEAT_MS = 60_000;
 const OPEN_STATES = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'];
@@ -70,6 +71,10 @@ export function Console({
     queued: 0,
     oldestQueuedSec: null,
   });
+  // Duyarlı düzen: telefonda tek bölme (kuyruk / olay / kişi), tablette kişi paneli çekmece.
+  const viewport = useViewport();
+  const [pane, setPane] = useState<Pane>('queue');
+  const [personOpen, setPersonOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const skipRef = useRef<HTMLInputElement>(null);
@@ -376,7 +381,10 @@ export function Console({
   };
 
   return (
-    <div className={`layout${training ? ' training' : ''}`}>
+    <div
+      className={`layout v-${viewport} pane-${pane}${personOpen ? ' person-open' : ''}${training ? ' training' : ''}`}
+      data-viewport={viewport}
+    >
       <TopBar
         training={training}
         operator={operatorName}
@@ -389,7 +397,16 @@ export function Console({
         onMyStatus={changeMyStatus}
         {...(onSupervisor ? { onSupervisor } : {})}
       />
-      <QueueList items={queue.items} selected={selected} me={me} now={now} onSelect={setSelected} />
+      <QueueList
+        items={queue.items}
+        selected={selected}
+        me={me}
+        now={now}
+        onSelect={(id) => {
+          setSelected(id);
+          setPane('event');
+        }}
+      />
       <main className="center">
         {error && (
           <p className="error" role="alert">
@@ -427,6 +444,17 @@ export function Console({
           <p className="muted pad">{t('O-UI-NO-SELECTION')}</p>
         )}
       </main>
+      {viewport === 'tablet' && (
+        <button
+          type="button"
+          className="person-toggle"
+          aria-expanded={personOpen}
+          aria-controls="person-panel"
+          onClick={() => setPersonOpen((o) => !o)}
+        >
+          {t('O-UI-PERSON')}
+        </button>
+      )}
       <PersonPanel item={item} card={card && card.id === selected ? card.card : undefined} mine={mine} />
       <PhoneBar
         phone={phoneState}
@@ -444,6 +472,23 @@ export function Console({
         onReject={() => phoneRef.current?.reject()}
         onOpenEvent={setSelected}
       />
+      {viewport === 'phone' && (
+        <nav className="tabbar" aria-label={t('O-UI-NAV')}>
+          {(['queue', 'event', 'person'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              aria-current={pane === p ? 'page' : undefined}
+              className={pane === p ? 'on' : ''}
+              onClick={() => setPane(p)}
+            >
+              {p === 'queue'
+                ? t('O-UI-QUEUE', { n: queue.items.length })
+                : t(p === 'event' ? 'O-UI-NAV-EVENT' : 'O-UI-PERSON')}
+            </button>
+          ))}
+        </nav>
+      )}
       {mode === 'close' && mine && (
         <ClosePanel
           allowed={allowedOutcomes()}

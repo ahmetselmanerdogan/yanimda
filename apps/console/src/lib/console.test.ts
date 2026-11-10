@@ -9,6 +9,7 @@ import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
 import { canTakeOver, keepSelection, queueReducer } from './queue';
 import { clock, slaOf } from './sla';
+import { viewportOf } from './viewport';
 
 const item = (id: string, priority: number, createdAt: string, state = 'OPERATOR_QUEUE'): QueueItem =>
   ({
@@ -180,5 +181,20 @@ describe('devralma (inceleme bulgusu 2)', () => {
     expect(canTakeOver(held('CONTACT_CHAIN', 'op-1', '2026-11-10T10:12:00Z'), 'op-2', now)).toBe(false);
     expect(canTakeOver(held('CONTACT_CHAIN', 'op-2', '2026-11-10T10:05:00Z'), 'op-2', now)).toBe(false);
     expect(canTakeOver(held('OPERATOR_QUEUE', null, null), 'op-2', now)).toBe(false);
+  });
+});
+
+describe('duyarlı düzen eşikleri', () => {
+  it('telefon < 768 ≤ tablet < 1280 ≤ masaüstü', () => {
+    expect([320, 390, 767, 768, 820, 1279, 1280, 1920].map(viewportOf)).toEqual([
+      'phone',
+      'phone',
+      'phone',
+      'tablet',
+      'tablet',
+      'tablet',
+      'desktop',
+      'desktop',
+    ]);
   });
 });

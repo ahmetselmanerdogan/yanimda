@@ -73,11 +73,11 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-074 Amir panosu (E-11) — taşma bayrağı yalnız işaret (yönlendirme v2.0); operatörün kendi durum seçimi açık
 
 ## Epik 8 · Sertleştirme (S8)
-- [ ] T-080 Yük ve kaos testleri, olay kaybı 0
-- [ ] T-081 Güvenlik taramaları, sertifika sabitleme, PII denetimi
-- [ ] T-082 Erişilebilirlik denetimi ve 5 kullanıcı testi
-- [ ] T-083 Staging (Terraform + Helm), sentetik izleme
-- [ ] T-084 Beta dağıtımı, Kapı 2 raporu
+- [x] T-080 Yük ve kaos testleri, olay kaybı 0 — kayıp 0, toparlanma < 2 dk, p95 1,1 sn (docs/test-reports/yuk-kaos-v1.md); CI `load-v1`
+- [ ] T-081 Güvenlik taramaları, sertifika sabitleme, PII denetimi — CI Semgrep, gitleaks, ZAP, Trivy, imaj imzası, PII log denetimi yapıldı; açık: ASVS L2 %62,9 (hedef %90), sızma testi (docs/security/)
+- [ ] T-082 Erişilebilirlik denetimi ve 5 kullanıcı testi — otomatik denetim yapıldı (konsol, aile web, aile uygulaması; 2 kontrast bulgusu düzeltildi; docs/test-reports/erisilebilirlik-v1.md); açık: kullanıcı testi, saat/telefon/iOS taraması
+- [x] T-083 Staging (Terraform + Helm), sentetik izleme — kod ve CI doğrulaması (terraform validate, helm + kubeconform, promtool); gerçek bulutta uygulanmadı
+- [ ] T-084 Beta dağıtımı, Kapı 2 raporu — mağaza hesapları (Play, App Store), gerçek kullanıcılar ve CPaaS/push hesapları bekleniyor
 
 ## İlk Claude Code oturumu için önerilen sıra
 1. `pnpm install && pnpm test` yeşil olsun.
