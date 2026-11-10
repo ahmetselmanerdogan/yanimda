@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { CoreModule } from './core.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { ChainModule } from './modules/chain/chain.module';
 import { DeviceModule } from './modules/device/device.module';
 import { EnrollmentModule } from './modules/device/enrollment.module';
@@ -35,6 +36,7 @@ import { SignalModule } from './modules/signal/signal.module';
     ReportModule,
     LearningModule,
     FalseAlarmModule,
+    BillingModule,
   ],
 })
 export class AppModule {}

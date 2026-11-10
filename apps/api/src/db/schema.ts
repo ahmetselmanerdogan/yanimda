@@ -141,6 +141,30 @@ export const subscription = profileSchema.table('subscription', {
   startedAt: timestamptz('started_at').notNull().defaultNow(),
   renewsAt: timestamptz('renews_at'),
   canceledAt: timestamptz('canceled_at'),
+  // T-060 (0016)
+  countryCode: text('country_code').notNull().default('TR'),
+  provider: text('provider'),
+  providerCustomerRef: text('provider_customer_ref'),
+  providerSubscriptionRef: text('provider_subscription_ref'),
+  checkoutRef: text('checkout_ref'),
+  trialEndsAt: timestamptz('trial_ends_at'),
+  pastDueSince: timestamptz('past_due_since'),
+  graceUntil: timestamptz('grace_until'),
+  suspendedAt: timestamptz('suspended_at'),
+  lastProviderEventAt: timestamptz('last_provider_event_at'),
+  kvkkNoticeVersion: text('kvkk_notice_version'),
+  explicitConsentAt: timestamptz('explicit_consent_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-060 ödeme webhook'u tekrar ayıklama: (sağlayıcı, olay kimliği) bir kez. */
+export const paymentWebhook = profileSchema.table('payment_webhook', {
+  provider: text('provider').notNull(),
+  providerEventId: text('provider_event_id').notNull(),
+  type: text('type').notNull(),
+  subscriptionId: uuid('subscription_id'),
+  outcome: text('outcome').notNull(),
+  receivedAt: timestamptz('received_at').notNull().defaultNow(),
 });
 
 /** T-040/T-041 davet kodu: sha256(kod) saklanır; 15 dk, tek kullanım. */

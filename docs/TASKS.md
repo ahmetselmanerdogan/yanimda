@@ -60,7 +60,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-054 Gelen arama ekranları, otomatik cevap (A-10, B-07)
 
 ## Epik 6 · Aile ve web (S6)
-- [ ] T-060 family-web: paket, ödeme, hesap (C-01)
+- [x] T-060 family-web: paket, ödeme, hesap (C-01) — iyzico/Stripe gerçek sandbox'ta denenmedi (sahte sağlayıcı + imzalı olay testleri); KVKK metinleri yer tutucu (hukuk onayı)
 - [ ] T-061 Aile uygulaması ekranları (C-04…C-10)
 - [x] T-062 Günlük özet + F-DAILY (C-07, B-10) — aile ve telefon ekranları T-061/T-044
 - [x] T-063 Test SOS akışı (C-05) — aile ilerleme ekranı T-061

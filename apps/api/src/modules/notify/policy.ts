@@ -67,6 +67,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-BAT-10': INFO,
   'F-FOLLOWUP': INFO,
   'F-SUB-PAY': INFO,
+  'F-SUB-SUSPENDED': INFO, // T-060 ödeme bekleme süresi doldu, koruma askıda
   'F-TEST-DONE': INFO,
   'F-EVT-OK': FEED,
   'F-TEST-QUEUED': FEED,
