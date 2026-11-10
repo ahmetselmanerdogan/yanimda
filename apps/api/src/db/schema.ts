@@ -565,3 +565,15 @@ export const supervisorAlert = eventSchema.table('supervisor_alert', {
   ackedAt: timestamptz('acked_at'),
   ackedBy: text('acked_by'),
 });
+
+/** 0024: personel web push aboneliği (amir uyarıları). */
+export const webPushSubscription = identitySchema.table('web_push_subscription', {
+  endpoint: text('endpoint').primaryKey(),
+  subject: text('subject').notNull(),
+  roles: text('roles').array().notNull().default([]),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  lastOkAt: timestamptz('last_ok_at'),
+  failures: integer('failures').notNull().default(0),
+});
