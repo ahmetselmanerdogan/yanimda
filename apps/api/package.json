@@ -23,7 +23,7 @@
     "@yanimda/messages": "workspace:*",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "bullmq": "^5",
+    "bullmq": "^6",
     "drizzle-orm": "^0.45.4",
     "ioredis": "^5.11.1",
     "pg": "^8.23.1",
