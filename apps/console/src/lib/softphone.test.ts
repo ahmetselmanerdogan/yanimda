@@ -113,10 +113,11 @@ describe('yazılım telefonu', () => {
     expect(dev!.registered).toBe(true);
     expect(state().device).toBe('ready');
 
-    const call = { accept: vi.fn(), disconnect: vi.fn(), handlers: new Map<string, () => void>() };
+    const call = { accept: vi.fn(), disconnect: vi.fn(), reject: vi.fn(), handlers: new Map<string, () => void>() };
     const c: VoiceCall = { ...call, on: (e, fn) => call.handlers.set(e, fn) };
     dev!.handlers.get('incoming')!(c);
     expect(call.accept).toHaveBeenCalled();
+    expect(state().incoming).toBeNull();
     expect(state().connected).toBe(true);
     p.hangup();
     expect(call.disconnect).toHaveBeenCalled();
@@ -130,5 +131,47 @@ describe('yazılım telefonu', () => {
     expect(state().device).toBe('error');
     p.destroy();
     expect(dev!.destroyed).toBe(true);
+  });
+
+  it('gelen SOS araması (inboundId parametreli) kendiliğinden açılmaz: çalar, Cevapla / Reddet; arayan vazgeçerse susar', async () => {
+    let dev: FakeDevice | undefined;
+    const p = startSoftphone({
+      token: async () => tok('twilio'),
+      mic: async () => 'granted',
+      load: async () => (t: string) => (dev = new FakeDevice(t)),
+    });
+    const state = last(p);
+    await p.ready;
+    const ring = (params: Record<string, string>) => {
+      const call = { accept: vi.fn(), disconnect: vi.fn(), reject: vi.fn(), handlers: new Map<string, () => void>() };
+      const c: VoiceCall = {
+        ...call,
+        customParameters: new Map(Object.entries(params)),
+        on: (e, fn) => call.handlers.set(e, fn),
+      };
+      dev!.handlers.get('incoming')!(c);
+      return call;
+    };
+
+    const a = ring({ inboundId: 'in-1', eventId: 'ev-1' });
+    expect(a.accept).not.toHaveBeenCalled();
+    expect(state()).toMatchObject({ connected: false, incoming: { inboundId: 'in-1', eventId: 'ev-1' } });
+    p.accept();
+    expect(a.accept).toHaveBeenCalled();
+    expect(state()).toMatchObject({ connected: true, inbound: true, incoming: null });
+    a.handlers.get('disconnect')!();
+    expect(state()).toMatchObject({ connected: false, inbound: false });
+
+    const b = ring({ inboundId: 'in-2' });
+    expect(state().incoming).toEqual({ inboundId: 'in-2', eventId: null });
+    p.reject();
+    expect(b.reject).toHaveBeenCalled();
+    expect(state().incoming).toBeNull();
+
+    // Arayan kapattı ya da süre doldu (sıradaki operatöre geçti): çalma susar.
+    const c = ring({ inboundId: 'in-3' });
+    expect(state().incoming?.inboundId).toBe('in-3');
+    c.handlers.get('cancel')!();
+    expect(state().incoming).toBeNull();
   });
 });

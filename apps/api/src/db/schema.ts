@@ -232,6 +232,31 @@ export const call = telephonySchema.table('call', {
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
 
+/** T-051 kalan: gelen SOS aramaları (numara yok; yalnız eşleşen kişi ve olay). */
+export interface InboundAttempt {
+  op: string;
+  at: string;
+  result: 'ringing' | 'answered' | 'no-answer' | 'busy' | 'failed' | 'canceled';
+}
+export const inboundCall = telephonySchema.table('inbound_call', {
+  id: uuid('id').primaryKey(),
+  provider: text('provider').notNull(),
+  providerCallId: text('provider_call_id').notNull(),
+  protectedPersonId: text('protected_person_id'),
+  eventId: uuid('event_id'),
+  status: text('status').notNull().default('routing'),
+  operatorId: text('operator_id'),
+  attempts: jsonb('attempts').$type<InboundAttempt[]>().notNull().default([]),
+  queuedAt: timestamptz('queued_at'),
+  answeredAt: timestamptz('answered_at'),
+  endedAt: timestamptz('ended_at'),
+  durationSec: integer('duration_sec'),
+  recordingRef: text('recording_ref'),
+  recordingProviderId: text('recording_provider_id'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
 /** T-072 (D-12) otomatik sesli ön eleme: olay başına bir arama. Numara ve konuşma dökümü tutulmaz. */
 export const voiceScreening = eventSchema.table('voice_screening', {
   id: uuid('id').primaryKey(),

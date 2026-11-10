@@ -18,6 +18,17 @@
       },
       "additionalProperties": false
     },
+    "numbers": {
+      "description": "T-052 resmi hatlar: acil (112), sosyal destek (183), sağlık (182); masa sabit hattından aranır",
+      "type": "object",
+      "required": ["emergency", "social", "health"],
+      "properties": {
+        "emergency": { "type": "string", "pattern": "^[0-9]{3,4}$" },
+        "social": { "type": "string", "pattern": "^[0-9]{3,4}$" },
+        "health": { "type": "string", "pattern": "^[0-9]{3,4}$" }
+      },
+      "additionalProperties": false
+    },
     "falseAlarm": {
       "description": "D-07 yanlış alarm (T-071): pencere ve eşik görüşmesini tetikleyen tekrar sayısı",
       "type": "object",

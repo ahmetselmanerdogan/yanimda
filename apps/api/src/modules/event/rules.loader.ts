@@ -48,11 +48,18 @@ export interface FalseAlarmParams {
   windowDays: number;
   reviewAfter: number;
 }
+/** T-052 resmi hatlar: acil (112), sosyal destek (183), sağlık (182). Operatör bunları masa sabit hattından arar. */
+export interface OfficialNumbers {
+  emergency: string;
+  social: string;
+  health: string;
+}
 export interface RulePack {
   country: string;
   version: number;
   learning?: LearningParams;
   falseAlarm?: FalseAlarmParams;
+  numbers?: OfficialNumbers;
   rules: Rule[];
 }
 
@@ -61,6 +68,8 @@ export const DEFAULT_LEARNING: LearningParams = { days: 30, historyDays: 14, min
 export const DEFAULT_FALSE_ALARM: FalseAlarmParams = { windowDays: 30, reviewAfter: 3 };
 export const learningOf = (pack: RulePack): LearningParams => pack.learning ?? DEFAULT_LEARNING;
 export const falseAlarmOf = (pack: RulePack): FalseAlarmParams => pack.falseAlarm ?? DEFAULT_FALSE_ALARM;
+export const DEFAULT_NUMBERS: OfficialNumbers = { emergency: '112', social: '183', health: '182' };
+export const numbersOf = (pack: RulePack): OfficialNumbers => pack.numbers ?? DEFAULT_NUMBERS;
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {

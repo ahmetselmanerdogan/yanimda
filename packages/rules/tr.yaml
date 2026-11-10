@@ -5,6 +5,9 @@ version: 1
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
 falseAlarm: { windowDays: 30, reviewAfter: 3 }
+# T-052 resmi hatlar (operatör masadaki sabit hattan arar; CPaaS bu numaraları aramaz). Servisin ana ve yedek numarası
+# hesaba bağlıdır: CPAAS_INBOUND_NUMBER / CPAAS_BACKUP_NUMBER (.env.example).
+numbers: { emergency: '112', social: '183', health: '182' }
 rules:
   - type: SOS
     priority: 1
