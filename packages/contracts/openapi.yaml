@@ -127,7 +127,7 @@ paths:
         - { name: eventId, in: query, schema: { type: string, format: uuid } }
         - { name: answered, in: query, schema: { type: string, enum: ['true', 'false'] } }
       responses:
-        '200': { description: Giden (zincir) ve gelen (SOS) çağrılar, en yeni önce }
+        '200': { description: 'Giden (zincir) ve gelen (SOS) çağrılar, en yeni önce' }
         '403': { $ref: '#/components/responses/Problem' }
   /admin/calls/{callId}/recording:
     get:
