@@ -15,6 +15,7 @@ import { ProfileModule } from './modules/profile/profile.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { ReportModule } from './modules/report/report.module';
 import { RulesModule } from './modules/rules/rules.module';
+import { ScreeningModule } from './modules/screening/screening.module';
 import { SignalModule } from './modules/signal/signal.module';
 import { InboundModule } from './modules/telephony/inbound.module';
 
@@ -39,6 +40,7 @@ import { InboundModule } from './modules/telephony/inbound.module';
     FamilyModule,
     FalseAlarmModule,
     InboundModule,
+    ScreeningModule,
   ],
 })
 export class AppModule {}

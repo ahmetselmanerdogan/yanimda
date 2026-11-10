@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { type ConferenceOp, type CpaasProvider, cpaasSignature, type DialRequest, verifySignature } from './cpaas';
+import {
+  type ConferenceOp,
+  type CpaasProvider,
+  cpaasSignature,
+  type DialRequest,
+  type ScreenRequest,
+  verifySignature,
+} from './cpaas';
 
 export const FAKE_CPAAS_TOKEN = 'fake-cpaas-token';
 
@@ -21,6 +28,9 @@ const httpTransport: FakeTransport = async (url, params, signature) => {
  * (görüşme `talkMs`, ardından kayıt hazır). Operatör ucu her zaman açar. `hangup` görüşmeyi hemen bitirir (açılmadan
  * kapatılırsa `canceled`). Konferans (T-051): `move` operatörün Dial'ını bitirir (dial webhook'u), `add` yakının
  * bacağını açar (`party` webhook'ları), `hold` kaydedilir.
+ *
+ * Ön eleme (T-072) `screenCall`: son hane 0/1/9 yukarıdaki gibi; açılan aramada 8 sessiz kalır, 7 "yardım edin",
+ * 6 anlaşılmaz konuşma, 5 tuş 1, 4 düşük güvenli "evet", diğerleri "evet iyiyim" der.
  */
 export class FakeProvider implements CpaasProvider {
   readonly name = 'fake';
@@ -153,6 +163,48 @@ export class FakeProvider implements CpaasProvider {
   async sendSms(to: string, body: string) {
     this.sms.push({ to, body });
     return { providerId: `SMfake${randomUUID()}` };
+  }
+
+  /** T-072 ön eleme aramaları (numara ve okunan soru; testler denetler). */
+  readonly screens: { to: string; text: string }[] = [];
+  screensSettled: Promise<void> = Promise.resolve();
+
+  async screenCall(r: ScreenRequest) {
+    const sid = `CAfake${randomUUID().replace(/-/g, '')}`;
+    this.screens.push({ to: r.to, text: r.ask });
+    const last = r.to.at(-1);
+    const st = (CallStatus: string) => [r.urls.status, { CallSid: sid, CallStatus }] as const;
+    const steps: (readonly [string, Record<string, string>])[] = [st('initiated'), st('ringing')];
+    if (last === '0' || last === '1' || last === '9')
+      steps.push(st(last === '0' ? 'no-answer' : last === '1' ? 'busy' : 'failed'));
+    else {
+      const reply: Record<string, Record<string, string>> = {
+        '8': {},
+        '7': { SpeechResult: 'Yardım edin.', Confidence: '0.91' },
+        '6': { SpeechResult: 'şey ne dediniz', Confidence: '0.80' },
+        '5': { Digits: '1' },
+        '4': { SpeechResult: 'evet', Confidence: '0.30' },
+      };
+      steps.push(st('in-progress'), [
+        r.urls.gather,
+        { CallSid: sid, ...(reply[last!] ?? { SpeechResult: 'Evet iyiyim.', Confidence: '0.92' }) },
+      ]);
+      steps.push([r.urls.status, { CallSid: sid, CallStatus: 'completed', CallDuration: '9' }]);
+    }
+    let hung = false;
+    this.live.set(sid, () => (hung = true));
+    this.screensSettled = (async () => {
+      for (const [url, params] of steps) {
+        await new Promise((res) => setTimeout(res, this.step));
+        if (hung) {
+          await this.send(r.urls.status, { CallSid: sid, CallStatus: 'completed' });
+          break;
+        }
+        await this.send(url, params);
+      }
+      this.live.delete(sid);
+    })();
+    return { providerCallId: sid };
   }
 
   readonly tts: { to: string; text: string }[] = [];

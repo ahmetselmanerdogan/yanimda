@@ -61,14 +61,14 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 
 ## Epik 6 · Aile ve web (S6)
 - [ ] T-060 family-web: paket, ödeme, hesap (C-01)
-- [ ] T-061 Aile uygulaması ekranları (C-04…C-10)
+- [x] T-061 Aile uygulaması ekranları (C-04…C-10) — yerel repo `yanimda-family` (Flutter); gerçek Firebase/APNs push, Maps anahtarı, kritik uyarı başvurusu ve mağaza dağıtımı açık
 - [x] T-062 Günlük özet + F-DAILY (C-07, B-10) — aile ve telefon ekranları T-061/T-044
 - [x] T-063 Test SOS akışı (C-05) — aile ilerleme ekranı T-061
 
 ## Epik 7 · Öğrenme, yanlış alarm, iOS (S7)
 - [x] T-070 Öğrenme modu (D-06) — API; rapor ekranı T-061, otomatik sesli ön eleme T-072
 - [x] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12) — API; aile ekranı T-061, amir ekranı T-074
-- [ ] T-072 Otomatik sesli ön eleme (D-12)
+- [x] T-072 Otomatik sesli ön eleme (D-12) — API + kural paketi; gerçek STT "evet" ≥ %95 denemesi Twilio hesabı bekliyor
 - [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. APNs sessiz uyandırma (15 dk). Açık: gerçek APNs anahtarı ve cihazda deneme, pil ölçümü (<%5/24 sa), TestFlight
 - [x] T-074 Amir panosu (E-11) — taşma bayrağı yalnız işaret (yönlendirme v2.0); operatörün kendi durum seçimi açık
 

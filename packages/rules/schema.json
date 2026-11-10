@@ -83,7 +83,40 @@
             }
           },
           "activeHours": { "type": "object" },
-          "autoVoiceScreening": { "type": "object" },
+          "autoVoiceScreening": {
+            "description": "D-12 otomatik sesli ön eleme (T-072): soru/bekleme cevapsızsa operatörden önce kişiye TTS araması; yalnız INACTIVITY ve WATCH_OFF gibi sorulu/bekleyen türler, asla SOS/FALL",
+            "type": "object",
+            "required": ["enabled", "phrase", "acceptIf"],
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "phrase": {
+                "type": "string",
+                "pattern": "^V-[A-Z0-9-]+$",
+                "description": "Soru metni (katalog, voice kanalı)"
+              },
+              "acceptIf": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 2 },
+                "description": "Kelime başında eşleşirse OK (ör. evet, iyiyim)"
+              },
+              "helpIf": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 2 },
+                "description": "Eşleşirse HELP (OK'dan önce bakılır; ör. hayır, yardım, değil)"
+              },
+              "acceptDigits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9]$" } },
+              "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "timeoutSec": { "type": "integer", "minimum": 30, "maximum": 600 },
+              "operatorSampleRate": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Öğrenme modunda (ilk ay) OK sonuçlarının operatöre CALLBACK olarak düşen oranı (yanlış pozitif ölçümü)"
+              }
+            },
+            "additionalProperties": false
+          },
           "learningMode": {
             "description": "Öğrenme modundayken (D-06): operatöre düşmeden önce ek sessiz soru sayısı",
             "type": "object",
@@ -110,7 +143,9 @@
             "description": "Bu olay tipinde kişi/yakın aramalarında operatör metni (112 hariç); ör. TEST → kurulum görüşmesi"
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "if": { "properties": { "type": { "enum": ["SOS", "FALL"] } }, "required": ["type"] },
+        "then": { "not": { "required": ["autoVoiceScreening"] } }
       }
     }
   }

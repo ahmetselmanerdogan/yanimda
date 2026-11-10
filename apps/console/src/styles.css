@@ -676,8 +676,10 @@ table.breaches tr.live td:first-child {
   align-items: center;
 }
 .my-status button.on.available {
+  /* Koyu zeminde yeşil yazı WCAG AA'yı geçmiyor: dolu rozet, beyaz yazı. */
   border-color: var(--safe);
-  color: var(--safe);
+  background: var(--safe);
+  color: #fff;
   font-weight: 700;
 }
 .my-status button.on.break {
@@ -711,7 +713,8 @@ table.breaches tr.live td:first-child {
 /* T-052: 112 adımı masa sabit hattından (manuel) */
 .badge-manual {
   border: 1px solid var(--help);
-  color: var(--help);
+  background: var(--help);
+  color: #fff;
   border-radius: 4px;
   padding: 0 6px;
   font-size: 11px;

@@ -423,6 +423,78 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /webhooks/screening/{kind}:
+    post:
+      summary: Otomatik sesli ön eleme geri çağrıları (Twilio uyumlu). D-12, T-072
+      description: |
+        Herkese açık; yalnız imzalı istek (X-Twilio-Signature, CPAAS_WEBHOOK_BASE + yol); bozuk imza 403.
+        kind: gather (Gather sonucu: Digits / SpeechResult / Confidence → sınıflandırma; yanıt sonuca göre katalog
+        metni V-SCREEN-OK ya da V-SCREEN-HELP + kapat), status (arama durumu; Gather sonucu gelmeden biten arama
+        cevapsız / FAILED sayılır). İlk sonuç kazanır; tekrar teslim olayı değiştirmez. Bilinmeyen kimlik boş TwiML.
+      operationId: screeningWebhook
+      security: []
+      parameters:
+        - { name: kind, in: path, required: true, schema: { enum: [gather, status] } }
+        - { name: s, in: query, required: true, schema: { type: string, format: uuid }, description: Ön eleme kimliği }
+        - { name: X-Twilio-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                CallSid: { type: string }
+                CallStatus:
+                  { enum: [queued, initiated, ringing, in-progress, completed, busy, no-answer, failed, canceled] }
+                Digits: { type: string }
+                SpeechResult: { type: string }
+                Confidence: { type: string }
+              additionalProperties: { type: string }
+      responses:
+        '200':
+          description: TwiML
+          content: { text/xml: { schema: { type: string } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /screening/stats:
+    get:
+      summary: Otomatik sesli ön eleme sonuçları ve yanlış pozitif ölçümü. D-12, T-072
+      description: |
+        SUPERVISOR veya ADMIN. Son `days` gündeki ön elemelerin sonuç dağılımı; öğrenme modunda (kişinin ilk ayı)
+        kural paketindeki `operatorSampleRate` oranıyla OK sonuçlarından operatöre düşen geri arama (CALLBACK P4,
+        kaynak `voice-screen-sample:<olay>`) örneklemi, kapanmış olanlar ve acil çıkanlar (yanlış pozitif).
+      operationId: screeningStats
+      security: [{ operatorToken: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        '200':
+          description: Özet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since, total, byResult, sampled, sampleReviewed, sampleFalsePositive, falsePositiveRate]
+                properties:
+                  since: { type: string, format: date-time }
+                  total: { type: integer }
+                  byResult:
+                    type: object
+                    properties:
+                      OK: { type: integer }
+                      HELP: { type: integer }
+                      UNCLEAR: { type: integer }
+                      NO_ANSWER: { type: integer }
+                      FAILED: { type: integer }
+                      PENDING: { type: integer }
+                      CANCELLED: { type: integer }
+                  sampled: { type: integer }
+                  sampleReviewed: { type: integer }
+                  sampleFalsePositive: { type: integer }
+                  falsePositiveRate: { type: [number, 'null'] }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /telephony/token:
     get:
       summary: Konsol yazılım telefonu token'ı. E-05, T-051
