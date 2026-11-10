@@ -31,6 +31,7 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
 import { DB, type Db, type Tx } from '../../db/client';
+import { familyNoticeFor } from '../notify/policy';
 import { BATTERY_DEAD_PCT, decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
@@ -72,6 +73,8 @@ interface Uow {
 
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
+/** Gerçek alarm türleri: alarm olmayan açık olaya gelirse olayı yükseltir (attachToOpen). */
+const ALARM_TYPES = new Set<EventType>(['SOS', 'FALL', 'INACTIVITY']);
 const WAIT_TIMERS: TimerKind[] = [
   'prompt-expire',
   'silent-ask-expire',
@@ -186,14 +189,33 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     return this.repo.queueItem(id);
   }
 
-  /** E-02 amir: üstlenmeyi geri al (olay kuyruğa döner, zincir kaldığı yerden sürer). Teyitli olay geri alınmaz. */
+  /**
+   * E-02 amir: üstlenmeyi geri al (olay kuyruğa döner, zincir kaldığı yerden sürer). Teyitli olay (CONFIRMED_*,
+   * DISPATCH) kuyruğa dönemez: operatörsüz bırakılır, başka operatör üstlenince devralır.
+   */
   async unclaim(id: string, supervisorId: string, reason?: string): Promise<EventRecord> {
     const ev = await this.withEvent(id, async (u) => {
-      if (u.ev.state !== 'OPERATOR_ASSIGNED' && u.ev.state !== 'CONTACT_CHAIN')
-        throw new ConflictException('Bu durumda geri alınamaz');
+      if (!OPERATOR_STATES.has(u.ev.state)) throw new ConflictException('Bu durumda geri alınamaz');
+      const previous = u.ev.operatorId ?? null;
       u.ev.operatorId = undefined;
       u.ev.lockUntil = undefined;
-      this.transition(u, 'OPERATOR_QUEUE', 'OPERATOR', supervisorId, reason ?? 'amir geri aldı');
+      u.dirty = true;
+      if (u.ev.state === 'OPERATOR_ASSIGNED' || u.ev.state === 'CONTACT_CHAIN')
+        this.transition(u, 'OPERATOR_QUEUE', 'OPERATOR', supervisorId, reason ?? 'amir geri aldı');
+      else {
+        // Teyitli olay kuyruğa dönemez (durum makinesi); operatörsüz bırakılır, ilk üstlenen devralır.
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'OPERATOR',
+          actorId: supervisorId,
+          action: 'event.released',
+          entityId: u.ev.id,
+          data: { from: previous, state: u.ev.state },
+        });
+        u.publishes.push({
+          topic: TOPICS.eventUpdated,
+          payload: { eventId: u.ev.id, operatorId: null, previousOperatorId: previous, reason: 'RELEASED' },
+        });
+      }
       return u.ev;
     });
     if (!ev) throw new NotFoundException('Olay yok');
@@ -590,31 +612,66 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     return created;
   }
 
-  /** D-02 adım 3: açık olay varken yeni kaynak eklenir; SOS ise öncelik 1'e çekilir ve bekleme varsa hemen yükseltilir. */
+  /**
+   * D-02 adım 3: açık olay varken yeni kaynak eklenir; SOS ise öncelik 1'e çekilir ve bekleme varsa hemen yükseltilir.
+   * Gerçek alarm (SOS/FALL/INACTIVITY) alarm olmayan bir olaya (TEST, CALLBACK, FOLLOW_UP, WATCH_OFF, pil, bağlantı)
+   * gelirse olay o alarma YÜKSELTİLİR: tür, öncelik ve test bayrağı değişir (112 adımı zincire girer), bekleme varsa
+   * hemen operatöre gider, kuyruğa daha önce girmişse aileye alarm bildirimi ayrıca planlanır.
+   */
   private async attachToOpen(u: Uow, type: EventType, sourceId: string) {
     u.ev.sourceSignalIds.push(sourceId);
     u.dirty = true;
-    if (type === 'SOS') {
-      if (u.ev.priority > 1) {
-        await this.repo.insertAudit(u.tx, {
-          actorKind: 'SYSTEM',
-          action: 'event.priority_raised',
-          entityId: u.ev.id,
-          data: { from: u.ev.priority, to: 1, reason: 'SOS', sourceId },
-        });
-        u.publishes.push({
-          topic: TOPICS.eventUpdated,
-          payload: { eventId: u.ev.id, priority: 1, previousPriority: u.ev.priority, reason: 'SOS' },
-        });
-        u.ev.priority = 1;
-      }
-      if (u.ev.state === 'DEVICE_PROMPT') {
-        this.escalate(u, 'SOS geldi');
-        u.after.push(() => this.cancelWaitTimers(u.ev.id));
-      }
+    const upgrade = ALARM_TYPES.has(type) && !ALARM_TYPES.has(u.ev.type);
+    const rule = ruleFor(this.pack, type);
+    const to = upgrade ? Math.min(u.ev.priority, rule?.priority ?? 1) : type === 'SOS' ? 1 : u.ev.priority;
+    if (to < u.ev.priority) {
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'SYSTEM',
+        action: 'event.priority_raised',
+        entityId: u.ev.id,
+        data: { from: u.ev.priority, to, reason: type, sourceId },
+      });
+      u.publishes.push({
+        topic: TOPICS.eventUpdated,
+        payload: { eventId: u.ev.id, priority: to, previousPriority: u.ev.priority, reason: type },
+      });
+      u.ev.priority = to;
     }
-    this.log.log(`Açık olaya ${type} kaynağı eklendi (olay=${u.ev.id})`);
+    if (upgrade) await this.upgradeType(u, type, sourceId);
+    if ((type === 'SOS' || upgrade) && u.ev.state === 'DEVICE_PROMPT') {
+      this.escalate(u, `${type} geldi`);
+      u.after.push(() => this.cancelWaitTimers(u.ev.id));
+    } else if (upgrade && u.ev.state === 'CREATED') this.escalate(u, `${type} geldi`);
+    this.log.log(`Açık olaya ${type} kaynağı eklendi (olay=${u.ev.id}${upgrade ? ', yükseltildi' : ''})`);
     await this.flush(u);
+  }
+
+  private async upgradeType(u: Uow, type: EventType, sourceId: string) {
+    const from = { type: u.ev.type, isTest: u.ev.isTest };
+    await this.repo.insertAudit(u.tx, {
+      actorKind: 'SYSTEM',
+      action: 'event.type_upgraded',
+      entityId: u.ev.id,
+      data: { from: from.type, to: type, wasTest: from.isTest, sourceId },
+    });
+    u.ev.type = type;
+    u.ev.isTest = false;
+    u.publishes.push({
+      topic: TOPICS.eventUpdated,
+      payload: { eventId: u.ev.id, type, previousType: from.type, priority: u.ev.priority, reason: 'UPGRADED' },
+    });
+    // Kuyruğa girişte aile bildirimi (ESCALATED → OPERATOR_QUEUE) eski türle gitti/gitmedi; alarm bildirimi şimdi.
+    if (u.ev.state !== 'CREATED' && u.ev.state !== 'DEVICE_PROMPT') {
+      const code = familyNoticeFor(
+        { id: u.ev.id, type, isTest: false, confirmedOutcome: null },
+        { to: 'OPERATOR_QUEUE' },
+      );
+      if (code)
+        await this.notify(u.tx, u.ev.protectedPersonId, [{ code, audience: 'FAMILY' }], {
+          dedupeBase: `event:${u.ev.id}`,
+          eventId: u.ev.id,
+        });
+    }
   }
 
   private escalate(u: Uow, note: string) {
@@ -673,6 +730,26 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         if (u.ev.state === 'OPERATOR_QUEUE') {
           u.ev.operatorId = operatorId;
           this.transition(u, 'OPERATOR_ASSIGNED', 'OPERATOR', operatorId);
+        } else if (
+          OPERATOR_STATES.has(u.ev.state) &&
+          u.ev.operatorId !== operatorId &&
+          (!u.ev.lockUntil || new Date(u.ev.lockUntil) <= now)
+        ) {
+          // Kilidi dolmuş (veya amirce bırakılmış) olay devralınır; teyitli olay (CONFIRMED_*, DISPATCH) dahil —
+          // durum değişmez, zincir yeni operatörle sürer.
+          const previous = u.ev.operatorId ?? null;
+          await this.repo.insertAudit(u.tx, {
+            actorKind: 'OPERATOR',
+            actorId: operatorId,
+            action: 'event.taken_over',
+            entityId: u.ev.id,
+            data: { from: previous, state: u.ev.state },
+          });
+          u.ev.operatorId = operatorId;
+          u.publishes.push({
+            topic: TOPICS.eventUpdated,
+            payload: { eventId: u.ev.id, operatorId, previousOperatorId: previous, reason: 'TAKEN_OVER' },
+          });
         } else if (u.ev.operatorId !== operatorId || !OPERATOR_STATES.has(u.ev.state)) {
           throw new ConflictException(u.ev.operatorId ? 'Başka operatör üstlendi' : 'Olay kuyrukta değil');
         }

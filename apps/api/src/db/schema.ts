@@ -57,6 +57,21 @@ export const outbox = eventSchema.table('outbox', {
   lastError: text('last_error'),
 });
 
+/** 0020: kritik olmayan (side) abonelerin teslim kuyruğu; abone başına sıralı, dead_at = abone DLQ'su. */
+export const outboxSide = eventSchema.table('outbox_side', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  outboxId: bigint('outbox_id', { mode: 'number' }).notNull(),
+  topic: text('topic').notNull(),
+  handler: text('handler').notNull(),
+  envelope: jsonb('envelope').notNull(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  processedAt: timestamptz('processed_at'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamptz('next_attempt_at').notNull().defaultNow(),
+  lastError: text('last_error'),
+  deadAt: timestamptz('dead_at'),
+});
+
 export const outboxDlq = eventSchema.table('outbox_dlq', {
   id: bigint('id', { mode: 'number' }).primaryKey(),
   topic: text('topic').notNull(),
@@ -365,6 +380,9 @@ export const chainRun = chainSchema.table('chain_run', {
   procedureVersion: integer('procedure_version').notNull(),
   rulesVersion: integer('rules_version').notNull(),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
+  /** 0019: zincirin planlandığı olay türü / test bayrağı (olay yükseltilince yeniden planlanır). */
+  eventType: text('event_type'),
+  isTest: boolean('is_test'),
 });
 
 export const chainStep = chainSchema.table('chain_step', {

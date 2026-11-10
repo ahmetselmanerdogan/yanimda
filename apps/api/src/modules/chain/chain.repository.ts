@@ -35,6 +35,9 @@ export interface Run {
   id: string;
   procedureVersion: number;
   steps: ChainStep[];
+  /** Planlandığı olay türü / test bayrağı; null = 0019 öncesi satır. */
+  eventType?: string | null;
+  isTest?: boolean | null;
 }
 
 export const currentStep = (steps: ChainStep[]) => steps.find((s) => !s.result) ?? null;
@@ -52,13 +55,19 @@ export class ChainRepository {
     const [r] = await q.select().from(chainRun).where(eq(chainRun.eventId, eventId));
     if (!r) return null;
     const rows = await q.select().from(chainStep).where(eq(chainStep.runId, r.id)).orderBy(asc(chainStep.n));
-    return { id: r.id, procedureVersion: r.procedureVersion, steps: rows.map(toStep) };
+    return {
+      id: r.id,
+      procedureVersion: r.procedureVersion,
+      steps: rows.map(toStep),
+      eventType: r.eventType,
+      isTest: r.isTest,
+    };
   }
 
   async createRun(
     tx: Tx,
     eventId: string,
-    meta: { country: string; procedureVersion: number; rulesVersion: number },
+    meta: { country: string; procedureVersion: number; rulesVersion: number; eventType: string; isTest: boolean },
     steps: ChainStep[],
   ): Promise<Run> {
     const id = uuidv7();
@@ -68,9 +77,16 @@ export class ChainRepository {
       procedureCountry: meta.country,
       procedureVersion: meta.procedureVersion,
       rulesVersion: meta.rulesVersion,
+      eventType: meta.eventType,
+      isTest: meta.isTest,
     });
     if (steps.length) await tx.insert(chainStep).values(steps.map((s) => this.row(id, s)));
-    return { id, procedureVersion: meta.procedureVersion, steps };
+    return { id, procedureVersion: meta.procedureVersion, steps, eventType: meta.eventType, isTest: meta.isTest };
+  }
+
+  /** Olay yükseltilince zincirin yeni planını işaretler. */
+  async replanned(tx: Tx, runId: string, eventType: string, isTest: boolean): Promise<void> {
+    await tx.update(chainRun).set({ eventType, isTest }).where(eq(chainRun.id, runId));
   }
 
   async appendStep(tx: Tx, runId: string, s: ChainStep): Promise<void> {
