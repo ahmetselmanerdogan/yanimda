@@ -64,7 +64,7 @@ describe.skipIf(!hasRedisServer())('Senaryolar (uçtan uca)', () => {
     const close = await fetch(`${st.api.base}/events/${ev.id}/close`, {
       method: 'POST',
       headers: op,
-      body: JSON.stringify({ outcome: 'EMERGENCY', note: '112 arandı' }),
+      body: JSON.stringify({ outcome: 'EMERGENCY', note: '112 arandı', notified112: true }),
     });
     expect(close.status).toBe(204);
     expect(transitions((await eventOf('pp-s3'))!)).toEqual([
