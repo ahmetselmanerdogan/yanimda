@@ -6,3 +6,4 @@ pnpm-lock.yaml
 docs
 # Helm şablonları Go template içerir, YAML değil (T-083)
 infra/helm/*/templates
+.next

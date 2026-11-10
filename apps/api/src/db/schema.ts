@@ -110,6 +110,8 @@ export const protectedPerson = profileSchema.table('protected_person', {
   geocodedAt: timestamptz('geocoded_at'),
   doorAccessNoteEnc: text('door_access_note_enc'),
   dailySummaryEnabled: boolean('daily_summary_enabled').notNull().default(true),
+  /** T-061: aile uygulaması son konumu görebilir mi. */
+  locationSharing: boolean('location_sharing').notNull().default(true),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
@@ -141,6 +143,30 @@ export const subscription = profileSchema.table('subscription', {
   startedAt: timestamptz('started_at').notNull().defaultNow(),
   renewsAt: timestamptz('renews_at'),
   canceledAt: timestamptz('canceled_at'),
+  // T-060 (0016)
+  countryCode: text('country_code').notNull().default('TR'),
+  provider: text('provider'),
+  providerCustomerRef: text('provider_customer_ref'),
+  providerSubscriptionRef: text('provider_subscription_ref'),
+  checkoutRef: text('checkout_ref'),
+  trialEndsAt: timestamptz('trial_ends_at'),
+  pastDueSince: timestamptz('past_due_since'),
+  graceUntil: timestamptz('grace_until'),
+  suspendedAt: timestamptz('suspended_at'),
+  lastProviderEventAt: timestamptz('last_provider_event_at'),
+  kvkkNoticeVersion: text('kvkk_notice_version'),
+  explicitConsentAt: timestamptz('explicit_consent_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-060 ödeme webhook'u tekrar ayıklama: (sağlayıcı, olay kimliği) bir kez. */
+export const paymentWebhook = profileSchema.table('payment_webhook', {
+  provider: text('provider').notNull(),
+  providerEventId: text('provider_event_id').notNull(),
+  type: text('type').notNull(),
+  subscriptionId: uuid('subscription_id'),
+  outcome: text('outcome').notNull(),
+  receivedAt: timestamptz('received_at').notNull().defaultNow(),
 });
 
 /** T-040/T-041 davet kodu: sha256(kod) saklanır; 15 dk, tek kullanım. */
@@ -228,6 +254,52 @@ export const call = telephonySchema.table('call', {
   error: text('error'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-051 kalan: gelen SOS aramaları (numara yok; yalnız eşleşen kişi ve olay). */
+export interface InboundAttempt {
+  op: string;
+  at: string;
+  result: 'ringing' | 'answered' | 'no-answer' | 'busy' | 'failed' | 'canceled';
+}
+export const inboundCall = telephonySchema.table('inbound_call', {
+  id: uuid('id').primaryKey(),
+  provider: text('provider').notNull(),
+  providerCallId: text('provider_call_id').notNull(),
+  protectedPersonId: text('protected_person_id'),
+  eventId: uuid('event_id'),
+  status: text('status').notNull().default('routing'),
+  operatorId: text('operator_id'),
+  attempts: jsonb('attempts').$type<InboundAttempt[]>().notNull().default([]),
+  queuedAt: timestamptz('queued_at'),
+  answeredAt: timestamptz('answered_at'),
+  endedAt: timestamptz('ended_at'),
+  durationSec: integer('duration_sec'),
+  recordingRef: text('recording_ref'),
+  recordingProviderId: text('recording_provider_id'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-072 (D-12) otomatik sesli ön eleme: olay başına bir arama. Numara ve konuşma dökümü tutulmaz. */
+export const voiceScreening = eventSchema.table('voice_screening', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  eventType: text('event_type').notNull(),
+  contactId: uuid('contact_id'),
+  provider: text('provider').notNull(),
+  providerCallId: text('provider_call_id'),
+  config: jsonb('config').notNull(),
+  status: text('status').notNull().default('PENDING'),
+  reason: text('reason'),
+  input: text('input'),
+  matched: text('matched'),
+  confidence: doublePrecision('confidence'),
+  callStatus: text('call_status'),
+  sampled: boolean('sampled').notNull().default(false),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  finishedAt: timestamptz('finished_at'),
 });
 
 export const auditSchema = pgSchema('audit');
@@ -332,6 +404,8 @@ export const threshold = eventSchema.table('threshold', {
   sleepStart: time('sleep_start').notNull().default('22:00'),
   sleepEnd: time('sleep_end').notNull().default('08:00'),
   inactivityMin: integer('inactivity_min'),
+  /** T-061: düşme sorusu cevap süresi (sn, 30–90); null → kural paketi. */
+  fallPromptSec: integer('fall_prompt_sec'),
   sleepSource: text('sleep_source').notNull().default('DEFAULT'),
   inactivitySource: text('inactivity_source').notNull().default('DEFAULT'),
   learnedAt: timestamptz('learned_at'),

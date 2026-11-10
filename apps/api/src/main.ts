@@ -7,7 +7,10 @@ import { AppModule } from './app.module';
 import { ProblemFilter } from './common/problem.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: ['log', 'warn', 'error'] });
+  const app = await NestFactory.create(AppModule, {
+    logger: ['log', 'warn', 'error'],
+    rawBody: true, // T-060: ödeme webhook imzası ham gövde üzerinden
+  });
   app.setGlobalPrefix('v1');
   app.useGlobalFilters(new ProblemFilter());
   app.enableShutdownHooks();

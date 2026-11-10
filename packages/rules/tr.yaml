@@ -5,6 +5,9 @@ version: 1
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
 falseAlarm: { windowDays: 30, reviewAfter: 3 }
+# T-052 resmi hatlar (operatör masadaki sabit hattan arar; CPaaS bu numaraları aramaz). Servisin ana ve yedek numarası
+# hesaba bağlıdır: CPAAS_INBOUND_NUMBER / CPAAS_BACKUP_NUMBER (.env.example).
+numbers: { emergency: '112', social: '183', health: '182' }
 rules:
   - type: SOS
     priority: 1
@@ -26,7 +29,16 @@ rules:
     thresholdMin: { default: 30, learnable: true, min: 15, max: 90 }
     activeHours: { useSleepWindow: true }
     devicePrompt: { enabled: true, windowSec: 120, silent: true, tts: W-INACT-1 }
-    autoVoiceScreening: { enabled: true, phrase: W-INACT-1, acceptIf: ['evet', 'iyiyim'] }
+    # D-12 (T-072): soru cevapsızsa operatörden önce kişiye sesli arama; "evet/iyiyim/1" → OK, diğer → kuyruk.
+    autoVoiceScreening: &screening
+      enabled: true
+      phrase: V-SCREEN-ASK
+      acceptIf: [evet, iyiyim]
+      helpIf: [hayır, yardım, imdat, değil, kötü]
+      acceptDigits: ['1']
+      minConfidence: 0.5
+      timeoutSec: 120
+      operatorSampleRate: 0.2
     learningMode: { extraSilentAsks: 1 }
     chain: [CALL_PHONE, CALL_WATCH, CALL_CONTACT:1, CALL_NEIGHBOR, CALL_112]
     stepTimeoutSec: { CALL_PHONE: 15, CALL_WATCH: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
@@ -35,6 +47,7 @@ rules:
     suppressIn: [NIGHT]
     remindAfterMin: 120
     operatorAfterMin: 240
+    autoVoiceScreening: *screening
     chain: [CALL_PHONE, CALL_CONTACT:1]
   - type: BATTERY_LOW
     priority: 3

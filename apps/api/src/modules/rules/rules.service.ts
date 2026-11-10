@@ -148,6 +148,9 @@ export class RulesService implements RulesProvider {
       if (tts && !catalogs.tr[tts]) throw new BadRequestException(`TTS kodu mesaj kataloğunda yok: ${tts}`);
       if (r.operatorScript && !catalogs.tr[r.operatorScript])
         throw new BadRequestException(`Operatör metni mesaj kataloğunda yok: ${r.operatorScript}`);
+      const phrase = r.autoVoiceScreening?.phrase;
+      if (phrase && catalogs.tr[phrase]?.channel !== 'voice')
+        throw new BadRequestException(`Ön eleme sorusu mesaj kataloğunda (voice) yok: ${phrase}`);
     }
     return pack;
   }

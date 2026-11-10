@@ -51,6 +51,10 @@ test.describe('senaryolar', () => {
     await page.keyboard.press('2'); // → acil
     await expect(page.locator('.state')).toHaveText('Acil');
     await expect(page.locator('.step.current')).toContainText("112'yi ara");
+    // T-052: 112 masa sabit hattından, manuel işaretli.
+    await expect(page.locator('.step.current .badge-manual')).toHaveText('MANUEL');
+    await expect(page.getByTestId('desk-112')).toContainText('masadaki sabit hattan');
+    await expect(page.getByRole('button', { name: /Sabit hattan aradım/ })).toBeVisible();
     await expect(page.locator('.script')).toContainText('Olay: Düşme');
     await page.keyboard.press('1'); // 112 ulaşıldı
     await expect(page.locator('.state')).toHaveText('112 yönlendirildi');
@@ -218,4 +222,36 @@ test('T-051 telefon barı (eğitim modu): sahte cihaz, Ara → görüşme, bekle
   await expect(bar.getByTestId('phone-call')).toHaveText('Görüşme yok');
   await expect(page.locator('.call-line .suggest')).toContainText('Ulaşıldı');
   expect(apiCalls).toEqual([]);
+});
+
+test('T-052 112 adımı (eğitim modu): masa sabit hattı uyarısı, MANUEL etiketi, "Sabit hattan aradım"', async ({
+  page,
+}) => {
+  await page.goto('/?training=1');
+  await page.locator('main').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.state')).toHaveText('Üstlenildi');
+  await page.keyboard.press('Control+1');
+  await page.getByLabel('Gerekçe (zorunlu)').fill('tatbikat');
+  await page.getByLabel('Gerekçe (zorunlu)').press('Enter');
+  await expect(page.locator('.step.current')).toContainText("112'yi ara");
+  await expect(page.locator('.step.current .badge-manual')).toHaveText('MANUEL');
+  const desk = page.getByTestId('desk-112');
+  await expect(desk).toContainText("112'yi masadaki sabit hattan arayın");
+  await expect(desk).toContainText('sonucu girin');
+  const done = page.getByRole('button', { name: /Sabit hattan aradım/ });
+  await done.click();
+  await expect(page.locator('.step.current .step-result')).toContainText('Aranıyor');
+  await page.locator('main').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('1'); // sonucu elle gir: ulaşıldı
+  await expect(page.locator('.state')).toHaveText('112 yönlendirildi');
+});
+
+test('operatör durumu (eğitim modu): üst barda Müsait / Molada', async ({ page }) => {
+  await page.goto('/?training=1');
+  const group = page.getByRole('group', { name: 'Durumum' });
+  await expect(group.getByRole('button', { name: 'Müsait' })).toHaveAttribute('aria-pressed', 'true');
+  await group.getByRole('button', { name: 'Molada' }).click();
+  await expect(group.getByRole('button', { name: 'Molada' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(group.getByRole('button', { name: 'Müsait' })).toHaveAttribute('aria-pressed', 'false');
 });

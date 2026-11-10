@@ -33,7 +33,7 @@ import { createHarness, type Harness, sig } from './support/harness';
  *  - operatör ucu: yazılım telefonu açıksa `client:<operatör>`, değilse masa hattı
  *  - konferansa aile eklenir (görüşme `<Conference>`'a taşınır, yakın aranır); bekletme; kapatma
  *  - konferans kaydı da olay kaydında (depoda); numara log/audit/satırda yok
- * Gelen SOS aramaları (müsait operatöre yönlendirme) bu dilimde yok (CHANGELOG "açık").
+ * Gelen SOS aramaları (müsait operatöre yönlendirme): test/inbound.spec.ts.
  */
 const ENV = { CPAAS_WEBHOOK_BASE: 'https://api.test', CPAAS_AGENT_NUMBER: '+902120000000', COUNTRY_CODE: 'TR' };
 const VOICE: VoiceConfig = {

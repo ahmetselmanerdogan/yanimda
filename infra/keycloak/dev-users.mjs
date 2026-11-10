@@ -8,6 +8,8 @@
  *
  * operations: operator1 (OPERATOR), operator2 (OPERATOR), supervisor1 (SUPERVISOR), admin1 (ADMIN)
  * consumers : family1 (FAMILY)
+ * T-060: consumers realm'indeki `yanimda-signup` hizmet hesabı istemcisinin sırrı da yazdırılır
+ * (API .env → KEYCLOAK_SIGNUP_CLIENT_SECRET; sır Keycloak'ta üretilir, depoda yok).
  * KEYCLOAK_DEV_OTP_SECRET verilirse OTP önceden kayıtlı gelir (otomatik testler TOTP'yi bu sırdan üretir); verilmezse
  * ilk girişte QR ile kurulum istenir. Sır, Keycloak'ın sakladığı düz metindir; uygulamaya girilecek base32 hali yazdırılır.
  */
@@ -95,6 +97,32 @@ function base32(buf) {
   return out;
 }
 
+/**
+ * T-060: `yanimda-signup` hizmet hesabına realm-management manage-users + view-users atar (idempotent; realm
+ * içe aktarımındaki `users[].clientRoles` her Keycloak sürümünde uygulanmıyor) ve istemci sırrını döner.
+ */
+export async function ensureSignupClient(token, kc = KC) {
+  const h = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const base = `${kc}/admin/realms/consumers`;
+  const get = async (p) => {
+    const r = await fetch(`${base}${p}`, { headers: h });
+    if (!r.ok) throw new Error(`consumers${p.split('?')[0]}: HTTP ${r.status}`);
+    return r.json();
+  };
+  const [client] = await get('/clients?clientId=yanimda-signup');
+  if (!client) return null;
+  const sa = await get(`/clients/${client.id}/service-account-user`);
+  const [rm] = await get('/clients?clientId=realm-management');
+  const roles = await Promise.all(['manage-users', 'view-users'].map((n) => get(`/clients/${rm.id}/roles/${n}`)));
+  const r = await fetch(`${base}/users/${sa.id}/role-mappings/clients/${rm.id}`, {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify(roles.map(({ id, name }) => ({ id, name }))),
+  });
+  if (!r.ok) throw new Error(`yanimda-signup rolleri: HTTP ${r.status}`);
+  return (await get(`/clients/${client.id}/client-secret`)).value;
+}
+
 const token = await adminToken();
 await partialImport(token, 'operations', [
   user('operator1', ['OPERATOR'], true),
@@ -103,5 +131,8 @@ await partialImport(token, 'operations', [
   user('admin1', ['ADMIN'], true),
 ]);
 await partialImport(token, 'consumers', [user('family1', ['FAMILY'], false)]);
+const signupClient = await ensureSignupClient(token);
+if (signupClient) console.log(`KEYCLOAK_SIGNUP_CLIENT_SECRET=${signupClient}`);
+else console.log("consumers realm'inde yanimda-signup istemcisi yok (realm-consumers.json yeniden içe aktarılmalı).");
 if (OTP_SECRET) console.log(`OTP (authenticator uygulamasına elle): ${base32(Buffer.from(OTP_SECRET))}`);
 else console.log('OTP sırrı verilmedi: operations kullanıcıları ilk girişte OTP kuracak.');

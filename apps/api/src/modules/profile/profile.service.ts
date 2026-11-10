@@ -37,6 +37,8 @@ export interface PersonView {
   myRole: 'OWNER' | 'MEMBER' | null;
   /** F-DAILY günlük bildirimi açık mı (C-07). */
   dailySummary: boolean;
+  /** T-061 (C-09): aile uygulaması son konumu görür mü. */
+  locationSharing: boolean;
   medical: { present: boolean; consentAt: string | null; updatedAt: string | null };
   createdAt: string;
 }
@@ -169,6 +171,7 @@ export class ProfileService {
       doorAccessNote: row.doorAccessNoteEnc ? this.cipher.decrypt(row.doorAccessNoteEnc, ctxDoor(id)) : null,
       myRole: role,
       dailySummary: row.dailySummaryEnabled,
+      locationSharing: row.locationSharing,
       medical: {
         present: !!med,
         consentAt: med?.consentAt.toISOString() ?? null,
@@ -401,6 +404,10 @@ export class ProfileService {
     if (b.dailySummary !== undefined) {
       if (typeof b.dailySummary !== 'boolean') throw new BadRequestException('dailySummary true/false');
       p.dailySummaryEnabled = b.dailySummary;
+    }
+    if (b.locationSharing !== undefined) {
+      if (typeof b.locationSharing !== 'boolean') throw new BadRequestException('locationSharing true/false');
+      p.locationSharing = b.locationSharing;
     }
     if (b.language !== undefined) p.language = oneOf(b.language, ['tr'] as const, 'language');
     if (b.timezone !== undefined) {

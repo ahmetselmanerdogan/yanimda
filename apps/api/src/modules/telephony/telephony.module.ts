@@ -2,6 +2,7 @@ import { Logger, Module } from '@nestjs/common';
 
 import type { CpaasProvider } from './cpaas';
 import { FakeProvider } from './fake-cpaas';
+import { telephonyEnvProblems } from './numbers';
 import { type RecordingStore, s3ConfigFromEnv, S3RecordingStore } from './recording-store';
 import { CpaasWebhookController, TelephonyController } from './telephony.controller';
 import { CPAAS, RECORDINGS, TelephonyService } from './telephony.service';
@@ -15,6 +16,10 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
   const prod = env.NODE_ENV === 'production';
   const kind = env.CPAAS_PROVIDER || (prod ? 'off' : 'fake');
   if (kind === 'off') return null;
+  // T-052: numara biçimi ve trunk yapılandırması başlangıçta denetlenir (bozuk yapılandırmayla açılmaz).
+  const { errors, warnings } = telephonyEnvProblems(env);
+  if (errors.length) throw new Error(`Telefoni yapılandırması hatalı: ${errors.join('; ')}`);
+  for (const w of warnings) log.warn(w);
   if (kind === 'twilio') {
     const cfg = twilioConfigFromEnv(env);
     if (!cfg)
@@ -51,6 +56,6 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): CpaasProv
     },
   ],
   controllers: [CpaasWebhookController, TelephonyController],
-  exports: [TelephonyService, CPAAS],
+  exports: [TelephonyService, CPAAS, RECORDINGS],
 })
 export class TelephonyModule {}

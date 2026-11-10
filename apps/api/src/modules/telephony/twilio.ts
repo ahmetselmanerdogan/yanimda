@@ -3,6 +3,8 @@ import {
   conferenceTwiml,
   type CpaasProvider,
   type DialRequest,
+  type ScreenRequest,
+  screenTwiml,
   verifySignature,
   xml,
 } from './cpaas';
@@ -11,12 +13,16 @@ export interface TwilioConfig {
   accountSid: string;
   authToken: string;
   from: string;
+  /** T-052: Netgsm/Verimor SIP trunk'ı Twilio BYOC ile bağlıysa PSTN bacakları bu trunk'tan çıkar. */
+  byocTrunkSid?: string;
   apiBase?: string;
 }
 
 export function twilioConfigFromEnv(env: NodeJS.ProcessEnv = process.env): TwilioConfig | null {
   const { TWILIO_ACCOUNT_SID: accountSid, TWILIO_AUTH_TOKEN: authToken, TWILIO_FROM_NUMBER: from } = env;
-  return accountSid && authToken && from ? { accountSid, authToken, from } : null;
+  if (!accountSid || !authToken || !from) return null;
+  const byoc = env.TWILIO_BYOC_TRUNK_SID;
+  return { accountSid, authToken, from, ...(byoc ? { byocTrunkSid: byoc } : {}) };
 }
 
 /**
@@ -34,6 +40,17 @@ export class TwilioProvider implements CpaasProvider {
     this.base = `${cfg.apiBase ?? 'https://api.twilio.com'}/2010-04-01/Accounts/${cfg.accountSid}`;
   }
 
+  /** T-052: PSTN bacağı için `<Number byoc>` özniteliği (trunk yoksa boş). */
+  byocAttr(): string {
+    return this.cfg.byocTrunkSid ? ` byoc="${xml(this.cfg.byocTrunkSid)}"` : '';
+  }
+
+  /** Calls API'de PSTN bacağı BYOC trunk'tan (yazılım telefonu `client:` bacağı hariç). */
+  private byoc(p: URLSearchParams, to: string) {
+    if (this.cfg.byocTrunkSid && !to.startsWith('client:')) p.set('Byoc', this.cfg.byocTrunkSid);
+    return p;
+  }
+
   /** Testlerde TwiML'i görmek için ayrı. */
   dialTwiml(r: DialRequest): string {
     const u = r.urls;
@@ -41,21 +58,24 @@ export class TwilioProvider implements CpaasProvider {
       '<?xml version="1.0" encoding="UTF-8"?><Response>' +
       `<Dial record="record-from-answer-dual" timeout="${Math.max(5, r.timeoutSec || 25)}" callerId="${xml(this.cfg.from)}"` +
       ` action="${xml(u.dial)}" recordingStatusCallback="${xml(u.recording)}" recordingStatusCallbackEvent="completed">` +
-      `<Number url="${xml(u.announce)}" statusCallback="${xml(u.status)}"` +
+      `<Number${this.byocAttr()} url="${xml(u.announce)}" statusCallback="${xml(u.status)}"` +
       ` statusCallbackEvent="initiated ringing answered completed">${xml(r.to)}</Number>` +
       '</Dial></Response>'
     );
   }
 
   async call(r: DialRequest) {
-    const body = new URLSearchParams({
-      To: r.agent,
-      From: this.cfg.from,
-      Twiml: this.dialTwiml(r),
-      StatusCallback: r.urls.agent,
-      StatusCallbackEvent: 'completed',
-      Timeout: '20',
-    });
+    const body = this.byoc(
+      new URLSearchParams({
+        To: r.agent,
+        From: this.cfg.from,
+        Twiml: this.dialTwiml(r),
+        StatusCallback: r.urls.agent,
+        StatusCallbackEvent: 'completed',
+        Timeout: '20',
+      }),
+      r.agent,
+    );
     const j = (await this.req('POST', '/Calls.json', body)) as { sid: string };
     return { providerCallId: j.sid };
   }
@@ -92,10 +112,24 @@ export class TwilioProvider implements CpaasProvider {
     const j = (await this.req(
       'POST',
       '/Calls.json',
-      new URLSearchParams({ To: to, From: this.cfg.from, Twiml: twiml }),
+      this.byoc(new URLSearchParams({ To: to, From: this.cfg.from, Twiml: twiml }), to),
     )) as {
       sid: string;
     };
+    return { providerCallId: j.sid };
+  }
+
+  /** T-072 ön eleme: kişiyi doğrudan arar; soru + Gather (DTMF/konuşma), arama durumu `status` webhook'una. */
+  async screenCall(r: ScreenRequest) {
+    const p = new URLSearchParams({
+      To: r.to,
+      From: this.cfg.from,
+      Twiml: screenTwiml({ ask: r.ask, gatherUrl: r.urls.gather, hints: r.hints, digits: r.digits }),
+      StatusCallback: r.urls.status,
+      Timeout: String(r.ringTimeoutSec),
+    });
+    for (const e of ['initiated', 'ringing', 'answered', 'completed']) p.append('StatusCallbackEvent', e);
+    const j = (await this.req('POST', '/Calls.json', p)) as { sid: string };
     return { providerCallId: j.sid };
   }
 
@@ -122,6 +156,7 @@ export class TwilioProvider implements CpaasProvider {
         Timeout: '25',
       });
       for (const e of ['initiated', 'ringing', 'answered', 'completed']) p.append('StatusCallbackEvent', e);
+      this.byoc(p, op.to);
       const j = (await this.req('POST', '/Calls.json', p)) as { sid: string };
       return { providerCallId: j.sid };
     }
