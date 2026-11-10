@@ -41,7 +41,7 @@ jobs:
             type=ref,event=tag
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
       - name: İmajı kur (yerel, taramadan önce itilmez)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -53,7 +53,7 @@ jobs:
             image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress yanimda-api:scan
       - id: push
         name: İt
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
