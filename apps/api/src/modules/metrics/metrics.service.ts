@@ -115,55 +115,6 @@ export class MetricsService implements OnModuleInit, OnApplicationBootstrap, OnA
         this.set((await falseAlarmStats(store, new Date(), 30, 3)).ratio);
       },
     });
-    // İnceleme bulgusu 3: outbox şeritleri izlenir (birikme, en eski bekleyen, DLQ). Uyarı kuralları infra/prometheus.
-    // prom-client metrikleri paralel toplar: her gauge kendi sorgusunu yapar.
-    const lanes = async () =>
-      (
-        (await store.execute(sql`
-          SELECT 'core' AS lane, count(*)::int AS n, coalesce(extract(epoch FROM now() - min(created_at)), 0)::float AS age
-            FROM event.outbox WHERE processed_at IS NULL
-          UNION ALL
-          SELECT 'side', count(*)::int, coalesce(extract(epoch FROM now() - min(created_at)), 0)::float
-            FROM event.outbox_side WHERE processed_at IS NULL AND dead_at IS NULL`)) as unknown as Rows<{
-          lane: string;
-          n: number;
-          age: number;
-        }>
-      ).rows;
-    new Gauge({
-      name: 'outbox_pending',
-      help: 'Teslim bekleyen outbox satırı (core: event.outbox, side: event.outbox_side)',
-      labelNames: ['lane'],
-      registers,
-      async collect() {
-        for (const row of await lanes()) this.set({ lane: row.lane }, row.n);
-      },
-    });
-    new Gauge({
-      name: 'outbox_oldest_pending_seconds',
-      help: 'En eski teslim edilmemiş outbox satırının yaşı',
-      labelNames: ['lane'],
-      registers,
-      async collect() {
-        for (const row of await lanes()) this.set({ lane: row.lane }, row.age);
-      },
-    });
-    new Gauge({
-      name: 'outbox_dead',
-      help: 'Teslim edilemeyip DLQ’ya düşen satır (core: event.outbox_dlq, side: dead_at dolu); 0 olmalı',
-      labelNames: ['lane'],
-      registers,
-      async collect() {
-        const r = (await store.execute(sql`
-          SELECT (SELECT count(*) FROM event.outbox_dlq)::int AS core,
-                 (SELECT count(*) FROM event.outbox_side WHERE dead_at IS NOT NULL)::int AS side`)) as unknown as Rows<{
-          core: number;
-          side: number;
-        }>;
-        this.set({ lane: 'core' }, r.rows[0]?.core ?? 0);
-        this.set({ lane: 'side' }, r.rows[0]?.side ?? 0);
-      },
-    });
     collectDefaultMetrics({ register: this.registry, prefix: 'yanimda_api_' });
   }
 

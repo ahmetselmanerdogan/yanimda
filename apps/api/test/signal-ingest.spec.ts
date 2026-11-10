@@ -412,20 +412,6 @@ describe('OutboxWorker side şeridi (inceleme bulgusu 3)', () => {
     release();
     w.stop();
   });
-
-  it('outbox metrikleri: bekleyen, en eski yaş ve DLQ şerit başına', async () => {
-    const { MetricsService } = await import('../src/modules/metrics/metrics.service');
-    const m = new MetricsService(h.db, h.events());
-    await h.pg.exec(
-      "INSERT INTO event.outbox_dlq (id, topic, envelope, created_at, attempts) VALUES (999, 't', '{}', now(), 5)",
-    );
-    await h.signals.accept([sig('SOS')]);
-    const text = await m.registry.metrics();
-    expect(text).toMatch(/outbox_pending\{lane="core"\} 1/);
-    expect(text).toMatch(/outbox_dead\{lane="core"\} 1/);
-    expect(text).toMatch(/outbox_dead\{lane="side"\} 0/);
-    expect(text).toMatch(/outbox_oldest_pending_seconds\{lane="core"\} \d/);
-  });
 });
 
 describe('Migration geri alınabilir (X-05)', () => {

@@ -45,11 +45,24 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: En eski outbox satırı {{ $value | humanizeDuration }} bekliyor (olay kaybı riski değil, gecikme)
+      # Core DLQ: sinyal/olay/bildirim satırı teslim edilemedi → olay kaybı riski; elle yeniden oynatılmalı.
       - alert: OutboxDeadLetters
         expr: yanimda_outbox_dlq_count - (yanimda_outbox_dlq_count offset 15m) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Son 15 dk'da outbox_dlq'ya {{ $value }} satır taşındı (sinyal/olay kaybı riski)
+          runbook: infra/README.md (Outbox DLQ)
+      - alert: OutboxSideStalled
+        expr: yanimda_outbox_side_oldest_pending_seconds > 600
+        for: 5m
         labels: { severity: warning }
         annotations:
-          summary: Son 15 dk'da outbox_dlq'ya {{ $value }} satır taşındı
+          summary: Kritik olmayan abone kuyruğu {{ $value | humanizeDuration }} gecikmede (SLA metriği / fatura)
+      - alert: OutboxSideDeadLetters
+        expr: yanimda_outbox_side_dead - (yanimda_outbox_side_dead offset 15m) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: Son 15 dk'da {{ $value }} side satırı teslim edilemedi (event.outbox_side dead_at)
       - alert: OutboxWorkerDown
         expr: up{job="worker"} == 0
         for: 1m

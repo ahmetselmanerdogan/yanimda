@@ -141,7 +141,7 @@ Görevdeki "simülatör TEST sinyali" yerine `test-sos` kullanıldı: üretimde 
 
 `monitoring/alerts.yml` (promtool ile doğrulandı): kuyruk gecikmesi (`QueueWaitTooLong` gerçek olay > 20 sn,
 `SignalToScreenSlow`, `OperatorClaimSlow`), outbox birikimi (`OutboxBacklog`, `OutboxStalled`, `OutboxDeadLetters`,
-`OutboxWorkerDown`), CPaaS/bildirim hata oranı, disk (%15/%5, 24 saatte dolma), Postgres/Redis/API/dış uç/TLS, sentetik,
+`OutboxWorkerDown`; kritik olmayan abone şeridi `OutboxSideStalled`, `OutboxSideDeadLetters`), CPaaS/bildirim hata oranı, disk (%15/%5, 24 saatte dolma), Postgres/Redis/API/dış uç/TLS, sentetik,
 yedek/tatbikat. critical → PagerDuty + Telegram + e-posta, warning → Telegram + e-posta (`monitoring/alertmanager.yml`;
 sırlar `monitoring/secrets/` dosyaları).
 
@@ -152,7 +152,23 @@ Uygulamada outbox/CPaaS metriği olmadığı için bunlar `postgres_exporter` ö
 CREATE ROLE yanimda_monitor LOGIN PASSWORD '…';
 GRANT pg_monitor TO yanimda_monitor;
 GRANT USAGE ON SCHEMA event, telephony, notify TO yanimda_monitor;
-GRANT SELECT ON event.outbox, event.outbox_dlq, event.event, telephony.call, notify.notification TO yanimda_monitor;
+GRANT SELECT ON event.outbox, event.outbox_dlq, event.outbox_side, event.event, telephony.call, notify.notification TO yanimda_monitor;
+```
+
+### Outbox DLQ
+
+Outbox iki şeritlidir (0020): core (olay motoru, kuyruk, aile bildirimi planı) `event.outbox`'tan sırayla; kritik
+olmayan aboneler (`metrics.sla`, `billing.trial`, `false-alarm.record`) `event.outbox_side`'tan abone başına sırayla.
+5 denemede teslim edilemeyen core satırı `event.outbox_dlq`'ya taşınır (`OutboxDeadLetters`, critical: sinyal/olay
+kaybı riski), side satırının `dead_at`'i dolar. Nedeni (`last_error`) giderildikten sonra yeniden oynatma
+(aboneler idempotenttir):
+
+```sql
+-- core: satırı kuyruğun sonuna geri koy
+WITH m AS (DELETE FROM event.outbox_dlq WHERE id = $1 RETURNING topic, envelope)
+INSERT INTO event.outbox (topic, envelope) SELECT topic, envelope FROM m;
+-- side: abonenin satırını yeniden dene
+UPDATE event.outbox_side SET dead_at = NULL, attempts = 0, next_attempt_at = now() WHERE id = $1;
 ```
 
 Grafana `127.0.0.1:3001` (SSH tüneli), `infra/grafana/konsol.json` otomatik yüklenir. Dış uç hedefleri:
