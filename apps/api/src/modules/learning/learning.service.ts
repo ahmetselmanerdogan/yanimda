@@ -45,11 +45,17 @@ export interface LearningSummary {
   learnedAt: string | null;
   learnedDays: number | null;
   reportSentAt: string | null;
+  /** T-061 (C-09): düşme sorusu cevap süresi (sn, 30–90); null → kural paketi (`fallPromptDefault`). */
+  fallPromptSec: number | null;
+  fallPromptDefault: number | null;
 }
 
 /** Öğrenmenin baktığı sinyaller (hareket ve "veri var" günleri). */
 const KINDS = ['STEPS', 'ON_BODY', 'OFF_BODY', 'HEARTBEAT', 'HEART_RATE'];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** T-061 (C-09): düşme sorusu cevap süresi sınırları (sn). Migration 0015'teki CHECK ile aynı. */
+const FALL_PROMPT_MIN = 30;
+const FALL_PROMPT_MAX = 90;
 /** Günlük iş: aynı kişiyi bu süreden sık öğrenme (tarama saatlik çalışır). */
 const RELEARN_AFTER_MS = 20 * 3600_000;
 const DAY_MS = 86_400_000;
@@ -234,6 +240,7 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
       learned_at: Date | string | null;
       learned_days: number | null;
       report_sent_at: Date | string | null;
+      fall_prompt_sec: number | null;
     }>;
     const row = r.rows[0]!;
     const t = ruleFor(this.pack, 'INACTIVITY')?.thresholdMin;
@@ -257,6 +264,8 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
       learnedAt: iso(row.learned_at),
       learnedDays: row.learned_days,
       reportSentAt: iso(row.report_sent_at),
+      fallPromptSec: row.fall_prompt_sec ?? null,
+      fallPromptDefault: ruleFor(this.pack, 'FALL')?.devicePrompt?.windowSec ?? null,
     };
   }
 
@@ -289,7 +298,15 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
         throw new BadRequestException(`inactivityMin ${lo}–${hi} dk arası tam sayı olmalı`);
       Object.assign(set, { inactivityMin: v as number, inactivitySource: 'FAMILY' satisfies ThresholdSource });
     }
-    if (Object.keys(set).length === 1) throw new BadRequestException('sleepWindow veya inactivityMin gerekli');
+    if (b.fallPromptSec === null) set.fallPromptSec = null;
+    else if (b.fallPromptSec !== undefined) {
+      const v = b.fallPromptSec;
+      if (!Number.isInteger(v) || (v as number) < FALL_PROMPT_MIN || (v as number) > FALL_PROMPT_MAX)
+        throw new BadRequestException(`fallPromptSec ${FALL_PROMPT_MIN}–${FALL_PROMPT_MAX} sn arası tam sayı olmalı`);
+      set.fallPromptSec = v as number;
+    }
+    if (Object.keys(set).length === 1)
+      throw new BadRequestException('sleepWindow, inactivityMin veya fallPromptSec gerekli');
     await this.db.transaction(async (tx) => {
       await this.lockRow(tx, id);
       await tx.update(threshold).set(set).where(eq(threshold.protectedPersonId, id));

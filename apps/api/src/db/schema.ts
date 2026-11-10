@@ -110,6 +110,8 @@ export const protectedPerson = profileSchema.table('protected_person', {
   geocodedAt: timestamptz('geocoded_at'),
   doorAccessNoteEnc: text('door_access_note_enc'),
   dailySummaryEnabled: boolean('daily_summary_enabled').notNull().default(true),
+  /** T-061: aile uygulaması son konumu görebilir mi. */
+  locationSharing: boolean('location_sharing').notNull().default(true),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
@@ -356,6 +358,8 @@ export const threshold = eventSchema.table('threshold', {
   sleepStart: time('sleep_start').notNull().default('22:00'),
   sleepEnd: time('sleep_end').notNull().default('08:00'),
   inactivityMin: integer('inactivity_min'),
+  /** T-061: düşme sorusu cevap süresi (sn, 30–90); null → kural paketi. */
+  fallPromptSec: integer('fall_prompt_sec'),
   sleepSource: text('sleep_source').notNull().default('DEFAULT'),
   inactivitySource: text('inactivity_source').notNull().default('DEFAULT'),
   learnedAt: timestamptz('learned_at'),

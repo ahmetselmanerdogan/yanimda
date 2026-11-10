@@ -14,6 +14,8 @@ import { loadRulePack, RULES, type RulesProvider, staticRules } from './rules.lo
 export interface PersonSettings extends SleepWindow {
   inactivityMin: number | null;
   learningModeUntil: Date | null;
+  /** T-061: düşme sorusu cevap süresi (sn); null → kural paketi. */
+  fallPromptSec: number | null;
 }
 
 export interface ProtectionChange {
@@ -66,7 +68,7 @@ export class ProtectionService {
   async settingsOf(protectedPersonId: string, tx: Pick<Db, 'execute'> = this.db): Promise<PersonSettings> {
     const r = (await tx.execute(sql`
       SELECT p.timezone, p.learning_mode_until,
-             t.sleep_start::text AS start, t.sleep_end::text AS end, t.inactivity_min
+             t.sleep_start::text AS start, t.sleep_end::text AS end, t.inactivity_min, t.fall_prompt_sec
       FROM (SELECT 1) one
       LEFT JOIN profile.protected_person p ON p.id::text = ${protectedPersonId}
       LEFT JOIN event.threshold t ON t.protected_person_id = ${protectedPersonId}`)) as unknown as {
@@ -76,6 +78,7 @@ export class ProtectionService {
         start: string | null;
         end: string | null;
         inactivity_min: number | null;
+        fall_prompt_sec: number | null;
       }[];
     };
     const row = r.rows[0];
@@ -85,7 +88,40 @@ export class ProtectionService {
       end: row?.end?.slice(0, 5) ?? DEFAULT_SLEEP_WINDOW.end,
       inactivityMin: row?.inactivity_min ?? null,
       learningModeUntil: row?.learning_mode_until ? new Date(row.learning_mode_until) : null,
+      fallPromptSec: row?.fall_prompt_sec ?? null,
     };
+  }
+
+  /** T-061: aile üyesi (consumers FAMILY) bu kişiye bağlı mı. */
+  async canFamilySee(subject: string, protectedPersonId: string): Promise<boolean> {
+    const r = (await this.db.execute(sql`
+      SELECT 1 FROM profile.family_member
+      WHERE subject = ${subject} AND protected_person_id::text = ${protectedPersonId} LIMIT 1`)) as unknown as {
+      rows: unknown[];
+    };
+    return r.rows.length > 0;
+  }
+
+  /**
+   * T-061 (C-08): son konum (24 saat içindeki en yeni konumlu sinyal). Aile ayarı konum paylaşımı kapalıysa null.
+   * Yalnız aile ekranı için; olay anında operatör olayın kendi konumunu görür.
+   */
+  async locationOf(
+    protectedPersonId: string,
+  ): Promise<{ lat: number; lng: number; accuracyM: number | null; at: string } | null> {
+    const r = (await this.db.execute(sql`
+      SELECT s.time, (s.payload->'location'->>'lat')::float8 AS lat, (s.payload->'location'->>'lng')::float8 AS lng,
+             (s.payload->'location'->>'accuracyM')::float8 AS acc
+      FROM signal.signal s
+      WHERE s.protected_person_id = ${protectedPersonId} AND s.payload ? 'location' AND s.time > now() - interval '24 hours'
+        AND NOT EXISTS (SELECT 1 FROM profile.protected_person p
+                        WHERE p.id::text = ${protectedPersonId} AND NOT p.location_sharing)
+      ORDER BY s.time DESC LIMIT 1`)) as unknown as {
+      rows: { time: Date | string; lat: number | null; lng: number | null; acc: number | null }[];
+    };
+    const x = r.rows[0];
+    if (!x || x.lat == null || x.lng == null) return null;
+    return { lat: x.lat, lng: x.lng, accuracyM: x.acc, at: new Date(x.time).toISOString() };
   }
 
   /** Sinyalin olgularını işler, durumu sinyal anına göre hesaplar. Durum değiştiyse değişikliği döner. */

@@ -453,7 +453,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
         this.transition(u, 'CREATED', 'SYSTEM', undefined, s.note);
         if (rule.devicePrompt?.enabled) {
-          const win = (rule.devicePrompt.windowSec ?? 60) * 1000;
+          // T-061 (C-09): düşme sorusunun süresi aile ayarıyla (30–90 sn) değişebilir.
+          const personal =
+            type === 'FALL' ? (await this.protection.settingsOf(s.protectedPersonId, tx)).fallPromptSec : null;
+          const win = (personal ?? rule.devicePrompt.windowSec ?? 60) * 1000;
           u.ev.devicePromptUntil = new Date(now.getTime() + win).toISOString();
           this.transition(
             u,

@@ -359,7 +359,9 @@ export class EnrollmentService {
       rulesVersion: pack.version,
       sleepWindow: { timezone: settings.timezone, start: settings.start, end: settings.end },
       devicePrompt: {
-        fallWindowSec: fall?.devicePrompt?.enabled ? (fall.devicePrompt.windowSec ?? null) : null,
+        fallWindowSec: fall?.devicePrompt?.enabled
+          ? (settings.fallPromptSec ?? fall.devicePrompt.windowSec ?? null) // T-061 aile ayarı
+          : null,
         inactivityWindowSec: inact?.devicePrompt?.enabled ? (inact.devicePrompt.windowSec ?? null) : null,
       },
       inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
