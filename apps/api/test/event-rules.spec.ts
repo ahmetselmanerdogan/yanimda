@@ -73,10 +73,10 @@ describe('Açık olay varken SOS (D-02 adım 3)', () => {
     expect(topics).toContain('event.updated');
   });
 
-  it('SOS dışındaki sinyal yalnız olaya eklenir, öncelik değişmez', async () => {
+  it('alarm olmayan olaya FALL → olay FALL alarmına yükseltilir (bkz. event-upgrade.spec)', async () => {
     await deliver(sig('CALLBACK_REQUEST'));
     await deliver(sig('FALL'));
-    expect(await only()).toMatchObject({ priority: 4, type: 'CALLBACK' });
+    expect(await only()).toMatchObject({ priority: 1, type: 'FALL' });
     expect((await only()).sourceSignalIds).toHaveLength(2);
   });
 });

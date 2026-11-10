@@ -36,3 +36,12 @@ export function keepSelection(prev: QueueItem[], next: QueueItem[], selected: st
   const idx = selected ? prev.findIndex((i) => i.eventId === selected) : 0;
   return next[Math.min(Math.max(idx, 0), next.length - 1)]!.eventId;
 }
+
+const HELD = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'];
+
+/**
+ * Devralınabilir mi: operatördeki (teyitli dahil) olayın kilidi dolmuş veya amir bırakmış, ben değilim.
+ * Sunucu kuralıyla aynı (EventService.operate claim); sunucu yine 409 ile korur.
+ */
+export const canTakeOver = (item: QueueItem, me: string, now: number) =>
+  HELD.includes(item.state) && item.lockedBy !== me && (!item.lockUntil || new Date(item.lockUntil).getTime() <= now);

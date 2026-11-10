@@ -298,14 +298,39 @@ export class ChainService {
 
   private async ensureRun(c: OperatorCtx): Promise<Run> {
     const existing = await this.repo.run(c.ev.id, c.tx);
-    if (existing) return existing;
+    if (existing) {
+      const stale = existing.eventType && (existing.eventType !== c.ev.type || existing.isTest !== c.ev.isTest);
+      return stale ? this.replan(c, existing) : existing;
+    }
     const steps = c.rule ? buildSteps(c.rule, c.ev.isTest, this.proc) : [];
     return this.repo.createRun(
       c.tx,
       c.ev.id,
-      { country: this.proc.country, procedureVersion: this.proc.version, rulesVersion: c.rulesVersion },
+      {
+        country: this.proc.country,
+        procedureVersion: this.proc.version,
+        rulesVersion: c.rulesVersion,
+        eventType: c.ev.type,
+        isTest: c.ev.isTest,
+      },
       steps,
     );
+  }
+
+  /**
+   * Olay yükseltildi (ör. TEST'e SOS geldi): eski planın bekleyen adımları 'upgraded' ile atlanır, yeni türün planı
+   * (gerçek olay → 112 dahil) arkasına eklenir. Tamamlanmış adımlar ve sonuçları korunur.
+   */
+  private async replan(c: OperatorCtx, run: Run): Promise<Run> {
+    for (const s of run.steps.filter((x) => !x.result)) {
+      Object.assign(s, { result: 'SKIPPED', reason: 'upgraded', completedAt: c.now.toISOString() });
+      await this.repo.updateStep(c.tx, run.id, s);
+    }
+    const base = run.steps.at(-1)?.n ?? 0;
+    const fresh = c.rule ? buildSteps(c.rule, c.ev.isTest, this.proc).map((s, i) => ({ ...s, n: base + i + 1 })) : [];
+    for (const s of fresh) await this.repo.appendStep(c.tx, run.id, s);
+    await this.repo.replanned(c.tx, run.id, c.ev.type, c.ev.isTest);
+    return { ...run, steps: [...run.steps, ...fresh], eventType: c.ev.type, isTest: c.ev.isTest };
   }
 
   private current(run: Run, n: number, c: OperatorCtx): ChainStep {

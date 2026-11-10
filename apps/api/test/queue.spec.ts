@@ -87,7 +87,7 @@ describe('kuyruk sorgusu', () => {
 });
 
 describe('amir unclaim', () => {
-  it('operatördeki olay kuyruğa döner, zincir kalır; teyitli olay 409', async () => {
+  it('operatördeki olay kuyruğa döner, zincir kalır; teyitli olay operatörsüz kalır, başkası devralır', async () => {
     await deliver(sig('SOS', { protectedPersonId: 'pp-u' }));
     const id = await idOf('pp-u');
     await chain.claim(id, 'op-1');
@@ -97,6 +97,19 @@ describe('amir unclaim', () => {
     expect(ev.transitions.at(-1)).toMatchObject({ to: 'OPERATOR_QUEUE', actorId: 'sup-1', note: 'operatör molada' });
     expect((await chain.claim(id, 'op-2')).chain!.current).toBe(2);
     await chain.stepResult(id, 2, 'op-2', { result: 'REACHED', assessment: 'OK' });
+    const released = await events.unclaim(id, 'sup-1');
+    expect(released).toMatchObject({ state: 'CONFIRMED_OK', operatorId: undefined, lockUntil: undefined });
+    expect((await chain.claim(id, 'op-3')).event).toMatchObject({ state: 'CONFIRMED_OK', operatorId: 'op-3' });
+    const [a] = await h.rows<{ action: string; data: unknown }>(
+      "SELECT action, data FROM audit.log WHERE entity_id = $1 AND action IN ('event.released', 'event.taken_over') ORDER BY id",
+      [id],
+    );
+    expect(a).toMatchObject({ action: 'event.released', data: { from: 'op-2', state: 'CONFIRMED_OK' } });
+  });
+
+  it('kapalı / kuyruktaki olay geri alınamaz (409)', async () => {
+    await deliver(sig('SOS', { protectedPersonId: 'pp-u2' }));
+    const id = await idOf('pp-u2');
     await expect(events.unclaim(id, 'sup-1')).rejects.toMatchObject({ status: 409 });
   });
 });

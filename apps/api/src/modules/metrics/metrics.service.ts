@@ -125,7 +125,10 @@ export class MetricsService implements OnModuleInit, OnApplicationBootstrap, OnA
   /** Testler için ayrı bus. */
   subscribe(bus: LocalBus = globalBus) {
     this.unsub?.();
-    this.unsub = bus.subscribe<Transition>(TOPICS.eventTransitioned, (e) => this.onTransition(e.payload));
+    this.unsub = bus.subscribe<Transition>(TOPICS.eventTransitioned, (e) => this.onTransition(e.payload), {
+      lane: 'side',
+      name: 'metrics.sla',
+    });
   }
 
   onApplicationBootstrap() {

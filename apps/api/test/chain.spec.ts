@@ -290,6 +290,39 @@ describe('operatör kilidi (D-04)', () => {
     expect(await status(chain.stepResult(id, 4, OP, { result: 'REACHED' }))).toBe('ok'); // operatör sürdürür
   });
 
+  it('kilidi dolan acil teyitli olayı başka operatör devralır, 112 adımını sürdürür; eski operatör 409', async () => {
+    const id = await queued();
+    const t0 = new Date();
+    await chain.claim(id, OP, t0);
+    await chain.stepResult(id, 1, OP, { result: 'REACHED', assessment: 'EMERGENCY' }, t0);
+    // kilit dolmadan devralınamaz
+    expect(await status(chain.claim(id, OP2, new Date(t0.getTime() + 60_000)))).toBe(409);
+    const later = new Date(t0.getTime() + 400_000);
+    await events.releaseExpiredLocks(later);
+    const taken = await chain.claim(id, OP2, later);
+    expect(taken.event).toMatchObject({ state: 'CONFIRMED_EMERGENCY', operatorId: OP2 });
+    expect(new Date(taken.event.lockUntil!).getTime()).toBe(later.getTime() + 300_000);
+    expect(await status(chain.stepResult(id, 4, OP, { result: 'REACHED' }, later))).toBe(409);
+    expect(await status(chain.stepResult(id, 4, OP2, { result: 'REACHED' }, later))).toBe('ok');
+    const audit = await h.rows<{ actor_id: string; data: unknown }>(
+      "SELECT actor_id, data FROM audit.log WHERE action = 'event.taken_over' AND entity_id = $1",
+      [id],
+    );
+    expect(audit).toEqual([{ actor_id: OP2, data: { from: OP, state: 'CONFIRMED_EMERGENCY' } }]);
+    const topics = await h.rows<{ envelope: { payload: { reason?: string } } }>(
+      "SELECT envelope FROM event.outbox WHERE topic = 'event.updated'",
+    );
+    expect(topics.some((r) => r.envelope.payload.reason === 'TAKEN_OVER')).toBe(true);
+  });
+
+  it('kilit süresi dolmuş ama tarama henüz geçmemiş operatördeki olay da devralınır', async () => {
+    const id = await queued();
+    const t0 = new Date();
+    await chain.claim(id, OP, t0);
+    const later = new Date(t0.getTime() + 301_000);
+    expect((await chain.claim(id, OP2, later)).event).toMatchObject({ state: 'OPERATOR_ASSIGNED', operatorId: OP2 });
+  });
+
   it('kapatılan olayın kilidi temizlenir', async () => {
     const id = await queued();
     await chain.claim(id, OP);

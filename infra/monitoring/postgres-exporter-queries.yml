@@ -21,6 +21,26 @@ yanimda_outbox_dlq:
         usage: GAUGE
         description: outbox_dlq satır sayısı (5 denemede teslim edilemeyen)
 
+# İnceleme bulgusu 3: kritik olmayan aboneler (SLA metriği, faturalama, yanlış alarm kaydı) ayrı şeritte (0020).
+# Side birikimi SOS'u geciktirmez; yalnız istatistik/fatura gecikir. dead = abone başına DLQ.
+yanimda_outbox_side:
+  query: |
+    SELECT count(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL) AS pending,
+           COALESCE(EXTRACT(EPOCH FROM now() - min(created_at) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL)), 0)
+             AS oldest_pending_seconds,
+           count(*) FILTER (WHERE dead_at IS NOT NULL) AS dead
+    FROM event.outbox_side
+  metrics:
+    - pending:
+        usage: GAUGE
+        description: Teslim bekleyen side satırı
+    - oldest_pending_seconds:
+        usage: GAUGE
+        description: En eski bekleyen side satırının yaşı (sn)
+    - dead:
+        usage: GAUGE
+        description: 5 denemede teslim edilemeyen side satırı (abone DLQ)
+
 yanimda_queue:
   query: |
     SELECT count(*) AS waiting,
