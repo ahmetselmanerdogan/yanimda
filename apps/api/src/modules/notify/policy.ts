@@ -62,6 +62,8 @@ const DELIVERY: Record<string, Delivery> = {
   'F-EVT-FALL': URGENT,
   'F-EVT-SOS': URGENT,
   'F-EVT-112': URGENT,
+  'F-112-ON-SCENE': INFO, // 112 süreci: ekip ulaştı
+  'F-112-HOSPITAL': INFO, // 112 süreci: hastaneye nakil
   'F-WATCH-OFF-4H': INFO,
   'F-CONN-LOST': INFO,
   'F-BAT-10': INFO,

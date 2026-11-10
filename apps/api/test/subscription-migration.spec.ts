@@ -29,7 +29,11 @@ const SUB = {
 
 describe('0021 eski abonelik düzeltmesi', () => {
   it('kurum kişisi abonelik dışı + ACTIVE; aile kişisi temiz deneme; kayıt aboneliği aynen', async () => {
-    await down(h.exec, 1);
+    // 0021 ve sonrasını geri al (yeni göçler eklendikçe sayı değişir).
+    const [{ n }] = await h.rows<{ n: number }>(
+      "SELECT count(*)::int AS n FROM public.schema_migrations WHERE name >= '0021'",
+    );
+    await down(h.exec, n);
     const old = new Date(Date.now() - 90 * 86_400_000);
     for (const [k, id] of Object.entries(PERSON))
       await h.pg.query(

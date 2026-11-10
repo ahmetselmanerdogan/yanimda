@@ -1027,7 +1027,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const t: TransitionRecord = { id: uuidv7(), from, to, actorKind, actorId, at: new Date().toISOString(), note };
     u.ev.transitions.push(t);
     u.transitions.push(t);
-    u.publishes.push({ topic: TOPICS.eventTransitioned, payload: { eventId: u.ev.id, from, to, note } });
+    u.publishes.push({
+      topic: TOPICS.eventTransitioned,
+      payload: { eventId: u.ev.id, from, to, note, actorKind, actorId, at: t.at },
+    });
   }
 
   private envelope<T>(topic: string, subject: string, payload: T): KafkaEnvelope<T> {

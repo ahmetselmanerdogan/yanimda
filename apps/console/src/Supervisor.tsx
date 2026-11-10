@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { DispatchPanel } from './components/Dispatch';
+import type { DispatchView } from './lib/api';
 import {
   ApiError,
   OPERATOR_STATUSES,
@@ -48,6 +50,14 @@ export function SupervisorBoard({
         .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message }))),
     [api],
   );
+  // 112 süreçleri (olay kapansa da sürer): 15 sn'de bir.
+  const [dispatches, setDispatches] = useState<DispatchView[]>([]);
+  useEffect(() => {
+    const load = () => void api.dispatches(true).then(setDispatches, () => undefined);
+    load();
+    const id = setInterval(load, 15_000);
+    return () => clearInterval(id);
+  }, [api]);
   useEffect(() => void reload(), [reload]);
   useEffect(
     () =>
@@ -158,6 +168,15 @@ export function SupervisorBoard({
               rows={Object.entries(d.byType24h).map(([k, n]) => ({ label: t(`O-TYPE-${k}`), n }))}
               empty={t('O-UI-SUP-BY-TYPE-NONE')}
             />
+          </section>
+
+          <section className="sup-panel wide" data-testid="dispatches">
+            <h2>{t('O-UI-DISPATCH-OPEN-LIST')}</h2>
+            {dispatches.length === 0 ? (
+              <p className="muted">{t('O-UI-DISPATCH-NONE')}</p>
+            ) : (
+              dispatches.map((x) => <DispatchPanel key={x.eventId} api={api} eventId={x.eventId} initial={x} />)
+            )}
           </section>
 
           <section className="sup-panel wide">

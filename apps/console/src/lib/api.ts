@@ -181,6 +181,50 @@ export interface SupervisorDashboard {
   };
 }
 
+/** 112 bildirim ve intikal takibi. */
+export const DISPATCH_STAGES = [
+  'NOTIFIED',
+  'ACCEPTED',
+  'EN_ROUTE',
+  'ON_SCENE',
+  'TRANSPORTING',
+  'AT_HOSPITAL',
+  'COMPLETED',
+] as const;
+export type DispatchStage = (typeof DISPATCH_STAGES)[number] | 'CANCELLED';
+export type DispatchSource = 'OPERATOR' | 'EMS' | 'FAMILY' | 'SYSTEM';
+export interface DispatchView {
+  eventId: string;
+  protectedPersonId: string;
+  status: DispatchStage;
+  notifiedAt: string;
+  notifiedBy: string | null;
+  caseRef: string | null;
+  etaMin: number | null;
+  hospital: string | null;
+  stages: Partial<Record<DispatchStage, string>>;
+  arrivalMin: number | null;
+  arrivalLate: boolean;
+  open: boolean;
+  checks: number;
+  timeline: {
+    status: DispatchStage;
+    at: string;
+    actorKind: string;
+    actorId: string | null;
+    source: DispatchSource;
+    note: string | null;
+  }[];
+}
+export interface DispatchUpdate {
+  status?: DispatchStage;
+  caseRef?: string | null;
+  etaMin?: number | null;
+  hospital?: string | null;
+  note?: string;
+  source?: Exclude<DispatchSource, 'SYSTEM'>;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -247,6 +291,9 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       ),
     setOverflow: (enabled: boolean) => req<SupervisorDashboard['overflow']>('PUT', '/supervisor/overflow', { enabled }),
     unclaim: (id: string) => req<{ eventId: string; state: EventState }>('POST', `${ev(id)}/unclaim`, {}),
+    dispatch: (id: string) => req<DispatchView>('GET', `${ev(id)}/dispatch`),
+    updateDispatch: (id: string, b: DispatchUpdate) => req<DispatchView>('POST', `${ev(id)}/dispatch`, b),
+    dispatches: (open = true) => req<DispatchView[]>('GET', `/events/dispatches${open ? '?open=1' : ''}`),
   };
 }
 export type Api = ReturnType<typeof createApi>;

@@ -168,6 +168,64 @@ paths:
                   text: { type: string }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /events/dispatches:
+    get:
+      summary: 112 süreçleri — süren (open=1) veya son 30 gün. Amir panosu, yönetim
+      operationId: listDispatches
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: open, in: query, schema: { type: string, enum: ['1', 'true'] } }]
+      responses:
+        '200':
+          description: Süreçler (zaman çizelgesiz)
+          content:
+            { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DispatchView' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+  /events/{id}/dispatch:
+    get:
+      summary: 112 bildirim ve intikal süreci + zaman çizelgesi
+      operationId: getDispatch
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          {
+            description: Süreç,
+            content: { application/json: { schema: { $ref: '#/components/schemas/DispatchView' } } },
+          }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: 112 aşaması / vaka no / tahmini varış / hastane / not (olay kapalıyken de)
+      description: |
+        Olay DISPATCH'e geçince süreç NOTIFIED açılır. Aşama yalnız ileri gider (NOTIFIED → ACCEPTED → EN_ROUTE →
+        ON_SCENE → TRANSPORTING → AT_HOSPITAL → COMPLETED; CANCELLED her an); atlanan ara aşamalar aynı zamanı alır.
+        Ekip olay yerinde → aileye F-112-ON-SCENE; nakil/hastanede → F-112-HOSPITAL. Ekip DISPATCH_ARRIVAL_SLA_MIN
+        (15) içinde ulaşmazsa amire O-DISPATCH-NO-ARRIVAL, ulaştıktan sonra süreç açık kaldıkça O-DISPATCH-OPEN
+        (DISPATCH_OPEN_REMIND_MIN, 60). Kapanmış süreç 409, geri aşama 409.
+      operationId: updateDispatch
+      security: [{ operatorToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  { enum: [NOTIFIED, ACCEPTED, EN_ROUTE, ON_SCENE, TRANSPORTING, AT_HOSPITAL, COMPLETED, CANCELLED] }
+                caseRef: { type: [string, 'null'], maxLength: 64 }
+                etaMin: { type: [integer, 'null'], minimum: 0, maximum: 600 }
+                hospital: { type: [string, 'null'], maxLength: 160 }
+                note: { type: string, maxLength: 1000 }
+                source: { enum: [OPERATOR, EMS, FAMILY], default: OPERATOR }
+      responses:
+        '200':
+          {
+            description: Güncel süreç,
+            content: { application/json: { schema: { $ref: '#/components/schemas/DispatchView' } } },
+          }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
     post:
       summary: Olayı üstlen; zincir oluşur, operatör kilidi başlar (300 sn). E-02, D-04, T-021
@@ -2148,6 +2206,33 @@ components:
         operatorId: { type: string }
         completedAt: { type: string, format: date-time }
         scriptReadAt: { type: string, format: date-time }
+    DispatchView:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        protectedPersonId: { type: string }
+        status: { enum: [NOTIFIED, ACCEPTED, EN_ROUTE, ON_SCENE, TRANSPORTING, AT_HOSPITAL, COMPLETED, CANCELLED] }
+        notifiedAt: { type: string, format: date-time }
+        notifiedBy: { type: [string, 'null'] }
+        caseRef: { type: [string, 'null'] }
+        etaMin: { type: [integer, 'null'] }
+        hospital: { type: [string, 'null'] }
+        stages: { type: object, additionalProperties: { type: string, format: date-time } }
+        arrivalMin: { type: [number, 'null'], description: '112 aranması → ekip olay yerinde (dk)' }
+        arrivalLate: { type: boolean }
+        open: { type: boolean }
+        checks: { type: integer, description: Takip zamanlayıcısının amir uyarısı sayısı }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { type: string }
+              at: { type: string, format: date-time }
+              actorKind: { type: string }
+              actorId: { type: [string, 'null'] }
+              source: { enum: [OPERATOR, EMS, FAMILY, SYSTEM] }
+              note: { type: [string, 'null'] }
     QueueItem:
       type: object
       required: [eventId, type, priority, state, createdAt, lockedBy, isTest, person]
