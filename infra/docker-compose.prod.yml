@@ -1,0 +1,207 @@
+# T-083 staging / üretim (tek VPS). Veritabanı ve Redis yönetilen hizmettir (Terraform: infra/terraform);
+# bu dosya yalnız durumsuz uygulama süreçlerini ve ters vekili çalıştırır. Sır yok: tüm değerler .env.prod'dan
+# (şablon: infra/.env.prod.example; dosya VPS'te 0600, git'e girmez).
+#
+#   docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
+#   docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml --profile family-web up -d   # aile web hazır olunca
+#
+# İzleme ayrı dosyada (aynı "yanimda" ağına katılır): infra/monitoring/docker-compose.monitoring.yml
+name: yanimda
+
+x-api: &api
+  image: ${API_IMAGE:?API_IMAGE gerekli (ör. ghcr.io/org/yanimda-api:1.2.3)}
+  env_file: [.env.prod]
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  stop_grace_period: 30s
+  logging: &logging
+    driver: json-file
+    options: { max-size: 20m, max-file: '5' }
+  # Ayrık /health ucu yok (bkz. README "Takip"): kimlik isteyen ucuz bir uç 401 döner = süreç ve yönlendirme ayakta.
+  # 5xx/bağlantı hatası = sağlıksız. Metrik portu (9464) yalnız iç ağda; Caddy'de yayınlanmaz.
+  healthcheck:
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        "fetch('http://127.0.0.1:3000/v1/queue').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+      ]
+    interval: 15s
+    timeout: 5s
+    retries: 3
+    start_period: 60s
+
+services:
+  # Genel HTTP API (2 kopya). Outbox işçisi kapalı: ayrı "worker" süreci kirayı tutar. Sıcak yedek isteniyorsa
+  # API_OUTBOX_WORKER=on → kopyalar da kirayı bekler (event.outbox_lease), işçi ölürse 30 sn'de devralır.
+  api:
+    <<: *api
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      METRICS_PORT: '9464'
+      OUTBOX_WORKER: ${API_OUTBOX_WORKER:-off}
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: '1.5', memory: 1g }
+
+  # Outbox işçisi (T-010): aynı imaj, OUTBOX_WORKER=on. Tek aktif işçi kirayla garanti edilir. Olay geçişleri
+  # (signal_to_screen vb. metrikler) bu süreçte ölçülür → Prometheus bunu da kazır. HTTP portu yayınlanmaz.
+  worker:
+    <<: *api
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      METRICS_PORT: '9464'
+      OUTBOX_WORKER: 'on'
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 768m }
+
+  # Operatör konsolu: statik Vite derlemesi (infra/console/Dockerfile), :8080, root değil.
+  console:
+    image: ${CONSOLE_IMAGE:?CONSOLE_IMAGE gerekli}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'wget', '-qO', '/dev/null', 'http://127.0.0.1:8080/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Aile web uygulaması (apps/family-web henüz yok): profil ile isteğe bağlı.
+  family-web:
+    profiles: [family-web]
+    image: ${FAMILY_WEB_IMAGE:-yanimda/family-web:placeholder}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'wget', '-qO', '/dev/null', 'http://127.0.0.1:8080/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Kimlik (T-020). Veritabanı: aynı yönetilen Postgres'te ayrı "keycloak" veritabanı ve kullanıcısı.
+  # Realm'ler ilk açılışta içe aktarılır (varsa atlanır). Üretim yönlendirme adresleri: README "Keycloak".
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+    command: ['start', '--import-realm']
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: ${KC_DB_URL:?KC_DB_URL gerekli}
+      KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME gerekli}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD gerekli}
+      KC_HOSTNAME: https://auth.${DOMAIN:?DOMAIN gerekli}
+      KC_HTTP_ENABLED: 'true'
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: 'true'
+      KC_METRICS_ENABLED: 'true'
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?KC_BOOTSTRAP_ADMIN_USERNAME gerekli}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD gerekli}
+    volumes: ['./keycloak:/opt/keycloak/data/import:ro']
+    healthcheck:
+      # İmajda curl yok: yönetim portu 9000'e bash /dev/tcp ile.
+      test:
+        [
+          'CMD-SHELL',
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1g }
+
+  # TLS sonlandırma ve yönlendirme; sertifikalar otomatik (ACME), caddy_data biriminde.
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN gerekli}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL gerekli}
+      KC_ADMIN_ALLOW_CIDRS: ${KC_ADMIN_ALLOW_CIDRS:-127.0.0.1/32}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'wget', '-qO', '/dev/null', 'http://127.0.0.1:2019/config/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      api: { condition: service_started }
+      console: { condition: service_started }
+
+  # Sentetik izleme (T-083 §5): 5 dk'da bir TEST SOS'u + sağlık uçları. Ayrıntı: infra/README.md "Sentetik".
+  # Uygulama sırları (.env.prod) bu kaba verilmez; yalnız sondanın değişkenleri.
+  synthetic:
+    image: node:20-alpine
+    restart: unless-stopped
+    user: node
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      SYNTHETIC_API_URL: ${SYNTHETIC_API_URL:-https://api.${DOMAIN}}
+      SYNTHETIC_OIDC_ISSUER: ${SYNTHETIC_OIDC_ISSUER:-https://auth.${DOMAIN}/realms/consumers}
+      SYNTHETIC_CLIENT_ID: ${SYNTHETIC_CLIENT_ID:-yanimda-synthetic}
+      SYNTHETIC_CLIENT_SECRET: ${SYNTHETIC_CLIENT_SECRET:?SYNTHETIC_CLIENT_SECRET gerekli}
+      SYNTHETIC_PERSON_IDS: ${SYNTHETIC_PERSON_IDS:?SYNTHETIC_PERSON_IDS gerekli}
+      SYNTHETIC_TIMEOUT_SEC: ${SYNTHETIC_TIMEOUT_SEC:-60}
+      SYNTHETIC_ENV: ${ENVIRONMENT:-staging}
+      PUSHGATEWAY_URL: ${PUSHGATEWAY_URL:-http://pushgateway:9091}
+      UPTIME_KUMA_PUSH_URL: ${UPTIME_KUMA_PUSH_URL:-}
+      SYNTHETIC_INTERVAL_SEC: ${SYNTHETIC_INTERVAL_SEC:-300}
+    volumes: ['./synthetic/probe.mjs:/probe/probe.mjs:ro']
+    command: ['sh', '-c', 'while true; do node /probe/probe.mjs || true; sleep "$${SYNTHETIC_INTERVAL_SEC}"; done']
+    logging: *logging
+
+  # Günlük mantıksal yedek (pg_dump → S3). PITR yönetilen RDS'te; bu ek, sağlayıcıdan bağımsız kopya.
+  backup:
+    build: { context: ./backup }
+    image: yanimda-backup:local
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    # Uygulama sırları verilmez; yalnız yedek değişkenleri. Dökümü okuma yetkili ayrı kullanıcı alır (README).
+    environment:
+      BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL gerekli}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET gerekli}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-pg/staging}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-35}
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:?BACKUP_S3_ACCESS_KEY gerekli}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:?BACKUP_S3_SECRET_KEY gerekli}
+      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-tr-west-1}
+      PUSHGATEWAY_URL: ${PUSHGATEWAY_URL:-http://pushgateway:9091}
+      BACKUP_AT: ${BACKUP_AT:-03:15}
+    command: ['/opt/backup/schedule.sh']
+    logging: *logging
+
+networks:
+  default:
+    name: yanimda
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

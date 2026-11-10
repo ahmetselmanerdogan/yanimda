@@ -1,0 +1,73 @@
+{{- /*
+Giriş (ingress) NetworkPolicy'leri:
+  - Bu sürümün tüm pod'ları için varsayılan RED; aşağıdaki izinler tek tek açılır.
+  - api/console/family-web/keycloak HTTP: yalnız Ingress denetleyicisi ad alanından.
+  - Postgres/Redis/MinIO: yalnız yanimda.app/db-client=true pod'larından (api, worker, keycloak).
+  - Metrik portları (api/worker 9464, keycloak 9000): yalnız izleme ad alanından.
+Çıkış (egress) kısıtı yok (Twilio/FCM/APNs/OBS dış uçları); README "Takip".
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $root := . }}
+{{- $ingressNs := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.ingress.controllerNamespace)) }}
+{{- $monNs := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.networkPolicy.monitoringNamespace)) }}
+{{- $dbClients := dict "podSelector" (dict "matchLabels" (dict "yanimda.app/db-client" "true" "app.kubernetes.io/instance" .Release.Name)) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "yanimda.fullname" . }}-default-deny
+  labels:
+    {{- include "yanimda.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+{{- $rules := list }}
+{{- if .Values.api.enabled }}
+{{- $rules = append $rules (dict "component" "api" "rules" (list (dict "from" (list $ingressNs) "port" "http") (dict "from" (list $monNs) "port" "metrics"))) }}
+{{- if .Values.worker.enabled }}
+{{- $rules = append $rules (dict "component" "worker" "rules" (list (dict "from" (list $monNs) "port" "metrics"))) }}
+{{- end }}
+{{- end }}
+{{- if .Values.console.enabled }}
+{{- $rules = append $rules (dict "component" "console" "rules" (list (dict "from" (list $ingressNs) "port" "http"))) }}
+{{- end }}
+{{- if .Values.familyWeb.enabled }}
+{{- $rules = append $rules (dict "component" "family-web" "rules" (list (dict "from" (list $ingressNs) "port" "http"))) }}
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+{{- $rules = append $rules (dict "component" "keycloak" "rules" (list (dict "from" (list $ingressNs) "port" "http") (dict "from" (list $monNs) "port" "management"))) }}
+{{- end }}
+{{- if .Values.timescaledb.enabled }}
+{{- $rules = append $rules (dict "component" "timescaledb" "rules" (list (dict "from" (list $dbClients) "port" "postgres"))) }}
+{{- end }}
+{{- if .Values.redis.enabled }}
+{{- $rules = append $rules (dict "component" "redis" "rules" (list (dict "from" (list $dbClients) "port" "redis"))) }}
+{{- end }}
+{{- if .Values.minio.enabled }}
+{{- $rules = append $rules (dict "component" "minio" "rules" (list (dict "from" (list $dbClients) "port" "s3"))) }}
+{{- end }}
+{{- range $r := $rules }}
+{{- $ctx := dict "root" $root "component" $r.component }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    {{- range $r.rules }}
+    - from:
+        {{- toYaml .from | nindent 8 }}
+      ports:
+        - port: {{ .port }}
+          protocol: TCP
+    {{- end }}
+{{- end }}
+{{- end }}

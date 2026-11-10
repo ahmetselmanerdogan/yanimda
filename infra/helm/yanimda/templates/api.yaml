@@ -1,0 +1,158 @@
+{{- /*
+API ve outbox işçisi aynı imajdır. Ayrık /health ucu yok (README "Takip"): Nest, tüm modüller (migration dahil)
+hazır olduktan sonra portu dinlemeye başladığı için TCP yoklaması hazır olmayı yansıtır. Metrik portu Ingress'te yok.
+*/ -}}
+{{- $root := . -}}
+{{- $roles := list -}}
+{{- if .Values.api.enabled }}{{ $roles = append $roles (dict "component" "api" "replicas" .Values.api.replicas "outbox" .Values.api.outboxWorker "resources" .Values.api.resources) }}{{ end -}}
+{{- if and .Values.api.enabled .Values.worker.enabled }}{{ $roles = append $roles (dict "component" "worker" "replicas" .Values.worker.replicas "outbox" "on" "resources" .Values.worker.resources) }}{{ end -}}
+{{- range $role := $roles }}
+{{- $ctx := dict "root" $root "component" $role.component }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $role.replicas }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+        yanimda.app/db-client: "true"
+    spec:
+      {{- include "yanimda.imagePullSecrets" $root | nindent 6 }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        {{- toYaml $root.Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 1000
+        runAsGroup: 1000
+      {{- if eq $role.component "api" }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "yanimda.selectorLabels" $ctx | nindent 14 }}
+      {{- end }}
+      {{- with $root.Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $role.component }}
+          image: {{ include "yanimda.image" $root.Values.api.image | quote }}
+          imagePullPolicy: {{ $root.Values.api.image.pullPolicy }}
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $root.Values.api.port }}
+            - name: metrics
+              containerPort: {{ $root.Values.api.metricsPort }}
+          envFrom:
+            - secretRef:
+                name: {{ $root.Values.api.existingSecret }}
+          env:
+            {{- range $k, $v := $root.Values.api.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            - name: PORT
+              value: {{ $root.Values.api.port | quote }}
+            - name: METRICS_PORT
+              value: {{ $root.Values.api.metricsPort | quote }}
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: OUTBOX_WORKER
+              value: {{ $role.outbox | quote }}
+            {{- if not (hasKey $root.Values.api.env "KEYCLOAK_URL") }}
+            - name: KEYCLOAK_URL
+              value: {{ printf "https://auth.%s" $root.Values.global.domain | quote }}
+            {{- end }}
+            {{- if not (hasKey $root.Values.api.env "OIDC_OPERATIONS_ISSUER") }}
+            - name: OIDC_OPERATIONS_ISSUER
+              value: {{ include "yanimda.issuer" (dict "root" $root "realm" "operations") | quote }}
+            {{- end }}
+            {{- if not (hasKey $root.Values.api.env "OIDC_CONSUMERS_ISSUER") }}
+            - name: OIDC_CONSUMERS_ISSUER
+              value: {{ include "yanimda.issuer" (dict "root" $root "realm" "consumers") | quote }}
+            {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml $role.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    {{- if eq $role.component "api" }}
+    - name: http
+      port: {{ $root.Values.api.port }}
+      targetPort: http
+    {{- end }}
+    - name: metrics
+      port: {{ $root.Values.api.metricsPort }}
+      targetPort: metrics
+{{- end }}
+{{- if and .Values.api.enabled (gt (int .Values.api.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "yanimda.component" (dict "root" . "component" "api") }}
+  labels:
+    {{- include "yanimda.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+{{- end }}

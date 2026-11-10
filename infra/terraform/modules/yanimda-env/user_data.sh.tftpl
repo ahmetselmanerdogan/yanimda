@@ -1,0 +1,42 @@
+#!/bin/bash
+# T-083 VPS ilk açılış: Docker Engine + compose eklentisi, veri diski ${data_mount}, temel sertleştirme.
+# Uygulama dosyaları ve .env.prod buraya kopyalanmaz (sır yok); dağıtım infra/README.md'de.
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y ca-certificates curl gnupg unattended-upgrades fail2ban
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+# shellcheck source=/dev/null
+. /etc/os-release
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Veri diski: ilk boş disk (sistem diski dışında) biçimlendirilip bağlanır. Disk eklenmesi birkaç saniye sürebilir.
+for _ in $(seq 1 30); do
+  DEV=$(lsblk -dpno NAME,TYPE,MOUNTPOINT | awk '$2=="disk" && $3=="" {print $1}' | grep -v "$(findmnt -no SOURCE / | sed 's/[0-9]*$//')" | head -n1 || true)
+  [ -n "$DEV" ] && break
+  sleep 5
+done
+mkdir -p "${data_mount}"
+if [ -n "$DEV" ]; then
+  blkid "$DEV" >/dev/null 2>&1 || mkfs.ext4 -L yanimda-data "$DEV"
+  grep -q yanimda-data /etc/fstab || echo "LABEL=yanimda-data ${data_mount} ext4 defaults,nofail 0 2" >> /etc/fstab
+  mount -a
+fi
+
+# Docker verisi veri diskinde; günlükler döndürülür (Loki/promtail okur).
+mkdir -p "${data_mount}/docker" /etc/docker
+cat > /etc/docker/daemon.json <<'JSON'
+{ "data-root": "${data_mount}/docker", "log-driver": "json-file", "log-opts": { "max-size": "20m", "max-file": "5" }, "live-restore": true }
+JSON
+systemctl restart docker
+systemctl enable --now docker unattended-upgrades fail2ban
+
+# SSH: yalnız anahtar.
+sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl reload ssh || systemctl reload sshd || true

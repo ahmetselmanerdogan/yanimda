@@ -1,0 +1,142 @@
+{{- if .Values.keycloak.enabled }}
+{{- $ctx := dict "root" . "component" "keycloak" }}
+{{- $dbUrl := .Values.keycloak.db.url }}
+{{- if and (not $dbUrl) .Values.timescaledb.enabled }}
+{{- $dbUrl = printf "jdbc:postgresql://%s:5432/keycloak" (include "yanimda.component" (dict "root" . "component" "timescaledb")) }}
+{{- end }}
+{{- $dbUser := .Values.keycloak.db.username | default (ternary .Values.timescaledb.username "keycloak" .Values.timescaledb.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.keycloak.replicas }}
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+        yanimda.app/db-client: "true"
+    spec:
+      {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 1000
+        runAsGroup: 0
+      containers:
+        - name: keycloak
+          image: {{ include "yanimda.image" .Values.keycloak.image | quote }}
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
+          # Keycloak açılışta /opt/keycloak altına derleme çıktısı yazar: kök dosya sistemi yazılabilir.
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" false | nindent 12 }}
+          args:
+            - start
+            {{- if .Values.keycloak.realmConfigMap }}
+            - --import-realm
+            {{- end }}
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: {{ required "keycloak.db.url gerekli (veya timescaledb.enabled)" $dbUrl | quote }}
+            - name: KC_DB_USERNAME
+              value: {{ $dbUser | quote }}
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.existingSecret }}
+                  key: KC_DB_PASSWORD
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUser | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.existingSecret }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: KC_HOSTNAME
+              value: {{ printf "https://auth.%s" .Values.global.domain | quote }}
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            {{- if gt (int .Values.keycloak.replicas) 1 }}
+            - name: KC_CACHE_STACK
+              value: kubernetes
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          {{- if .Values.keycloak.realmConfigMap }}
+          volumeMounts:
+            - name: realms
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          {{- end }}
+      {{- if .Values.keycloak.realmConfigMap }}
+      volumes:
+        - name: realms
+          configMap:
+            name: {{ .Values.keycloak.realmConfigMap }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "yanimda.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: management
+      port: 9000
+      targetPort: management
+{{- if gt (int .Values.keycloak.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

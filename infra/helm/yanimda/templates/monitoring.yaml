@@ -1,0 +1,62 @@
+{{- /* Prometheus Operator ve Grafana sidecar entegrasyonu (isteğe bağlı; CRD'ler kümede olmalı). */ -}}
+{{- if and .Values.serviceMonitor.enabled .Values.api.enabled }}
+{{- $ctx := dict "root" . "component" "metrics" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "yanimda.fullname" . }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # job etiketi = bileşen (api / worker): infra/monitoring/alerts.yml ifadeleriyle aynı.
+  jobLabel: app.kubernetes.io/component
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name | quote }}]
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [api, worker]
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
+{{- if .Values.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "yanimda.fullname" . }}
+  labels:
+    {{- include "yanimda.labels" (dict "root" . "component" "alerts") | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # infra/monitoring/alerts.yml (files/alerts.yml sembolik bağ). İş metrikleri (yanimda_outbox_* vb.)
+  # postgres_exporter özel sorgularından gelir: infra/monitoring/postgres-exporter-queries.yml.
+  {{- $rules := .Files.Get "files/alerts.yml" | fromYaml }}
+  groups:
+    {{- toYaml $rules.groups | nindent 4 }}
+{{- end }}
+{{- if .Values.grafanaDashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yanimda.fullname" . }}-dashboard-konsol
+  labels:
+    {{- include "yanimda.labels" (dict "root" . "component" "dashboard") | nindent 4 }}
+    {{- with .Values.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  # infra/grafana/konsol.json; içe aktarma girdisi ${DS_PROMETHEUS} → "prometheus" veri kaynağı uid'i.
+  konsol.json: |-
+    {{- .Files.Get "files/konsol.json" | replace "${DS_PROMETHEUS}" "prometheus" | nindent 4 }}
+{{- end }}

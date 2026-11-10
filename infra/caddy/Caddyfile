@@ -1,0 +1,85 @@
+# T-083 ters vekil: otomatik TLS (ACME), HTTP→HTTPS, HTTP/3. Ortam: DOMAIN, ACME_EMAIL, KC_ADMIN_ALLOW_CIDRS.
+# Metrik portları (API :9464, Keycloak :9000) burada YAYINLANMAZ; Grafana/Prometheus yalnız SSH tüneliyle.
+{
+	email {$ACME_EMAIL}
+	admin 127.0.0.1:2019
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+}
+
+# API kopyaları Docker DNS'ten (api → 2 IP) dinamik çözülür, sırayla dağıtılır; yanıt vermeyen kopya 30 sn atlanır.
+(api_upstream) {
+	reverse_proxy {
+		dynamic a {
+			name api
+			port 3000
+			refresh 10s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		fail_duration 30s
+		# Node http sunucusu boştaki bağlantıyı 5 sn'de kapatır (keepAliveTimeout); vekil bağlantıyı daha önce bırakmazsa
+		# kapanmakta olan bağlantıya istek yazılır → EOF/502 (T-080 yük testinde %1,8 EOF). Vekil 4 sn'de bırakır.
+		transport http {
+			keepalive 4s
+		}
+	}
+}
+
+api.{$DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	import api_upstream
+}
+
+# Konsol: statik dosyalar + aynı kökenden /v1 (REST + WebSocket /v1/ws/queue) → CORS gerekmez.
+console.{$DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	handle /v1/* {
+		import api_upstream
+	}
+	handle {
+		reverse_proxy console:8080
+	}
+}
+
+# Aile web (isteğe bağlı compose profili). Çalışmıyorsa 502 döner.
+aile.{$DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	handle /v1/* {
+		import api_upstream
+	}
+	handle {
+		reverse_proxy family-web:8080
+	}
+}
+
+# Keycloak. Yönetim konsolu yalnız izinli CIDR'lerden (varsayılan: hiçbiri).
+auth.{$DOMAIN} {
+	import security_headers
+	@admin {
+		path /admin /admin/*
+		not remote_ip {$KC_ADMIN_ALLOW_CIDRS:127.0.0.1/32}
+	}
+	respond @admin 403
+	reverse_proxy keycloak:8080
+}
+
+# Durum sayfası (Uptime Kuma, izleme compose'unda; aynı "yanimda" ağı).
+status.{$DOMAIN} {
+	import security_headers
+	reverse_proxy uptime-kuma:3001
+}

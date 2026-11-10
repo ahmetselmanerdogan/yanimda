@@ -1,0 +1,215 @@
+# Yanımda Helm değerleri (T-083, Faz 3). SIR DEĞERİ YOK: sırlar yalnız `existingSecret` adlarıyla (External Secrets
+# veya SOPS ile oluşturulur; infra/README.md "Helm"). Üretimde timescaledb/redis/minio kapatılıp yönetilen hizmetler
+# kullanılır (adresler api.existingSecret içindeki DATABASE_URL / REDIS_URL / S3_* ile).
+
+global:
+  # Genel alan adı: api.<domain>, console.<domain>, auth.<domain>, aile.<domain>
+  domain: yanimda.example
+  imagePullSecrets: []
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+nameOverride: ''
+fullnameOverride: ''
+
+api:
+  enabled: true
+  replicas: 2
+  image:
+    repository: ghcr.io/example/yanimda-api
+    tag: '0.0.0'
+    pullPolicy: IfNotPresent
+  # Gizli anahtarlar (Secret'ta olmalı): DATABASE_URL, REDIS_URL, FIELD_ENC_KEYS, DEVICE_TOKEN_SECRET, S3_ACCESS_KEY,
+  # S3_SECRET_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, ADMIN_TOKEN,
+  # FCM_PRIVATE_KEY, APNS_PRIVATE_KEY … (kök .env.example). envFrom ile tümü kaba verilir.
+  existingSecret: yanimda-api
+  # Gizli olmayan ortam (kök .env.example). OIDC issuer'ları boşsa auth.<domain>/realms/{operations,consumers}.
+  env:
+    NODE_ENV: production
+    DB_MIGRATE_ON_START: 'true'
+    DATABASE_POOL_MAX: '10'
+    SIMULATOR_ENABLED: 'false'
+    OIDC_AUDIENCE: yanimda-api
+    OIDC_REQUIRE_MFA: 'true'
+    COUNTRY_CODE: TR
+    S3_BUCKET: recordings
+    S3_REGION: tr-west-1
+    S3_ENSURE_BUCKET: 'false'
+    RECORDING_RETENTION_DAYS: '365'
+    CPAAS_PROVIDER: twilio
+  # API kopyalarında outbox işçisi: worker.enabled iken "off"; "on" = sıcak yedek (kira ile tek aktif).
+  outboxWorker: 'off'
+  port: 3000
+  metricsPort: 9464
+  resources:
+    requests: { cpu: 250m, memory: 384Mi }
+    limits: { cpu: '1', memory: 1Gi }
+  pdb:
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Outbox işçisi (aynı imaj, OUTBOX_WORKER=on). Olay geçiş metrikleri (signal_to_screen_seconds) bu süreçte ölçülür.
+worker:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 200m, memory: 384Mi }
+    limits: { cpu: '1', memory: 768Mi }
+
+console:
+  enabled: true
+  replicas: 2
+  # infra/console/Dockerfile (VITE_OIDC_AUTHORITY derlemede gömülür → ortam başına imaj)
+  image:
+    repository: ghcr.io/example/yanimda-console
+    tag: '0.0.0'
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+  pdb:
+    minAvailable: 1
+
+# Aile web (apps/family-web henüz yok): imaj hazır olunca açılır.
+familyWeb:
+  enabled: false
+  replicas: 1
+  image:
+    repository: yanimda/family-web
+    tag: placeholder
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+keycloak:
+  enabled: true
+  replicas: 1
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: '26.0'
+    pullPolicy: IfNotPresent
+  # Secret anahtarları: KC_DB_PASSWORD, KC_BOOTSTRAP_ADMIN_PASSWORD
+  existingSecret: yanimda-keycloak
+  db:
+    # timescaledb.enabled ise boş bırakılabilir: <release>-timescaledb:5432/keycloak
+    url: ''
+    # Boş: timescaledb.enabled ise timescaledb.username (KC_DB_PASSWORD = POSTGRES_PASSWORD), değilse "keycloak"
+    username: ''
+  bootstrapAdminUser: admin
+  # Realm içe aktarma: infra/keycloak/realm-*.json'dan oluşturulan ConfigMap adı (README). Boş = içe aktarma yok.
+  realmConfigMap: ''
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { cpu: '1', memory: 1536Mi }
+
+# Küme içi TimescaleDB (geliştirme/staging). Üretimde false: yönetilen Postgres (PITR, çoklu AZ).
+timescaledb:
+  enabled: true
+  image:
+    repository: timescale/timescaledb
+    tag: 2.17.2-pg16
+    pullPolicy: IfNotPresent
+  # Secret anahtarı: POSTGRES_PASSWORD (süper kullanıcı "yanimda")
+  existingSecret: yanimda-timescaledb
+  database: yanimda
+  username: yanimda
+  storage:
+    size: 20Gi
+    storageClassName: ''
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: '2', memory: 2Gi }
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7.4-alpine
+    pullPolicy: IfNotPresent
+  # Secret anahtarı: REDIS_PASSWORD
+  existingSecret: yanimda-redis
+  storage:
+    size: 2Gi
+    storageClassName: ''
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# Küme içi S3 (geliştirme/staging). Üretimde false: nesne kilitli yönetilen kova (OBS/S3).
+minio:
+  enabled: true
+  # Resmi MinIO imajları artık herkese açık değil (dev compose ile aynı arşiv imaj).
+  image:
+    repository: bitnamilegacy/minio
+    tag: 2024.10.13
+    pullPolicy: IfNotPresent
+  # Secret anahtarları: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
+  existingSecret: yanimda-minio
+  # Kayıt kovası nesne kilidiyle olmalı: varsayılan kova oluşturma (kilitsiz) kapalı; kovayı API açar
+  # (api.env.S3_ENSURE_BUCKET="true", yalnız küme içi MinIO'da).
+  defaultBuckets: ''
+  storage:
+    size: 20Gi
+    storageClassName: ''
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 1Gi }
+
+# Sentetik izleme: 5 dk'da bir TEST SOS'u (infra/synthetic/probe.mjs, ConfigMap ile).
+synthetic:
+  # personIds ve Secret hazır olunca açılır (values-staging.yaml)
+  enabled: false
+  schedule: '*/5 * * * *'
+  image:
+    repository: node
+    tag: 20-alpine
+    pullPolicy: IfNotPresent
+  # Secret anahtarları: SYNTHETIC_CLIENT_SECRET (zorunlu), UPTIME_KUMA_PUSH_URL (isteğe bağlı)
+  existingSecret: yanimda-synthetic
+  clientId: yanimda-synthetic
+  # Virgüllü, en az 3 sentetik kişi kimliği (README "Sentetik")
+  personIds: ''
+  # Boşsa https://api.<domain> ve https://auth.<domain>/realms/consumers (uçtan uca, Ingress + TLS dahil)
+  apiUrl: ''
+  oidcIssuer: ''
+  pushgatewayUrl: ''
+  timeoutSec: 60
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+  # İngress denetleyicisinin ad alanı (NetworkPolicy için)
+  controllerNamespace: ingress-nginx
+
+networkPolicy:
+  enabled: true
+  # Prometheus'un çalıştığı ad alanı: yalnız buradan metrik portlarına erişim
+  monitoringNamespace: monitoring
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+# infra/monitoring/alerts.yml → PrometheusRule (Prometheus Operator)
+prometheusRule:
+  enabled: false
+  labels: {}
+
+# infra/grafana/konsol.json → Grafana sidecar ConfigMap'i
+grafanaDashboard:
+  enabled: false
+  labels:
+    grafana_dashboard: '1'

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: yanimda
+description: Yanımda acil müdahale servisi (API, outbox işçisi, operatör konsolu, Keycloak, TimescaleDB, Redis, MinIO, sentetik izleme) — T-083 Faz 3 K8s geçişi
+type: application
+version: 0.1.0
+appVersion: '0.1.0'
+kubeVersion: '>=1.27.0-0'
+keywords: [yanimda, emergency-response]

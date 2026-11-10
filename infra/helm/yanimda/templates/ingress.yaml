@@ -1,0 +1,53 @@
+{{- if .Values.ingress.enabled }}
+{{- $ctx := dict "root" . "component" "ingress" }}
+{{- $api := include "yanimda.component" (dict "root" . "component" "api") }}
+{{- $hosts := list }}
+{{- if .Values.api.enabled }}{{ $hosts = append $hosts (dict "host" "api" "default" $api "port" .Values.api.port "apiPrefix" false) }}{{ end }}
+{{- if .Values.console.enabled }}{{ $hosts = append $hosts (dict "host" "console" "default" (include "yanimda.component" (dict "root" . "component" "console")) "port" 8080 "apiPrefix" .Values.api.enabled) }}{{ end }}
+{{- if .Values.familyWeb.enabled }}{{ $hosts = append $hosts (dict "host" "aile" "default" (include "yanimda.component" (dict "root" . "component" "family-web")) "port" 8080 "apiPrefix" .Values.api.enabled) }}{{ end }}
+{{- if .Values.keycloak.enabled }}{{ $hosts = append $hosts (dict "host" "auth" "default" (include "yanimda.component" (dict "root" . "component" "keycloak")) "port" 8080 "apiPrefix" false) }}{{ end }}
+{{- if $hosts }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "yanimda.fullname" . }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    {{- range $hosts }}
+    - hosts: [{{ include "yanimda.domainHost" (dict "root" $ "sub" .host) | quote }}]
+      secretName: {{ printf "%s-%s-tls" (include "yanimda.fullname" $) .host }}
+    {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ include "yanimda.domainHost" (dict "root" $ "sub" .host) | quote }}
+      http:
+        paths:
+          {{- if .apiPrefix }}
+          # Aynı köken: /v1 (REST + WebSocket /v1/ws/queue) API'ye → CORS gerekmez.
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $api }}
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .default }}
+                port:
+                  number: {{ .port }}
+    {{- end }}
+{{- end }}
+{{- end }}
