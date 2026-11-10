@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { DispatchPanel } from './components/Dispatch';
 import { EventCard } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
 import { QueueList } from './components/Queue';
@@ -442,6 +443,9 @@ export function Console({
           />
         ) : (
           <p className="muted pad">{t('O-UI-NO-SELECTION')}</p>
+        )}
+        {item && (ev?.state ?? item.state) === 'DISPATCH' && (
+          <DispatchPanel key={item.eventId} api={api} eventId={item.eventId} />
         )}
       </main>
       {viewport === 'tablet' && (

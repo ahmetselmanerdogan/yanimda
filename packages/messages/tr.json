@@ -269,6 +269,16 @@
     "text": "Operatör 112'yi aradı. Ambulans yolda. Adres: {address}",
     "action": "Olayı aç"
   },
+  "F-112-ON-SCENE": {
+    "channel": "family",
+    "text": "112 ekibi {name} yanına ulaştı.",
+    "action": "Olayı aç"
+  },
+  "F-112-HOSPITAL": {
+    "channel": "family",
+    "text": "{name} {hospital} hastanesine götürülüyor.",
+    "action": "Olayı aç"
+  },
   "F-DAILY": {
     "channel": "family",
     "text": "Bugün iyi: {steps} adım, saat {wristHours} saat takılı."
@@ -406,6 +416,14 @@
     "channel": "console",
     "text": "Olay bırakıldı (operatör kilidi doldu): {type}",
     "action": "Üstlen"
+  },
+  "O-DISPATCH-NO-ARRIVAL": {
+    "channel": "console",
+    "text": "112 ekibi henüz ulaşmadı ({type}). 112'yi arayıp durumu sorun ve aşamayı girin."
+  },
+  "O-DISPATCH-OPEN": {
+    "channel": "console",
+    "text": "112 süreci açık ({type}). Son durumu girin ya da tamamlayın."
   },
   "O-UI-TITLE": {
     "channel": "console",
@@ -551,6 +569,98 @@
   "O-UI-NAV-EVENT": {
     "channel": "console",
     "text": "Olay"
+  },
+  "O-UI-DISPATCH": {
+    "channel": "console",
+    "text": "112 süreci"
+  },
+  "O-UI-DISPATCH-CASE": {
+    "channel": "console",
+    "text": "112 vaka no"
+  },
+  "O-UI-DISPATCH-ETA": {
+    "channel": "console",
+    "text": "Tahmini varış (dk)"
+  },
+  "O-UI-DISPATCH-HOSPITAL": {
+    "channel": "console",
+    "text": "Hastane"
+  },
+  "O-UI-DISPATCH-NOTE": {
+    "channel": "console",
+    "text": "Not"
+  },
+  "O-UI-DISPATCH-SOURCE": {
+    "channel": "console",
+    "text": "Bilgi kaynağı"
+  },
+  "O-UI-DISPATCH-SOURCE-OPERATOR": {
+    "channel": "console",
+    "text": "Operatör"
+  },
+  "O-UI-DISPATCH-SOURCE-EMS": {
+    "channel": "console",
+    "text": "112 / ekip"
+  },
+  "O-UI-DISPATCH-SOURCE-FAMILY": {
+    "channel": "console",
+    "text": "Aile"
+  },
+  "O-UI-DISPATCH-SOURCE-SYSTEM": {
+    "channel": "console",
+    "text": "Sistem"
+  },
+  "O-UI-DISPATCH-SAVE": {
+    "channel": "console",
+    "text": "Kaydet"
+  },
+  "O-UI-DISPATCH-ARRIVAL": {
+    "channel": "console",
+    "text": "Varış {min} dk"
+  },
+  "O-UI-DISPATCH-LATE": {
+    "channel": "console",
+    "text": "Varış gecikti"
+  },
+  "O-UI-DISPATCH-OPEN-LIST": {
+    "channel": "console",
+    "text": "Süren 112 süreçleri"
+  },
+  "O-UI-DISPATCH-NONE": {
+    "channel": "console",
+    "text": "Süren 112 süreci yok."
+  },
+  "O-DISPATCH-STAGE-NOTIFIED": {
+    "channel": "console",
+    "text": "112 bildirildi"
+  },
+  "O-DISPATCH-STAGE-ACCEPTED": {
+    "channel": "console",
+    "text": "112 kabul etti"
+  },
+  "O-DISPATCH-STAGE-EN_ROUTE": {
+    "channel": "console",
+    "text": "Ekip yolda"
+  },
+  "O-DISPATCH-STAGE-ON_SCENE": {
+    "channel": "console",
+    "text": "Ekip olay yerinde"
+  },
+  "O-DISPATCH-STAGE-TRANSPORTING": {
+    "channel": "console",
+    "text": "Hastaneye götürülüyor"
+  },
+  "O-DISPATCH-STAGE-AT_HOSPITAL": {
+    "channel": "console",
+    "text": "Hastanede"
+  },
+  "O-DISPATCH-STAGE-COMPLETED": {
+    "channel": "console",
+    "text": "Tamamlandı"
+  },
+  "O-DISPATCH-STAGE-CANCELLED": {
+    "channel": "console",
+    "text": "İptal"
   },
   "O-UI-PERSON-UNKNOWN": {
     "channel": "console",

@@ -491,3 +491,36 @@ export const supervisorFlag = eventSchema.table('supervisor_flag', {
   changedAt: timestamptz('changed_at').notNull().defaultNow(),
   changedBy: text('changed_by'),
 });
+
+/** 0022: 112 bildirim ve intikal takibi. */
+export const dispatch = eventSchema.table('dispatch', {
+  eventId: uuid('event_id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  status: text('status').notNull().default('NOTIFIED'),
+  notifiedAt: timestamptz('notified_at').notNull(),
+  notifiedBy: text('notified_by'),
+  caseRef: text('case_ref'),
+  etaMin: integer('eta_min'),
+  hospital: text('hospital'),
+  acceptedAt: timestamptz('accepted_at'),
+  enRouteAt: timestamptz('en_route_at'),
+  onSceneAt: timestamptz('on_scene_at'),
+  transportingAt: timestamptz('transporting_at'),
+  atHospitalAt: timestamptz('at_hospital_at'),
+  completedAt: timestamptz('completed_at'),
+  cancelledAt: timestamptz('cancelled_at'),
+  checks: integer('checks').notNull().default(0),
+  lastCheckAt: timestamptz('last_check_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+export const dispatchUpdate = eventSchema.table('dispatch_update', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  status: text('status').notNull(),
+  at: timestamptz('at').notNull(),
+  actorKind: text('actor_kind').notNull(),
+  actorId: text('actor_id'),
+  source: text('source').notNull(),
+  note: text('note'),
+});

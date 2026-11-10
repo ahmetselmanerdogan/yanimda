@@ -13,6 +13,7 @@ export const TIMER_KINDS = [
   'connection-lost', //     heartbeat yok → CONNECTION_LOST olayı                             (T-012 bağlar)
   'follow-up', //           acil kapanış + 24 saat → FOLLOW_UP olayı                          (aktif)
   'voice-screen-expire', // sesli ön eleme sonucu gelmedi → cevapsız, ESCALATED (T-072)     (aktif)
+  'dispatch-check', //      112 süreci: ekip ulaşmadı / süreç açık → amir uyarısı, yeniden kur  (aktif)
 ] as const;
 
 export type TimerKind = (typeof TIMER_KINDS)[number];

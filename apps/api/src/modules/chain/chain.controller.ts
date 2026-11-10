@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Post,
@@ -14,13 +15,40 @@ import {
 
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { ChainService } from './chain.service';
+import { DispatchService } from './dispatch.service';
 
 /** E-02 üstlenme, E-03/E-04 zincir adımları, E-06 112 kısayolu, E-07 kapatma (T-021). */
 @Controller('events')
 @UseGuards(OidcGuard)
 @Roles('OPERATOR', 'SUPERVISOR')
 export class ChainController {
-  constructor(@Inject(ChainService) private readonly chain: ChainService) {}
+  constructor(
+    @Inject(ChainService) private readonly chain: ChainService,
+    @Inject(DispatchService) private readonly dispatch: DispatchService,
+  ) {}
+
+  /** GET /v1/events/dispatches?open=1 — 112 süreçleri (süren veya son 30 gün). Amir panosu ve yönetim. */
+  @Get('dispatches')
+  dispatches(@Query('open') open?: string) {
+    return this.dispatch.list({ open: open === '1' || open === 'true' });
+  }
+
+  /** GET /v1/events/{id}/dispatch — 112 süreci ve zaman çizelgesi (yoksa 404). */
+  @Get(':id/dispatch')
+  async dispatchOf(@Param('id') id: string) {
+    const v = await this.dispatch.get(id);
+    if (!v) throw new NotFoundException('Süreç yok');
+    return v;
+  }
+
+  /** POST /v1/events/{id}/dispatch — 112 aşaması / vaka no / tahmini varış / hastane / not (olay kapalıyken de). */
+  @Post(':id/dispatch')
+  @HttpCode(200)
+  updateDispatch(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+    const u = userOf(req);
+    const kind = u.roles.includes('SUPERVISOR') ? 'SUPERVISOR' : 'OPERATOR';
+    return this.dispatch.update(id, { kind, id: u.sub }, body);
+  }
 
   /** GET /v1/events/{id} — olay + zincir. */
   @Get(':id')

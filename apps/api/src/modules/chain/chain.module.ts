@@ -5,12 +5,13 @@ import { ProfileModule } from '../profile/profile.module';
 import { TelephonyModule } from '../telephony/telephony.module';
 import { ChainController } from './chain.controller';
 import { ChainService } from './chain.service';
+import { DispatchService } from './dispatch.service';
 
 /** T-021 prosedür zinciri ve operatör işlemleri (D-03, D-04). */
 @Module({
   imports: [EventModule, TelephonyModule, ProfileModule],
-  providers: [ChainService],
+  providers: [ChainService, DispatchService],
   controllers: [ChainController],
-  exports: [ChainService],
+  exports: [ChainService, DispatchService],
 })
 export class ChainModule {}

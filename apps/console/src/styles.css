@@ -896,3 +896,64 @@ table.breaches tr.live td:first-child {
     overflow-x: auto;
   }
 }
+
+/* 112 bildirim ve intikal takibi */
+.dispatch {
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid var(--help);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.dispatch-status {
+  font-weight: 700;
+}
+.badge-late {
+  background: var(--help);
+  color: #fff;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.dispatch-stages {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.dispatch-stages time,
+.dispatch-notes time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.dispatch-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.dispatch-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dispatch-fields label.wide {
+  grid-column: 1 / -1;
+}
+.dispatch-fields select {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: inherit;
+}
+.dispatch-notes {
+  margin: 8px 0 0;
+  padding-left: 16px;
+}
+.layout.v-phone .dispatch-next button {
+  flex: 1 1 45%;
+  min-height: 48px;
+}

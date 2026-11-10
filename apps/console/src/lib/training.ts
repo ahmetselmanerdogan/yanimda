@@ -256,6 +256,14 @@ export class TrainingSim {
     unclaim: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
+    // 112 süreç takibi eğitim modunda yok (gerçek 112 aranmaz).
+    dispatch: async () => {
+      throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
+    },
+    updateDispatch: async () => {
+      throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
+    },
+    dispatches: async () => [],
     close: async (id, outcome: CloseOutcome) => {
       const d = this.mine(id);
       const emergency = outcome === 'EMERGENCY';

@@ -3,7 +3,7 @@ import type { EventState, EventType, StepAssessment, StepResult } from '@yanimda
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
-import { chainRun, chainStep, event, familyFeedback, familyMember } from '../../db/schema';
+import { chainRun, chainStep, dispatch, event, familyFeedback, familyMember } from '../../db/schema';
 import type { Actor } from '../profile/contacts';
 import { ProfileService } from '../profile/profile.service';
 
@@ -74,6 +74,8 @@ export interface FamilyEventView extends FamilyEventSummary {
   /** Bu aile üyesinin "Gerçek miydi?" cevabı (C-12). */
   feedback: { real: boolean } | null;
   canFeedback: boolean;
+  /** 112 süreci (varsa): aşama, aşama zamanları, hastane — vaka no, operatör ve notlar yok. */
+  dispatch: { status: string; stages: Record<string, string>; hospital: string | null } | null;
 }
 
 type EventRow = typeof event.$inferSelect;
@@ -125,6 +127,24 @@ export class FamilyService {
           .where(and(eq(familyFeedback.eventId, eventId), eq(familyFeedback.subject, subject)))
       : [];
     const closed = ev.state === 'CLOSED';
+    const [d] = await this.db.select().from(dispatch).where(eq(dispatch.eventId, eventId));
+    const stage = (k: string, v: Date | null) => (v ? [[k, v.toISOString()] as const] : []);
+    const dispatchView = d
+      ? {
+          status: d.status,
+          hospital: d.hospital,
+          stages: Object.fromEntries([
+            ...stage('NOTIFIED', d.notifiedAt),
+            ...stage('ACCEPTED', d.acceptedAt),
+            ...stage('EN_ROUTE', d.enRouteAt),
+            ...stage('ON_SCENE', d.onSceneAt),
+            ...stage('TRANSPORTING', d.transportingAt),
+            ...stage('AT_HOSPITAL', d.atHospitalAt),
+            ...stage('COMPLETED', d.completedAt),
+            ...stage('CANCELLED', d.cancelledAt),
+          ]),
+        }
+      : null;
     return {
       ...summary(ev),
       devicePromptUntil: ev.state === 'DEVICE_PROMPT' ? (ev.devicePromptUntil?.toISOString() ?? null) : null,
@@ -140,6 +160,7 @@ export class FamilyService {
       operatorNote: closed && ev.isTest && ev.closeReason ? ev.closeReason : null,
       feedback: fb ? { real: fb.real } : null,
       canFeedback: closed && !ev.isTest && ev.confirmedOutcome !== 'EMERGENCY' && !!subject && !fb,
+      dispatch: dispatchView,
     };
   }
 
