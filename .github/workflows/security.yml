@@ -40,9 +40,10 @@ jobs:
         run: |
           echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/device-secret)"
           echo "::add-mask::$(openssl rand -base64 32 | tee /tmp/field-key)"
+          echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/signup-secret)"
           docker run -d --name api --network host \
             -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda -e REDIS_URL=redis://localhost:6379 \
-            -e PORT=3000 -e FIELD_ENC_KEYS="zap:$(cat /tmp/field-key)" -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" \
+            -e PORT=3000 -e FIELD_ENC_KEYS="zap:$(cat /tmp/field-key)" -e SIGNUP_TOKEN_SECRET="$(cat /tmp/signup-secret)" -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" \
             yanimda-api:zap
           for _ in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
