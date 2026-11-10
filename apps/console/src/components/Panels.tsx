@@ -6,13 +6,19 @@ import {
   type CallView,
   type CloseOutcome,
   type DispatchScript,
+  type OperatorStatus,
   type PersonCard,
   type QueueItem,
+  SELF_STATUSES,
+  type SelfStatus,
 } from '../lib/api';
 import { action, t } from '../lib/i18n';
 import type { DeviceState, PhoneSnapshot } from '../lib/softphone';
 
-/** Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08). */
+/**
+ * Üst bar: başlık, canlı bağlantı, kuyruk sayısı, yeni olayda yanıp sönme (E-08), operatörün kendi durumu
+ * (Müsait / Molada; gelen SOS aramaları yalnız müsait operatöre çalar).
+ */
 export function TopBar(p: {
   training?: boolean;
   operator: string;
@@ -21,6 +27,8 @@ export function TopBar(p: {
   flash: string | null;
   onLogout(): void;
   onSupervisor?(): void;
+  myStatus?: OperatorStatus | null;
+  onMyStatus?(s: SelfStatus): void;
 }) {
   return (
     <header className={`topbar${p.flash ? ' flash' : ''}`}>
@@ -35,6 +43,23 @@ export function TopBar(p: {
       </span>
       <span className="spacer" />
       <span className="muted small">{t('O-UI-SHORTCUTS')}</span>
+      {p.onMyStatus && (
+        <span className="my-status" role="group" aria-label={t('O-UI-MY-STATUS')} data-testid="my-status">
+          <span className="muted small">{t('O-UI-MY-STATUS')}</span>
+          {SELF_STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={p.myStatus === s ? `on ${s.toLowerCase()}` : ''}
+              aria-pressed={p.myStatus === s}
+              onClick={() => p.onMyStatus!(s)}
+            >
+              {t(`O-UI-SUP-STATUS-${s}`)}
+            </button>
+          ))}
+          {p.myStatus === 'OFFLINE' && <span className="warn small">{t('O-UI-SUP-STATUS-OFFLINE')}</span>}
+        </span>
+      )}
       {p.onSupervisor && (
         <button type="button" onClick={p.onSupervisor}>
           {t('O-UI-SUP-TITLE')}
@@ -324,16 +349,23 @@ const mmss = (sec: number) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:
 
 /**
  * T-051 telefon barı: cihaz durumu (mikrofon izni girişte), süren görüşmenin durumu ve süresi, beklet / devam,
- * konferansa aile ekle, aramayı bitir. Görüşme bilgisi sunucudaki arama kaydından (numara yok).
+ * konferansa aile ekle, aramayı bitir. Görüşme bilgisi sunucudaki arama kaydından (numara yok). Gelen SOS araması
+ * çalarken Cevapla / Reddet (reddedilen ya da cevapsız arama sıradaki müsait operatöre geçer); arayanın açık olayı
+ * varsa "Olayı aç".
  */
 export function PhoneBar(p: {
   phone: PhoneSnapshot;
   call: CallView | null;
   now: number;
   busy: boolean;
+  /** Son gelen SOS aramasının olayı (çalarken ve görüşürken). */
+  inboundEventId?: string | null;
   onHold(on: boolean): void;
   onAddFamily(): void;
   onHangup(): void;
+  onAccept?(): void;
+  onReject?(): void;
+  onOpenEvent?(eventId: string): void;
 }) {
   const { call } = p;
   // Süre: görüşmenin "sürüyor"a geçtiği an (istemcide ilk görüldüğü an) başlar.
@@ -344,14 +376,36 @@ export function PhoneBar(p: {
   }, [talking, call, since?.id]);
   const active = !!call && CALL_ACTIVE.includes(call.status);
   const elapsed = talking && since?.id === call!.id ? Math.max(0, Math.floor((p.now - since.at) / 1000)) : null;
+  const ringing = p.phone.incoming ?? null;
+  const inboundTalking = !!p.phone.inbound && p.phone.connected;
+  const inboundEvent = ringing ? ringing.eventId : inboundTalking ? (p.inboundEventId ?? null) : null;
   return (
     <footer className="phonebar" aria-label={t('O-UI-PHONE')}>
       <strong>{t('O-UI-PHONE')}</strong>
       <span className={`phone-device ${DEVICE_TONE[p.phone.device]}`} data-testid="phone-device">
         {t(DEVICE_TEXT[p.phone.device])}
       </span>
+      {ringing && (
+        <span className="phone-inbound" role="alert" data-testid="phone-inbound">
+          <strong>{t('O-UI-INBOUND')}</strong>
+          <span>{t(ringing.eventId ? 'O-UI-INBOUND-EVENT' : 'O-UI-INBOUND-UNKNOWN')}</span>
+          <button type="button" className="ok" onClick={p.onAccept}>
+            {t('O-UI-INBOUND-ACCEPT')}
+          </button>
+          <button type="button" onClick={p.onReject}>
+            {t('O-UI-INBOUND-REJECT')}
+          </button>
+        </span>
+      )}
+      {inboundEvent && p.onOpenEvent && (
+        <button type="button" onClick={() => p.onOpenEvent!(inboundEvent)}>
+          {action('O-UI-INBOUND-EVENT')}
+        </button>
+      )}
       <span className="phone-call" role="status" aria-live="polite" data-testid="phone-call">
-        {call && active ? (
+        {inboundTalking && !active ? (
+          <span>{t('O-UI-INBOUND-TALKING')}</span>
+        ) : call && active ? (
           <>
             <span>{t(`O-CALL-${call.status}`)}</span>
             {elapsed !== null && <span className="phone-time">{mmss(elapsed)}</span>}
@@ -369,7 +423,7 @@ export function PhoneBar(p: {
       <button type="button" disabled={!talking || p.busy} onClick={p.onAddFamily}>
         {t('O-UI-PHONE-ADD-FAMILY')}
       </button>
-      <button type="button" className="danger" disabled={!active || p.busy} onClick={p.onHangup}>
+      <button type="button" className="danger" disabled={(!active && !inboundTalking) || p.busy} onClick={p.onHangup}>
         {t('O-UI-PHONE-HANGUP')}
       </button>
     </footer>
