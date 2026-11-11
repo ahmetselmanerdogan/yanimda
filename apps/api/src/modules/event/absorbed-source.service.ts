@@ -6,8 +6,13 @@ import { bus as globalBus, type LocalBus } from '../../common/bus';
 import { DB, type Db } from '../../db/client';
 import { auditLog, event } from '../../db/schema';
 
-/** Cihaz taraması (EventService.sweepDevices) kaynak önekleri → kendi olay türü. */
+/**
+ * Tarama kaynak önekleri → kendi olay türü. T-086: kapsama zamanlayıcıları (şarj boşluğu, kapsama yok) KAPSAMA
+ * BOŞLUĞU açar; eski cihaz taraması önekleri (battery-dead, connection-lost) sürüm geçişinde açık kalmış olaylar için.
+ */
 const SWEEP_SOURCES: [prefix: string, type: EventType][] = [
+  ['coverage-gap:', 'COVERAGE_GAP'],
+  ['coverage-none:', 'COVERAGE_GAP'],
   ['battery-dead:', 'BATTERY_DEAD'],
   ['connection-lost:', 'CONNECTION_LOST'],
 ];
@@ -16,7 +21,7 @@ export const RELEASED_SUFFIX = '#released';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Denetim bulgusu (yutulan tespit): cihaz taramasının BATTERY_DEAD / CONNECTION_LOST tespiti kişinin açık olayına
+ * Denetim bulgusu (yutulan tespit): taramanın KAPSAMA BOŞLUĞU (eskiden BATTERY_DEAD / CONNECTION_LOST) tespiti kişinin açık olayına
  * eklenir (attachToOpen). O olay başka türdense (ör. 20:00 WATCH_OFF beklemesi, düzenli arama CALLBACK'i) ve
  * tespitle ilgilenilmeden kapanırsa (23:00 gece penceresi → SUPPRESSED) tespit kaybolur: tarama aynı
  * `<cihaz>:<son görülme>` anahtarını tekrar üretir ama kaynak kimliği kapanmış olayda durduğu için yeni olay açılmaz.

@@ -42,6 +42,7 @@ beforeEach(async () => {
   await h.pg.exec('TRUNCATE chain.procedure_template');
   dir = mkdtempSync(join(tmpdir(), 'rules-'));
   copyFileSync(join(RULES_DIR, 'tr.yaml'), file());
+  edit((doc) => (doc.version = 1)); // testler sürüm 1'den başlar (gerçek paketin sürümünden bağımsız)
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 afterAll(async () => {

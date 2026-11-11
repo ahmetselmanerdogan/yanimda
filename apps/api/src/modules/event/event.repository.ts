@@ -316,33 +316,6 @@ export class EventRepository {
   }
 
   /**
-   * `before`'dan beri sinyal göndermeyen cihazlar (salt okuma; device modülü T-041'de servis olarak sunacak).
-   * İnceleme bulgusu 6: iptal edilmiş (aile "cihazı kaldır") cihaz ve yerine aynı türden daha yeni görülen cihaz
-   * takılmış eski cihaz sayılmaz — sahte BATTERY_DEAD / CONNECTION_LOST açılmaz.
-   */
-  async silentDevices(
-    before: Date,
-  ): Promise<{ deviceId: string; protectedPersonId: string; lastSeenAt: Date; batteryPct: number | null }[]> {
-    const r = (await this.db.execute(sql`
-      SELECT d.id::text AS device_id, d.protected_person_id::text AS person_id, d.last_seen_at, d.battery_pct
-      FROM ${device} d
-      WHERE d.last_seen_at IS NOT NULL AND d.last_seen_at < ${before.toISOString()}::timestamptz
-        AND d.revoked_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM ${device} n
-          WHERE n.protected_person_id = d.protected_person_id AND n.kind = d.kind AND n.id <> d.id
-            AND n.revoked_at IS NULL AND n.last_seen_at > d.last_seen_at)`)) as unknown as {
-      rows: { device_id: string; person_id: string; last_seen_at: Date | string; battery_pct: number | null }[];
-    };
-    return r.rows.map((x) => ({
-      deviceId: x.device_id,
-      protectedPersonId: x.person_id,
-      lastSeenAt: new Date(x.last_seen_at),
-      batteryPct: x.battery_pct,
-    }));
-  }
-
-  /**
    * T-088 (S3.6): cihaz takılı mı (son bilinen durum). Bilinmiyorsa null. Yalnız iptalin hangi cihazdan kabul
    * edileceği için okunur (salt okuma; cihaz modülü T-085'te kategoriyle birlikte servis olarak sunar).
    */

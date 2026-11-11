@@ -10,6 +10,7 @@ exports.TOPICS = {
   notifyRequested: 'notify.requested',
   rulesReloaded: 'rules.reloaded',
   protectionChanged: 'user.protection.changed',
+  coverageChanged: 'user.coverage.changed',
   chainStepResult: 'chain.step.result',
   devicePromptAnswered: 'device.prompt.answered',
   /** Amir uyarısı (T-021: operatör kilidi düştü). Konsol amir odasına yayınlar. */

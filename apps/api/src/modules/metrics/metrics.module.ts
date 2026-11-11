@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 
 import { EventModule } from '../event/event.module';
+import { ProtectionService } from '../event/protection.service';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { AlertsService } from './alerts.service';
 import { MetricsService } from './metrics.service';
@@ -30,7 +31,14 @@ export class SupervisorController {
   constructor(
     @Inject(SupervisorService) private readonly supervisor: SupervisorService,
     @Inject(AlertsService) private readonly alerts: AlertsService,
+    @Inject(ProtectionService) private readonly protection: ProtectionService,
   ) {}
+
+  /** GET /v1/supervisor/coverage — seviye başına kişi sayısı ve akşam planlı şarj (T-085, S4.11). */
+  @Get('coverage')
+  coverage() {
+    return this.protection.coverage.supervisorSummary();
+  }
 
   /** GET /v1/supervisor/alerts?open=1 — kalıcı amir uyarıları (en yeni önce). */
   @Get('alerts')

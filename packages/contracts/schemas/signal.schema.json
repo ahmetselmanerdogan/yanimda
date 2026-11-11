@@ -24,7 +24,9 @@
         "LOCATION",
         "HEARTBEAT",
         "CALLBACK_REQUEST",
-        "TEST"
+        "TEST",
+        "CHARGE_START",
+        "CHARGE_END"
       ]
     },
     "occurredAt": { "type": "string", "format": "date-time" },
@@ -46,7 +48,11 @@
         "batteryPct": { "type": "integer", "minimum": 0, "maximum": 100 },
         "onWrist": { "type": "boolean" },
         "connectivity": { "enum": ["BLE", "LTE", "WIFI", "NONE"] },
-        "appVersion": { "type": "string" }
+        "appVersion": { "type": "string" },
+        "charging": {
+          "type": "boolean",
+          "description": "T-086: cihaz şu an şarjda mı. FALL sinyali charging=true taşıyorsa yok sayılır (S3.4)."
+        }
       }
     },
     "payload": {

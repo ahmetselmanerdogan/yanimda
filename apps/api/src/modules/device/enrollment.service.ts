@@ -18,6 +18,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 
+import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { contact, device, invite } from '../../db/schema';
@@ -26,6 +27,7 @@ import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
 import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
+import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
 import { DEVICE_TOKEN_REFRESH_BEFORE_SEC, deviceTokenSecret, signDeviceToken, verifyDeviceToken } from './device-token';
 
 export const INVITE_TTL_MS = 15 * 60_000;
@@ -128,6 +130,8 @@ export class EnrollmentService {
     @Inject(ProtectionService) private readonly protection: Pick<ProtectionService, 'settingsOf'>,
     @Optional() @Inject(RULES) rules?: RulesProvider,
     @Optional() @Inject('DEVICE_TOKEN_SECRET') secret?: string,
+    /** T-085: sınır aşımında aileye F-DEVICE-LIMIT. */
+    @Optional() @Inject(OutboxBus) private readonly outbox?: Pick<OutboxBus, 'publish'>,
   ) {
     this.rules = rules ?? staticRules(loadRulePack());
     this.secret = secret ?? deviceTokenSecret();
@@ -162,7 +166,29 @@ export class EnrollmentService {
     const req = this.parse(body);
     const codeHash = hashCode(req.inviteCode);
 
-    const result = await this.db.transaction(async (tx) => {
+    const result = await this.enrollTx(req, codeHash, now).catch(async (e: unknown) => {
+      // T-085 (S1.7): kişi başına cihaz sınırı aşıldı → 409 F-DEVICE-LIMIT + aileye bildirim (kod tüketilmez).
+      if (e instanceof DeviceLimitError && this.outbox)
+        await notifyDeviceLimit(this.outbox, e.protectedPersonId, now).catch((err: unknown) =>
+          this.log.warn(`F-DEVICE-LIMIT yazılamadı: ${safeError(err)}`),
+        );
+      throw e;
+    });
+
+    if ('error' in result) {
+      if (result.error === 'exists') throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
+      await this.recordFailure(ip);
+      throw new BadRequestException('Davet kodu geçersiz veya süresi dolmuş');
+    }
+    this.log.log(`Cihaz kaydedildi: ${req.kind}${result.created ? '' : ' (yeniden deneme)'}`);
+    return {
+      created: result.created,
+      body: this.issueToken({ deviceId: req.deviceId, protectedPersonId: result.personId, kind: req.kind }, now),
+    };
+  }
+
+  private enrollTx(req: EnrollRequest & { kind: EnrollableKind }, codeHash: string, now: Date) {
+    return this.db.transaction(async (tx) => {
       const [inv] = await tx
         .select()
         .from(invite)
@@ -183,11 +209,17 @@ export class EnrollmentService {
         return { error: 'code' as const };
       }
       if (existing && !existing.revokedAt) return { error: 'exists' as const };
+      const cls = await classOf(tx, req.kind);
+      await assertDeviceLimits(tx, inv.protectedPersonId, cls, req.deviceId);
 
       await tx.update(invite).set({ usedAt: now, usedByDeviceId: req.deviceId }).where(eq(invite.id, inv.id));
       const fields = {
         protectedPersonId: inv.protectedPersonId,
         kind: req.kind,
+        modelId: cls.modelId,
+        category: cls.category,
+        tier: cls.tier,
+        retiredAt: null,
         model: req.model ?? null,
         osVersion: req.osVersion ?? null,
         appVersion: req.appVersion ?? null,
@@ -205,17 +237,6 @@ export class EnrollmentService {
       }
       return { created: true, personId: inv.protectedPersonId };
     });
-
-    if ('error' in result) {
-      if (result.error === 'exists') throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
-      await this.recordFailure(ip);
-      throw new BadRequestException('Davet kodu geçersiz veya süresi dolmuş');
-    }
-    this.log.log(`Cihaz kaydedildi: ${req.kind}${result.created ? '' : ' (yeniden deneme)'}`);
-    return {
-      created: result.created,
-      body: this.issueToken({ deviceId: req.deviceId, protectedPersonId: result.personId, kind: req.kind }, now),
-    };
   }
 
   private parse(body: unknown): EnrollRequest & { kind: EnrollableKind } {
@@ -320,18 +341,24 @@ export class EnrollmentService {
     return this.issueToken(p, now);
   }
 
-  /** Aile "cihazı kaldır" (T-020'ye kadar yönetici token'ıyla). Sonrasında token 401. */
-  async revoke(deviceId: string, now = new Date()): Promise<void> {
+  /**
+   * Cihazı kaldır (kayıp / çalıntı / değişim, S1.9 ve S9.4): token anında geçersiz (401), cihaz emekli olarak işaretlenir
+   * (geçmiş silinmez, sınırlara sayılmaz). Kişinin kimliğini döner (kapsama hemen yeniden hesaplanır — çağıran).
+   */
+  async revoke(deviceId: string, now = new Date()): Promise<{ protectedPersonId: string }> {
     if (!UUID.test(deviceId)) throw new NotFoundException('Cihaz bulunamadı');
     const rows = await this.db
       .update(device)
-      .set({ revokedAt: now, pushToken: null })
+      .set({ revokedAt: now, retiredAt: now, pushToken: null })
       .where(and(eq(device.id, deviceId), isNull(device.revokedAt)))
-      .returning({ id: device.id });
-    if (!rows.length) {
-      const [exists] = await this.db.select({ id: device.id }).from(device).where(eq(device.id, deviceId));
-      if (!exists) throw new NotFoundException('Cihaz bulunamadı');
-    }
+      .returning({ id: device.id, personId: device.protectedPersonId });
+    if (rows[0]) return { protectedPersonId: rows[0].personId };
+    const [exists] = await this.db
+      .select({ id: device.id, personId: device.protectedPersonId })
+      .from(device)
+      .where(eq(device.id, deviceId));
+    if (!exists) throw new NotFoundException('Cihaz bulunamadı');
+    return { protectedPersonId: exists.personId };
   }
 
   /** Yol parametresi token'ın cihazı olmalı (başka cihazın yapılandırması/push token'ı değiştirilemez). */

@@ -1,6 +1,6 @@
 import type { EventType, NotifyRequest, Signal } from '@yanimda/contracts';
 
-import { ruleFor, type RulePack } from './rules.loader';
+import { batteryOf, coverageOf, ruleFor, type RulePack } from './rules.loader';
 
 /**
  * D-02 sinyal → karar (T-012). Saf fonksiyon: cihaz ve ülke bilmez; eşikler ve bastırmalar kural paketinden.
@@ -13,6 +13,8 @@ export type Decision =
   | { action: 'answer' } //   CANCEL / OK: cihaz sorusuna cevap
   | { action: 'on-body' } //  saat takıldı: WATCH_OFF kapanır
   | { action: 'notify'; notices: Notice[] }
+  | { action: 'charge-start' } // T-086: şarja takıldı — bekleyen WATCH_OFF kapanır (şarj boşluğu devralır)
+  | { action: 'ignore'; reason: 'CHARGING_FALL' } // S3.4: şarjdaki cihazın düşmesi yok sayılır, denetime yazılır
   | { action: 'none'; reason: string };
 
 export interface DecideContext {
@@ -21,24 +23,25 @@ export interface DecideContext {
   night: boolean;
   /** T-070: kişiye özel hareketsizlik eşiği (dk). Kural `learnable` ise paket varsayılanının yerine geçer. */
   inactivityMin?: number | null;
+  /** T-086: sinyali gönderen cihaz (sinyal uygulandıktan sonra) şarjda: pil uyarıları susar, "çıkarıldı" açılmaz. */
+  charging?: boolean;
+  /** T-085 (S3.4): sinyal uygulandıktan sonra korumaya sayılan (takılı) bir A sınıfı cihaz var. */
+  alarmWorn?: boolean;
+  /** Sinyali gönderen cihaz A sınıfı giyilebilir mi; değilse (yüzük, telefon) çıkarılması olay açmaz. */
+  alarmWearable?: boolean;
 }
-
-/** Pil eşikleri (A-06): saat %20 ve %10'da BATTERY gönderir. */
-export const BATTERY_WARN_PCT = 20;
-export const BATTERY_CRITICAL_PCT = 10;
-/** Kapanmış sayılan pil (BATTERY_DEAD adayı). */
-export const BATTERY_DEAD_PCT = 5;
-/** HEARTBEAT boşluğu: 15 dk → "bağlantı yok" (cihaz durumu), CONNECTION_LOST kuralı afterHours → olay. */
-export const NO_CONNECTION_MIN = 15;
 
 const SIMPLE: Partial<Record<Signal['kind'], EventType>> = {
   SOS: 'SOS',
-  FALL: 'FALL',
   CALLBACK_REQUEST: 'CALLBACK',
   TEST: 'TEST',
 };
 
-export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): Decision {
+/**
+ * Pil eşikleri kural paketinde (`battery`, T-086): warnPct → W-BAT-20, criticalPct → W-BAT-10 + F-BAT-10. Kod adları
+ * katalogdaki tarihsel adlardır. Şarjdaki cihazın pil uyarısı gönderilmez.
+ */
+export function decide(s: Pick<Signal, 'kind' | 'value' | 'device'>, ctx: DecideContext): Decision {
   const create = (type: EventType): Decision => {
     const rule = ruleFor(ctx.pack, type);
     if (!rule) return { action: 'none', reason: `kural yok: ${type}` };
@@ -53,7 +56,18 @@ export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): D
     case 'ON_BODY':
       return { action: 'on-body' };
     case 'OFF_BODY':
+      // S3.4: "saat çıkarıldı" yalnız hiçbir A sınıfı cihaz takılı değilken; şarja takılan cihaz şarj boşluğuna girer.
+      if (ctx.charging || s.device?.charging === true) return { action: 'none', reason: 'şarjda' };
+      if (ctx.alarmWearable === false) return { action: 'none', reason: 'alarm cihazı değil' };
+      if (ctx.alarmWorn) return { action: 'none', reason: 'başka alarm cihazı takılı' };
       return create('WATCH_OFF');
+    case 'FALL':
+      if (s.device?.charging === true) return { action: 'ignore', reason: 'CHARGING_FALL' };
+      return create('FALL');
+    case 'CHARGE_START':
+      return { action: 'charge-start' };
+    case 'CHARGE_END':
+      return { action: 'none', reason: 'yalnız kayıt' };
     case 'INACTIVITY': {
       const threshold = inactivityThreshold(ctx.pack, ctx.inactivityMin);
       // Değer yoksa eşiği cihaz kendisi aşmıştır (A-04); varsa paketin eşiğiyle karşılaştır (T-070: kişiye özel).
@@ -63,7 +77,9 @@ export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): D
     }
     case 'BATTERY': {
       if (typeof s.value !== 'number') return { action: 'none', reason: 'pil değeri yok' };
-      if (s.value <= BATTERY_CRITICAL_PCT)
+      if (ctx.charging || s.device?.charging === true) return { action: 'none', reason: 'şarjda' };
+      const b = batteryOf(ctx.pack);
+      if (s.value <= b.criticalPct)
         return {
           action: 'notify',
           notices: [
@@ -71,7 +87,7 @@ export function decide(s: Pick<Signal, 'kind' | 'value'>, ctx: DecideContext): D
             { code: 'F-BAT-10', audience: 'FAMILY' },
           ],
         };
-      if (s.value <= BATTERY_WARN_PCT) return { action: 'notify', notices: [{ code: 'W-BAT-20', audience: 'ELDER' }] };
+      if (s.value <= b.warnPct) return { action: 'notify', notices: [{ code: 'W-BAT-20', audience: 'ELDER' }] };
       return { action: 'none', reason: 'pil yeterli' };
     }
     case 'HEARTBEAT':
@@ -99,12 +115,15 @@ export function inactivityThreshold(pack: RulePack, personal?: number | null): n
 
 export type ConnectionState = 'ONLINE' | 'NO_CONNECTION' | 'LOST';
 
-/** Cihaz bağlantı durumu son görülme zamanından (T-014 GET /status bunu kullanır). */
+/**
+ * Cihaz bağlantı durumu son görülme zamanından (T-014 GET /status bunu kullanır). "Bağlantı yok" eşiği A sınıfı
+ * çevrimiçi süresi (kural paketi `coverage.onlineMin.A`), "uzun süredir yok" CONNECTION_LOST.afterHours.
+ */
 export function connectionState(lastSeenAt: Date | null, now: Date, pack: RulePack): ConnectionState {
   if (!lastSeenAt) return 'LOST';
   const min = (now.getTime() - lastSeenAt.getTime()) / 60_000;
   const lostAfterMin = (ruleFor(pack, 'CONNECTION_LOST')?.afterHours ?? 6) * 60;
   if (min >= lostAfterMin) return 'LOST';
-  if (min >= NO_CONNECTION_MIN) return 'NO_CONNECTION';
+  if (min >= coverageOf(pack).onlineMin.A) return 'NO_CONNECTION';
   return 'ONLINE';
 }

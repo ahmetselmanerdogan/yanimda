@@ -19,6 +19,8 @@ export class WearOsAdapter implements DeviceAdapter {
   capabilities(): DeviceCapabilities {
     return {
       role: 'WATCH',
+      category: 'WATCH',
+      tier: 'A',
       signals: [...ALL_SIGNAL_KINDS],
       fallDetection: true,
       offBodyDetection: true,
@@ -26,6 +28,8 @@ export class WearOsAdapter implements DeviceAdapter {
       devicePrompt: true,
       tts: true,
       ring: true,
+      voice: true,
+      location: true,
     };
   }
 

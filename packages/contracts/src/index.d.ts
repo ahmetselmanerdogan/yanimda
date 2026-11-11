@@ -92,6 +92,7 @@ export declare const TOPICS: {
   readonly notifyRequested: 'notify.requested';
   readonly rulesReloaded: 'rules.reloaded';
   readonly protectionChanged: 'user.protection.changed';
+  readonly coverageChanged: 'user.coverage.changed';
   readonly chainStepResult: 'chain.step.result';
   readonly devicePromptAnswered: 'device.prompt.answered';
   /** Amir uyarısı (T-021: operatör kilidi düştü). Konsol amir odasına yayınlar. */

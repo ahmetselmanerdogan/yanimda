@@ -1358,13 +1358,132 @@ paths:
         '200':
           { description: Olay, content: { application/json: { schema: { $ref: '#/components/schemas/FamilyEvent' } } } }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/coverage:
+    get:
+      summary: Kişinin kapsama durumu ve cihazları. T-085 (docs/07 S3.1, S3.2)
+      description: |
+        Kişi başına tek kapsama seviyesi; hiçbir cihaz tek başına "koruma" sayılmaz. Bir yetenek ancak cihaz çevrimiçi
+        (A sınıfı 15 dk, B 30 dk; telefon köprüsüyle gelen cihaz köprüsü de çevrimiçiyse), şarjda değil, pili %5'in
+        üzerinde ve (vücut yetenekleri için) takılıysa sayılır.
+        FULL: takılı A sınıfı cihaz(lar) SOS ve düşmeyi karşılıyor, ses en az telefondan. BASIC: takılı SOS düğmesi ve
+        ses, düşme yok. PHONE_ONLY: yalnız telefondan SOS. NIGHT: gece penceresi ve FULL'un altı. NONE: hiçbir SOS yolu
+        yok. `since` bu seviyeye geçiş anı. `reasons` FULL'un altındayken nedenler (ON_HOLD ileride: hastanede /
+        seyahatte modu, S4.10).
+        Çağıran: kişinin kendi cihaz token'ı, aile (OWNER / MEMBER), operasyon (OPERATOR, SUPERVISOR, ADMIN) veya
+        `x-admin-token`. Erişimi olmayan / bilinmeyen kişi 404.
+      operationId: getCoverage
+      security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          description: Kapsama
+          content: { application/json: { schema: { $ref: '#/components/schemas/CoverageView' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/devices:
+    get:
+      summary: Kişinin etkin cihazları (kart). T-085 (S1, S7.4)
+      description: |
+        Kaldırılmış / emekli cihazlar listelenmez. Kategori, sınıf ve pil ömrü cihaz kataloğundan (device_model);
+        son durum (görülme, pil, şarj, takılı) sinyal alımında yazılır. `estimatedHoursLeft` = pil % × katalog pil
+        ömrü (şarjdayken null). `voiceOrder` geçerli sesli arama sırasıdır: elle verilenler önce, sonra takılı > en son
+        görülen > ev ünitesi > telefon (S1.8); sesli görüşmesi olmayan cihazda null. Yetki `/coverage` ile aynı.
+      operationId: listDevices
+      security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          description: Cihazlar
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/DeviceSummary' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/charging-plan:
+    get:
+      summary: Şarj penceresi. T-086 (S4.3)
+      description: Varsayılan kural paketinden (charging.defaultWindow, 19:00–21:00). Yetki `/coverage` ile aynı.
+      operationId: getChargingPlan
+      security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          description: Şarj penceresi
+          content: { application/json: { schema: { $ref: '#/components/schemas/ChargingPlan' } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Şarj penceresini değiştir (aile OWNER / MEMBER veya yönetici). T-086 (S4.3)
+      description: |
+        `source` FAMILY olur. Tek alarm cihazının gece şarjı yalnız "gece düşme koruması yok" uyarısı onaylanarak
+        açılır: `nightChargeAllowed: true` için `acknowledgeNoNightFall: true` zorunlu; gece şarjı kapalıyken pencere
+        kişinin gece penceresiyle kesişemez. İkisinde de 400, `code` F-UI-NIGHT-CHARGE-WARN. Operasyon ve cihaz 403.
+      operationId: putChargingPlan
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ChargingPlanInput' } } }
+      responses:
+        '200':
+          description: Güncel şarj penceresi
+          content: { application/json: { schema: { $ref: '#/components/schemas/ChargingPlan' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/charging-intent:
+    post:
+      summary: '"Şarj ediyorum" — hatırlatmaları sustur. T-086 (S4.5)'
+      description: |
+        Takma hatırlatmaları ve aile şarj bildirimi `minutes` dk (varsayılan kural paketi charging.intentMin, 90; 1–240)
+        susar; 120 dk'lık KAPSAMA BOŞLUĞU operatör olayı susmaz. Kişinin kendi cihaz token'ı (telefon, saat), aile
+        (OWNER / MEMBER) veya yönetici; operatör 403, başka kişinin cihazı 404.
+      operationId: chargingIntent
+      security: [{ deviceToken: [] }, { userToken: [] }, { adminToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { minutes: { type: integer, minimum: 1, maximum: 240 } }
+      responses:
+        '202':
+          description: Kabul edildi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [until]
+                properties: { until: { type: string, format: date-time } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /supervisor/coverage:
+    get:
+      summary: Filo kapsama tablosu (amir). T-085 (S4.11, S7.2)
+      description: |
+        Seviye başına kişi sayısı (son değerlendirme; tarama 30 sn). `plannedCharging`: FULL'un altında olup şarj
+        boşluğu kişinin şarj penceresi içinde başlamış kişiler (akşam planlı şarj; sayılar `counts` içinde de yer
+        alır). SUPERVISOR veya ADMIN.
+      operationId: supervisorCoverage
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Özet
+          content: { application/json: { schema: { $ref: '#/components/schemas/SupervisorCoverage' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
     get:
-      summary: Korunan kişinin koruma durumu. D-05, T-014
+      summary: Korunan kişinin koruma durumu (uyum; kapsamadan türetilir). D-05, T-014, T-085
       description: |
-        Koruma durumu sinyallerle ve periyodik taramayla (gece başlangıcı/bitişi, 15 dk sessiz cihaz) güncellenir:
-        saat bağlı ve bilekte → PROTECTED_WATCH; değilse gece penceresinde → NIGHT; değilse telefon bağlı →
-        PROTECTED_PHONE; hiçbiri → UNPROTECTED. Bağlantı: ONLINE (<15 dk), NO_CONNECTION (<6 saat), LOST.
+        T-085'ten beri eski koruma durumu bir sürüm boyunca kapsama seviyesinden türetilir (yeni istemciler
+        `GET /protected-persons/{id}/coverage` kullanır): FULL / BASIC → PROTECTED_WATCH, PHONE_ONLY → PROTECTED_PHONE,
+        NIGHT → NIGHT, NONE → UNPROTECTED. `watch` en son görülen A sınıfı giyilebilir, `phone` telefon veya telefon
+        köprüsü. Bağlantı: ONLINE (< kural paketi coverage.onlineMin.A, 15 dk), NO_CONNECTION (<6 saat), LOST.
         Operasyon rolleri (OPERATOR, SUPERVISOR, ADMIN) her kişiyi; aile (consumers FAMILY, T-061) yalnız kendi kişisini
         görür (başkasınınki 404) ve ek olarak `location` alır (konum paylaşımı açıksa son 24 saatteki son konum).
         Kişiden henüz sinyal gelmediyse 404.
@@ -1667,6 +1786,8 @@ paths:
     post:
       summary: Cihaz kaydı (davet kodu → cihaz token'ı). T-041
       description: |
+        T-085 (S1.7): kişi başına en çok 6 etkin cihaz, 3 A sınıfı giyilebilir ve 1 yaşlı telefonu; aşılırsa 409,
+        `code` F-DEVICE-LIMIT (davet kodu tüketilmez) ve aileye F-DEVICE-LIMIT bildirimi.
         deviceId istemcide üretilir (UUID, küçük harf) ve sinyallerde aynen kullanılır. Yanıt yolda kaybolursa aynı
         cihaz aynı kodla kodun süresi içinde yeniden dener ve 200 ile yeni token alır. Yanlış/süresi dolmuş/başka
         cihazın kullandığı kod 400; kayıtlı deviceId 409; aynı IP'den 15 dk'da 10 hatalı kod 429.
@@ -1884,11 +2005,41 @@ paths:
                         updatedAt: { type: string, format: date-time }
         '404': { $ref: '#/components/responses/Problem' }
   /devices/{id}:
+    patch:
+      summary: Cihazı düzenle — vücut konumu, takma ad, sesli arama sırası. T-085 (S1.3, S1.8)
+      description: |
+        En az bir alan; `null` alanı temizler. Aile (OWNER / MEMBER), operasyon (OPERATOR, SUPERVISOR, ADMIN) veya
+        `x-admin-token`; cihaz token'ı 403, erişimi olmayan 404. Yanıt güncel cihaz kartı.
+      operationId: patchDevice
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
+                nickname: { type: [string, 'null'], minLength: 1, maxLength: 40 }
+                voiceOrder: { type: [integer, 'null'], minimum: 1, maximum: 6 }
+      responses:
+        '200':
+          description: Cihaz kartı
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceSummary' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
     delete:
-      summary: Cihazı kaldır (token iptal → 401). T-041
-      description: Yönetici (OIDC ADMIN veya `x-admin-token`); T-040'ta FAMILY kendi kişisinin cihazını kaldırır.
+      summary: Cihazı kaldır — kayıp / çalıntı / değişim (token iptal → 401). T-041, T-085 (S1.9, S9.4)
+      description: |
+        Token anında geçersiz olur, cihaz emekli işaretlenir (geçmiş silinmez, cihaz sınırlarına sayılmaz) ve kapsama
+        hemen yeniden hesaplanır. Aile (OWNER / MEMBER), SUPERVISOR, ADMIN veya `x-admin-token`; OPERATOR 403.
       operationId: revokeDevice
-      security: [{ operatorToken: [] }, { adminToken: [] }]
+      security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
@@ -2595,6 +2746,95 @@ components:
           description: |
             Varsa packages/messages katalog kodu (örn. F-MEMBER-CODE-USED); istemci metni kendi kataloğundan gösterir.
             `detail` aynı kodun Türkçe metnidir.
+    CoverageLevel: { enum: [FULL, BASIC, PHONE_ONLY, NIGHT, NONE] }
+    CoverageReason:
+      enum: [WATCH_CHARGING, NO_ALARM_DEVICE_WORN, ALARM_DEVICE_OFFLINE, PHONE_OFFLINE, NIGHT_WINDOW, ON_HOLD]
+    CoverageCapabilities:
+      type: object
+      required: [sos, fall, voice, location]
+      properties:
+        sos: { type: boolean }
+        fall: { type: boolean }
+        voice: { type: boolean }
+        location: { type: boolean }
+    DeviceCategory: { enum: [WATCH, PHONE, PENDANT, RING, EARBUD, EARRING, HOME_UNIT, CLOUD] }
+    BodyLocation: { enum: [WRIST_LEFT, WRIST_RIGHT, NECK, CHEST, FINGER, EAR, POCKET, HOME] }
+    DeviceSummary:
+      type: object
+      description: T-085 cihaz kartı (docs/07 S7.4)
+      required:
+        [
+          id,
+          kind,
+          category,
+          tier,
+          bodyLocation,
+          nickname,
+          online,
+          lastSeenAt,
+          batteryPct,
+          charging,
+          chargingSince,
+          onBody,
+          estimatedHoursLeft,
+          voiceOrder,
+        ]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: 'Cihaz türü (WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE, SIMULATOR …)' }
+        category: { $ref: '#/components/schemas/DeviceCategory' }
+        tier: { enum: [A, B, C], description: A alarm, B canlı izlem, C eğilim (S2.1) }
+        bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
+        nickname: { type: [string, 'null'] }
+        online: { type: boolean }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+        batteryPct: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        charging: { type: boolean }
+        chargingSince: { type: [string, 'null'], format: date-time }
+        onBody: { type: [boolean, 'null'], description: Telefonda her zaman null }
+        estimatedHoursLeft: { type: [number, 'null'] }
+        voiceOrder: { type: [integer, 'null'], minimum: 1 }
+    CoverageView:
+      type: object
+      required: [level, since, reasons, capabilities, devices]
+      properties:
+        level: { $ref: '#/components/schemas/CoverageLevel' }
+        since: { type: string, format: date-time }
+        reasons: { type: array, items: { $ref: '#/components/schemas/CoverageReason' } }
+        capabilities: { $ref: '#/components/schemas/CoverageCapabilities' }
+        devices: { type: array, items: { $ref: '#/components/schemas/DeviceSummary' } }
+    ChargingPlan:
+      type: object
+      required: [window, source, nightChargeAllowed]
+      properties:
+        window: { type: string, pattern: '^\d{2}:\d{2}-\d{2}:\d{2}$', example: '19:00-21:00' }
+        source: { enum: [DEFAULT, LEARNED, FAMILY] }
+        nightChargeAllowed: { type: boolean }
+    ChargingPlanInput:
+      type: object
+      additionalProperties: false
+      properties:
+        window: { type: string, pattern: '^\d{2}:\d{2}-\d{2}:\d{2}$', example: '19:00-21:00' }
+        nightChargeAllowed: { type: boolean }
+        acknowledgeNoNightFall:
+          type: boolean
+          description: '`nightChargeAllowed: true` için zorunlu (aile "gece düşme koruması yok" uyarısını gördü)'
+    SupervisorCoverage:
+      type: object
+      required: [counts, plannedCharging, total, at]
+      properties:
+        counts:
+          type: object
+          required: [FULL, BASIC, PHONE_ONLY, NIGHT, NONE]
+          properties:
+            FULL: { type: integer }
+            BASIC: { type: integer }
+            PHONE_ONLY: { type: integer }
+            NIGHT: { type: integer }
+            NONE: { type: integer }
+        plannedCharging: { type: integer }
+        total: { type: integer }
+        at: { type: string, format: date-time }
     RejectedSignal:
       type: object
       description: D-01 sinyal başına ret. PII ve serbest metin yok; `reason` sabit koddur.

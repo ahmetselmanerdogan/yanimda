@@ -109,6 +109,34 @@ export const device = deviceSchema.table('device', {
   pushToken: text('push_token'),
   pushSandbox: boolean('push_sandbox'),
   pushUpdatedAt: timestamptz('push_updated_at'),
+  // T-085 (0030): çoklu cihaz modeli. Takılı bilgisi on_wrist (API'de onBody).
+  modelId: text('model_id'),
+  category: text('category'),
+  tier: text('tier'),
+  bodyLocation: text('body_location'),
+  connectionPath: text('connection_path'),
+  bridgeDeviceId: uuid('bridge_device_id'),
+  voiceOrder: integer('voice_order'),
+  nickname: text('nickname'),
+  vendorDeviceId: text('vendor_device_id'),
+  retiredAt: timestamptz('retired_at'),
+  // T-086 (0030): şarj durumu (sinyal alımında yazılır).
+  charging: boolean('charging').notNull().default(false),
+  chargingSince: timestamptz('charging_since'),
+});
+
+/** T-085 (0030) cihaz modeli kataloğu: yetenekler, pil ömrü. Kimlik bugün cihaz türüyle aynı. */
+export const deviceModel = deviceSchema.table('device_model', {
+  id: text('id').primaryKey(),
+  vendor: text('vendor').notNull(),
+  model: text('model').notNull(),
+  category: text('category').notNull(),
+  tier: text('tier').notNull(),
+  capabilities: jsonb('capabilities').notNull(),
+  batteryLifeH: integer('battery_life_h'),
+  chargeTimeMin: integer('charge_time_min'),
+  certifiedSw: text('certified_sw'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
 export const profileSchema = pgSchema('profile');
@@ -462,6 +490,49 @@ export const protectionState = eventSchema.table('protection_state', {
   watchSeenAt: timestamptz('watch_seen_at'),
   phoneSeenAt: timestamptz('phone_seen_at'),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+/** T-085/T-086 (0030) kapsama durumu; olgular (cihaz başına son durum) `devices` JSON'unda. */
+export const coverageState = eventSchema.table('coverage_state', {
+  protectedPersonId: text('protected_person_id').primaryKey(),
+  level: text('level').notNull(),
+  rawLevel: text('raw_level').notNull(),
+  since: timestamptz('since').notNull(),
+  reasons: text('reasons').array().notNull().default([]),
+  capabilities: jsonb('capabilities').notNull(),
+  devices: jsonb('devices').notNull().default({}),
+  bridgeSeenAt: timestamptz('bridge_seen_at'),
+  gapSince: timestamptz('gap_since'),
+  gapCause: text('gap_cause'),
+  gapOffPlan: boolean('gap_off_plan').notNull().default(false),
+  gapSent: text('gap_sent').array().notNull().default([]),
+  noneSince: timestamptz('none_since'),
+  noneSent: text('none_sent').array().notNull().default([]),
+  intentUntil: timestamptz('intent_until'),
+  planCheckedOn: text('plan_checked_on'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
+export const coverageHistory = eventSchema.table('coverage_history', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  fromLevel: text('from_level'),
+  level: text('level').notNull(),
+  reasons: text('reasons').array().notNull().default([]),
+  at: timestamptz('at').notNull(),
+});
+
+/** T-086 (0030) şarj penceresi (S4.3). */
+export const chargingPlan = eventSchema.table('charging_plan', {
+  protectedPersonId: text('protected_person_id').primaryKey(),
+  windowStart: text('window_start').notNull(),
+  windowEnd: text('window_end').notNull(),
+  source: text('source').notNull().default('DEFAULT'),
+  nightChargeAllowed: boolean('night_charge_allowed').notNull().default(false),
+  nightAckAt: timestamptz('night_ack_at'),
+  nightAckBy: text('night_ack_by'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  updatedBy: text('updated_by'),
 });
 
 /** T-014 kişiye özel eşikler (0005) + T-070 öğrenme (0011). Saatler kişinin saat diliminde. */

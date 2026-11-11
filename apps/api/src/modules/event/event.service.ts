@@ -34,13 +34,15 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
 import { DB, type Db, type Tx } from '../../db/client';
+import { auditLog } from '../../db/schema';
 import { familyNoticeFor } from '../notify/policy';
-import { BATTERY_DEAD_PCT, decide, type Notice } from './decide';
+import { isAlarmWearable } from './coverage';
+import { decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
 import { answerAllowed, betterLocation, corroborates, type FusedLocation } from './fusion';
 import { isInWindow } from './night';
-import { type ProtectionChange, ProtectionService } from './protection.service';
+import { type CoverageUpdate, type ProtectionChange, ProtectionService } from './protection.service';
 import {
   fusionOf,
   loadRulePack,
@@ -84,6 +86,8 @@ interface Uow {
 
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
+/** Cihazdan "iyiyim" ile kapanmayan olaylar (soru cihaza değil, sesli ön elemeyle kişiye sorulur). */
+const NOT_DEVICE_ANSWERABLE = new Set<EventType>(['WATCH_OFF', 'COVERAGE_GAP']);
 /** Gerçek alarm türleri: alarm olmayan açık olaya gelirse olayı yükseltir (attachToOpen). */
 const ALARM_TYPES = new Set<EventType>(['SOS', 'FALL', 'INACTIVITY']);
 /** Operatör kararını vermiş, yalnız kapatılmayı bekleyen durumlar: yeni gerçek alarm bunlara eklenmez, yeni olay açar. */
@@ -136,7 +140,8 @@ const pgCode = (e: unknown) =>
  * Kalıcılık: olay event.event'te, geçişler event.transition'da. Her işlem tek transaction'da:
  * olay satırı FOR UPDATE kilitlenir → durum değişir → geçiş + audit.log + outbox (event.*) yazılır → commit.
  * Zamanlayıcılar commit'ten ÖNCE kurulur, iptaller commit'ten SONRA yapılır.
- * Periyodik tarama: süresi geçmiş cihaz sorusu/bekleme → operatör; sessiz cihaz → BATTERY_DEAD / CONNECTION_LOST.
+ * Periyodik tarama: süresi geçmiş cihaz sorusu/bekleme → operatör; kapsama (T-085/T-086): gece, susan cihaz, şarj
+ * boşluğu ve "kapsama yok" zamanlayıcıları → KAPSAMA BOŞLUĞU (eski BATTERY_DEAD / CONNECTION_LOST taraması yerine).
  */
 @Injectable()
 export class EventService implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
@@ -171,7 +176,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const every = Number(process.env.EVENT_SWEEP_MS ?? 30_000);
     if (every > 0) {
       const tick = () =>
-        Promise.all([this.recoverOverdue(), this.sweepDevices(), this.sweepProtection(), this.releaseExpiredLocks()])
+        Promise.all([this.recoverOverdue(), this.sweepProtection(), this.releaseExpiredLocks()])
           .catch((e) => this.log.error(`Tarama başarısız: ${safeError(e)}`))
           .finally(() => (this.sweepTimer = setTimeout(tick, every)));
       void tick();
@@ -475,38 +480,6 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     return n;
   }
 
-  /**
-   * Sessiz cihazlar (D-02): son pil ≤5 ve BATTERY_DEAD.operatorAfterMin (120 dk) sessizlik → BATTERY_DEAD;
-   * pil bilinmiyor/yeterli ve CONNECTION_LOST.afterHours (6 saat) sessizlik → CONNECTION_LOST (gece bastırılır).
-   * Aynı sessizlik (cihaz + son görülme) için bir kez olay açılır. Oluşan olay sayısını döner.
-   */
-  async sweepDevices(at = new Date()): Promise<number> {
-    const pack = this.pack;
-    const dead = ruleFor(pack, 'BATTERY_DEAD');
-    const lost = ruleFor(pack, 'CONNECTION_LOST');
-    const deadMin = dead?.operatorAfterMin ?? 120;
-    const lostMin = (lost?.afterHours ?? 6) * 60;
-    let n = 0;
-    for (const d of await this.repo.silentDevices(new Date(at.getTime() - Math.min(deadMin, lostMin) * 60_000))) {
-      const silentMin = (at.getTime() - d.lastSeenAt.getTime()) / 60_000;
-      const src = { protectedPersonId: d.protectedPersonId, location: undefined };
-      const key = `${d.deviceId}:${d.lastSeenAt.toISOString()}`;
-      if (d.batteryPct !== null && d.batteryPct <= BATTERY_DEAD_PCT) {
-        if (
-          dead &&
-          silentMin >= deadMin &&
-          (await this.create('BATTERY_DEAD', { ...src, sourceId: `battery-dead:${key}` }))
-        )
-          n++;
-      } else if (lost && silentMin >= lostMin) {
-        const w = await this.protection.sleepWindowOf(d.protectedPersonId);
-        if (lost.suppressIn?.includes('NIGHT') && isInWindow(at, w.timezone, w.start, w.end)) continue; // sabah tekrar
-        if (await this.create('CONNECTION_LOST', { ...src, sourceId: `connection-lost:${key}` })) n++;
-      }
-    }
-    return n;
-  }
-
   private promptKind(rule: Rule): TimerKind {
     return rule.devicePrompt?.silent ? 'silent-ask-expire' : 'prompt-expire';
   }
@@ -514,7 +487,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   // ---- Sinyal işleme (outbox → bus) ----
   private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
-    const change = await this.protection.applySignal(s); // D-05: her sinyal koruma olgularını günceller
+    const upd = await this.protection.applySignal(s); // D-05 / T-085: her sinyal kapsama olgularını günceller
     let night = false;
     if (s.kind === 'OFF_BODY') {
       const w = await this.protection.sleepWindowOf(s.protectedPersonId);
@@ -523,18 +496,40 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     // T-070: kişiye özel hareketsizlik eşiği (öğrenilmiş veya aile ayarı).
     const inactivityMin =
       s.kind === 'INACTIVITY' ? (await this.protection.settingsOf(s.protectedPersonId)).inactivityMin : null;
-    const d = decide(s, { pack: this.pack, night, inactivityMin });
+    const fact = upd.facts.devices[s.deviceId];
+    const d = decide(s, {
+      pack: this.pack,
+      night,
+      inactivityMin,
+      charging: fact?.charging ?? false,
+      alarmWorn: upd.coverage.worn.length > 0,
+      alarmWearable: fact ? isAlarmWearable(fact) : true,
+    });
     switch (d.action) {
       case 'answer':
         await this.onUserAnswer(s);
         break;
       case 'on-body':
-        await this.autoCloseWatchOff(s.protectedPersonId);
+        await this.autoCloseWatchOff(s.protectedPersonId, 'saat takıldı');
+        break;
+      case 'charge-start':
+        await this.autoCloseWatchOff(s.protectedPersonId, 'şarja takıldı');
         break;
       case 'notify':
         await this.db.transaction((tx) =>
           this.notify(tx, s.protectedPersonId, d.notices, { dedupeBase: `signal:${s.idempotencyKey}` }),
         );
+        break;
+      case 'ignore':
+        // S3.4: şarjındaki saatten düşme en sık yanlış düşmedir; yok sayılır ama denetime yazılır (PII yok).
+        await this.db.insert(auditLog).values({
+          actorKind: 'SYSTEM',
+          action: 'signal.ignored',
+          entityType: 'signal',
+          entityId: s.idempotencyKey,
+          data: { kind: s.kind, reason: d.reason },
+        });
+        this.log.log(`${s.kind} yok sayıldı (${d.reason})`);
         break;
       case 'create':
         await this.create(d.type, {
@@ -550,30 +545,59 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         break;
     }
     if (s.location) await this.fuseLocation(s);
-    if (change) await this.onProtectionChange(change);
+    await this.onCoverageUpdate(upd);
   }
 
-  /** D-05 koruma taraması: gece başlangıcı/bitişi ve sessizleşen cihazlar. Değişen kişi sayısını döner. */
+  /**
+   * D-05 / T-085 kapsama taraması: gece başlangıcı/bitişi, susan cihazlar, şarj boşluğu ve "kapsama yok"
+   * zamanlayıcıları. Değişen (veya iş üreten) kişi sayısını döner.
+   */
   async sweepProtection(now = new Date()): Promise<number> {
-    const changes = await this.protection.sweep(now);
-    for (const c of changes) await this.onProtectionChange(c);
-    return changes.length;
+    const updates = await this.protection.sweep(now);
+    for (const u of updates) await this.onCoverageUpdate(u);
+    return updates.length;
+  }
+
+  /** Kapsama değerlendirmesinin olay sonuçları (commit'ten sonra). */
+  private async onCoverageUpdate(u: CoverageUpdate) {
+    if (u.protection) await this.onProtectionChange(u.protection, u);
+    for (const a of u.events) {
+      if (a.kind === 'gap-event')
+        // Not = neden kodu (CHARGING / WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST); konsol O-UI-GAP-<neden>.
+        await this.create('COVERAGE_GAP', {
+          protectedPersonId: u.protectedPersonId,
+          sourceId: a.sourceId,
+          note: a.reason,
+        });
+      else await this.closeCoverageGap(u.protectedPersonId);
+    }
+  }
+
+  /** Kapsama geri geldi: operatörün henüz üstlenmediği KAPSAMA BOŞLUĞU olayı sistemce kapanır. */
+  private async closeCoverageGap(protectedPersonId: string) {
+    const r = (await this.db.execute(sql`
+      SELECT id FROM event.event
+      WHERE protected_person_id = ${protectedPersonId} AND type = 'COVERAGE_GAP' AND state <> 'CLOSED'`)) as unknown as {
+      rows: { id: string }[];
+    };
+    for (const { id } of r.rows) await this.closeBySystem(id, 'OK', 'kapsama geri geldi');
   }
 
   /**
    * Koruma değişikliğinin olay sonuçları:
    * - NIGHT'a geçiş: bekleyen WATCH_OFF gece operatöre düşmesin diye kapanır.
-   * - NIGHT'tan çıkış ve saat hâlâ çıkarılmış: sabah WATCH_OFF beklemesi açılır (gün başına bir kez).
+   * - NIGHT'tan çıkış ve hiçbir A sınıfı cihaz takılı değil, biri bilerek çıkarılmış (şarj dışı): sabah WATCH_OFF
+   *   beklemesi açılır (gün başına bir kez).
    */
-  private async onProtectionChange(c: ProtectionChange) {
+  private async onProtectionChange(c: ProtectionChange, u: CoverageUpdate) {
     if (c.to === 'NIGHT') {
-      await this.withOpenEvent(c.protectedPersonId, async (u) => {
-        if (u.ev.type !== 'WATCH_OFF' || u.ev.state !== 'DEVICE_PROMPT') return;
-        this.transition(u, 'CANCELLED_BY_USER', 'SYSTEM', undefined, 'gece penceresi');
-        this.close(u, 'SUPPRESSED', 'gece penceresi', 'SYSTEM');
-        u.after.push(() => this.cancelWaitTimers(u.ev.id));
+      await this.withOpenEvent(c.protectedPersonId, async (w) => {
+        if (w.ev.type !== 'WATCH_OFF' || w.ev.state !== 'DEVICE_PROMPT') return;
+        this.transition(w, 'CANCELLED_BY_USER', 'SYSTEM', undefined, 'gece penceresi');
+        this.close(w, 'SUPPRESSED', 'gece penceresi', 'SYSTEM');
+        w.after.push(() => this.cancelWaitTimers(w.ev.id));
       });
-    } else if (c.from === 'NIGHT' && c.facts.watchOnWrist === false) {
+    } else if (c.from === 'NIGHT' && u.coverage.offBody) {
       await this.create('WATCH_OFF', {
         protectedPersonId: c.protectedPersonId,
         sourceId: `watch-off-morning:${c.protectedPersonId}:${c.at.toISOString().slice(0, 10)}`,
@@ -672,6 +696,13 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           await this.timers.schedule(u.ev.id, 'watch-off-operator', wait);
           if (rule.remindAfterMin)
             await this.timers.schedule(u.ev.id, 'watch-off-remind', rule.remindAfterMin * 60_000);
+        } else if (type === 'COVERAGE_GAP' && rule.autoVoiceScreening?.enabled && this.screener) {
+          // T-086 (S5.4): kapsama boşluğunda önce sesli ön eleme (kişiye), sonuç yoksa / olumsuzsa operatör.
+          u.ev.devicePromptUntil = now.toISOString();
+          this.transition(u, 'DEVICE_PROMPT', 'SYSTEM', undefined, 'sesli ön eleme');
+          await this.flush(u);
+          if (!(await this.startScreening(u))) this.escalate(u, 'ön eleme yapılamadı');
+          await this.flush(u);
         } else {
           this.escalate(u, 'cihaz sorusu yok');
           await this.flush(u);
@@ -730,7 +761,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       this.escalate(u, `${type} geldi`);
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
     } else if (upgrade && u.ev.state === 'CREATED') this.escalate(u, `${type} geldi`);
-    else if (ALARM_TYPES.has(type) && !upgrade && OPERATOR_STATES.has(u.ev.state))
+    else if (type === 'COVERAGE_GAP' && WAITING_TYPES.has(u.ev.type) && u.ev.state === 'DEVICE_PROMPT') {
+      // T-086: bekleyen "saat çıkarıldı" sürerken kapsama boşluğu süresi doldu → beklemeden operatöre.
+      this.escalate(u, 'kapsama boşluğu');
+      u.after.push(() => this.cancelWaitTimers(u.ev.id));
+    } else if (ALARM_TYPES.has(type) && !upgrade && OPERATOR_STATES.has(u.ev.state))
       // Denetim bulgu 9: operatördeki olaya yeni alarm — olay aynı, konsol uyarır (ses + vurgu).
       u.publishes.push({
         topic: TOPICS.eventUpdated,
@@ -854,8 +889,9 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    */
   private async onUserAnswer(s: Signal) {
     await this.withOpenEvent(s.protectedPersonId, async (u) => {
-      // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY) kapanır.
-      if (u.ev.state !== 'DEVICE_PROMPT' || WAITING_TYPES.has(u.ev.type)) return;
+      // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY), KAPSAMA BOŞLUĞU kapsama
+      // geri gelince kapanır.
+      if (u.ev.state !== 'DEVICE_PROMPT' || NOT_DEVICE_ANSWERABLE.has(u.ev.type)) return;
       const askedAt = [...u.ev.transitions].reverse().find((t) => t.to === 'DEVICE_PROMPT')?.at;
       const answeredAt = s.receivedAt ?? s.occurredAt;
       const forEvent = typeof s.payload?.eventId === 'string' ? s.payload.eventId : undefined;
@@ -911,16 +947,17 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     });
   }
 
-  private async autoCloseWatchOff(subject: string) {
+  /** Saat takıldı (ON_BODY) veya şarja takıldı (CHARGE_START, T-086): bekleyen / kuyruktaki WATCH_OFF kapanır. */
+  private async autoCloseWatchOff(subject: string, note: string) {
     await this.withOpenEvent(subject, async (u) => {
       if (u.ev.type !== 'WATCH_OFF') return;
       if (u.ev.state !== 'DEVICE_PROMPT' && u.ev.state !== 'OPERATOR_QUEUE') return;
-      if (u.ev.state === 'DEVICE_PROMPT') this.transition(u, 'CANCELLED_BY_USER', 'USER', undefined, 'saat takıldı');
+      if (u.ev.state === 'DEVICE_PROMPT') this.transition(u, 'CANCELLED_BY_USER', 'USER', undefined, note);
       else {
         this.transition(u, 'OPERATOR_ASSIGNED', 'SYSTEM');
-        this.transition(u, 'CONFIRMED_OK', 'SYSTEM', undefined, 'saat takıldı');
+        this.transition(u, 'CONFIRMED_OK', 'SYSTEM', undefined, note);
       }
-      this.close(u, 'OK', 'saat takıldı', 'SYSTEM');
+      this.close(u, 'OK', note, 'SYSTEM');
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
     });
   }

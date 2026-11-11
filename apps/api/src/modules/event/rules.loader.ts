@@ -75,6 +75,41 @@ export interface FusionParams {
   crossCancelFollowUpMin: number;
   gpsFreshSec: number;
 }
+/** T-085 (S3.2): cihaz bu kadar dk görülmezse çevrimdışı (sınıfa göre). */
+export interface CoverageParams {
+  onlineMin: { A: number; B: number };
+  locationStaleMin?: number;
+}
+/** T-086 (S4.2, S4.6): pil eşikleri (%) ve planlı şarj kontrol saati (kişinin saat diliminde, HH:MM). */
+export interface BatteryParams {
+  warnPct: number;
+  planPct: number;
+  familyPct: number;
+  criticalPct: number;
+  deadPct: number;
+  planHour: string;
+}
+/** T-086 (S4.3–S4.5): şarj penceresi ve şarj boşluğu zamanlayıcıları (dk; uyanık süre). */
+export interface ChargingParams {
+  defaultWindow: string;
+  chargeDonePct: number;
+  chargeDoneMin: number;
+  putOnMin: number[];
+  familyGapMin: number;
+  familyGapOffPlanMin: number;
+  maxGapMin: number;
+  intentMin: number;
+  /** Gece penceresi bittikten sonra zamanlayıcıların yeniden işlemeye başladığı süre (uyanış + 30 dk). */
+  resumeAfterWakeMin?: number;
+}
+/** T-086 (S4.7): hiçbir SOS yolu yokken (uyanık) dk. welfare* T-087 (ulaşılamama merdiveni) içindir. */
+export interface CoverageNoneParams {
+  remindMin: number;
+  familyMin: number;
+  eventMin: number;
+  welfareSilentH?: number;
+  welfareDroppedH?: number;
+}
 export interface RulePack {
   country: string;
   version: number;
@@ -85,6 +120,10 @@ export interface RulePack {
   call112DeadlineSec?: Partial<Record<EventType, number>>;
   ladder?: Partial<LadderParams>;
   fusion?: Partial<FusionParams>;
+  coverage?: CoverageParams;
+  battery?: BatteryParams;
+  charging?: ChargingParams;
+  coverageNone?: CoverageNoneParams;
   rules: Rule[];
 }
 
@@ -114,6 +153,31 @@ export const fusionOf = (pack: RulePack): FusionParams => ({ ...DEFAULT_FUSION, 
 /** T-087: olayın 112 son sınırı (sn); türün sınırı yoksa null. */
 export const call112DeadlineSecOf = (pack: RulePack, type: EventType): number | null =>
   pack.call112DeadlineSec?.[type] ?? null;
+export const DEFAULT_COVERAGE: CoverageParams = { onlineMin: { A: 15, B: 30 }, locationStaleMin: 30 };
+export const DEFAULT_BATTERY: BatteryParams = {
+  warnPct: 20,
+  planPct: 30,
+  familyPct: 15,
+  criticalPct: 10,
+  deadPct: 5,
+  planHour: '18:00',
+};
+export const DEFAULT_CHARGING: ChargingParams = {
+  defaultWindow: '19:00-21:00',
+  chargeDonePct: 80,
+  chargeDoneMin: 20,
+  putOnMin: [15, 30],
+  familyGapMin: 90,
+  familyGapOffPlanMin: 60,
+  maxGapMin: 120,
+  intentMin: 90,
+  resumeAfterWakeMin: 30,
+};
+export const DEFAULT_COVERAGE_NONE: CoverageNoneParams = { remindMin: 20, familyMin: 45, eventMin: 60 };
+export const coverageOf = (pack: RulePack): CoverageParams => pack.coverage ?? DEFAULT_COVERAGE;
+export const batteryOf = (pack: RulePack): BatteryParams => pack.battery ?? DEFAULT_BATTERY;
+export const chargingOf = (pack: RulePack): ChargingParams => pack.charging ?? DEFAULT_CHARGING;
+export const coverageNoneOf = (pack: RulePack): CoverageNoneParams => pack.coverageNone ?? DEFAULT_COVERAGE_NONE;
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {
