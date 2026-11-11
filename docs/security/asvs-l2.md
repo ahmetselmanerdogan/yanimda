@@ -19,13 +19,13 @@ satırları (2.7.x, 2.9.x, 3.4.x, 12.1–12.5, 13.3/13.4) tek satır; iki ayrı 
 | Değerlendirilen satır (L1+L2) | 219 |
 | N/A | 17 |
 | Uygulanabilir | 202 |
-| ✅ karşılandı | 127 |
-| ⚠️ kısmi | 56 |
-| ❌ yok | 19 |
-| **Karşılama (yalnız ✅ / uygulanabilir)** | **%62,9 (127/202)** |
-| Ağırlıklı (✅ + ½·⚠️) | %76,7 |
+| ✅ karşılandı | 151 |
+| ⚠️ kısmi | 47 |
+| ❌ yok | 4 |
+| **Karşılama (yalnız ✅ / uygulanabilir)** | **%74,8 (151/202)** |
+| Ağırlıklı (✅ + ½·⚠️) | %86,4 |
 
-**Sonuç: T-081 hedefi (≥ %90) karşılanmıyor.** Doğrulanmış kritik bulgu: **0**. Bir yüksek bulgu (G-1) dağıtık
+**Sonuç (2026-11-11, ikinci tur sonrası %74,8): T-081 hedefi (≥ %90) hâlâ karşılanmıyor.** Doğrulanmış kritik bulgu: **0**. Bir yüksek bulgu (G-1) dağıtık
 saldırgan varsayımında kritik tanımına ("kimliksiz saldırganın sahte acil olay üretmesi") yaklaşır; sızma testinde
 öncelikle doğrulanmalı. %90'a giden yol en altta.
 
@@ -33,27 +33,27 @@ Bölüm bazında:
 
 | Bölüm | ✅ | ⚠️ | ❌ | N/A | Karşılama |
 | --- | --- | --- | --- | --- | --- |
-| V1 Mimari | 23 | 13 | 1 | 1 | %62 |
-| V2 Kimlik doğrulama | 23 | 6 | 6 | 2 | %66 |
-| V3 Oturum | 7 | 7 | 0 | 1 | %50 |
+| V1 Mimari | 24 | 13 | 0 | 1 | %65 |
+| V2 Kimlik doğrulama | 28 | 5 | 2 | 2 | %80 |
+| V3 Oturum | 8 | 6 | 0 | 1 | %57 |
 | V4 Erişim kontrolü | 8 | 1 | 0 | 0 | %89 |
 | V5 Doğrulama/kodlama | 15 | 2 | 0 | 6 | %88 |
 | V6 Kriptografi | 9 | 1 | 2 | 1 | %75 |
-| V7 Hata/log | 6 | 3 | 3 | 0 | %50 |
-| V8 Veri koruma | 7 | 5 | 2 | 1 | %50 |
+| V7 Hata/log | 10 | 2 | 0 | 0 | %83 |
+| V8 Veri koruma | 10 | 4 | 0 | 1 | %71 |
 | V9 İletişim | 2 | 6 | 0 | 0 | %25 |
 | V10 Kötü amaçlı kod | 2 | 1 | 0 | 2 | %67 |
-| V11 İş mantığı | 3 | 3 | 2 | 0 | %38 |
+| V11 İş mantığı | 8 | 0 | 0 | 0 | %100 |
 | V12 Dosya | 1 | 0 | 0 | 1 | %100 |
 | V13 API | 5 | 4 | 0 | 1 | %56 |
-| V14 Yapılandırma | 16 | 4 | 3 | 1 | %70 |
+| V14 Yapılandırma | 21 | 2 | 0 | 1 | %91 |
 
 ## V1 Mimari, tasarım ve tehdit modelleme
 
 | # | Gereksinim | Durum | Kanıt / not |
 | --- | --- | --- | --- |
 | 1.1.1 | Güvenli geliştirme yaşam döngüsü | ⚠️ | CI: lint, tip, test, Trivy (`ci.yml`); CLAUDE.md "Bitmeden kontrol et". Resmî güvenli SDLC tanımı yok. |
-| 1.1.2 | Tehdit modelleme | ❌ | Tasarım değişikliklerinde tehdit modeli yok (G-13). |
+| 1.1.2 | Tehdit modelleme | ✅ | STRIDE tehdit modeli `docs/security/tehdit-modeli.md`; tasarım değişikliğinde güncellenir (PR açıklamasında etki). |
 | 1.1.3 | Kullanıcı hikâyelerinde güvenlik kısıtları | ✅ | PRD kabul kriterleri; `docs/TASKS-DETAY.md` (yetki, PII, idempotency). |
 | 1.1.4 | Güven sınırları belgeli | ⚠️ | Modül haritası var (`api/app.module.ts`, 03-teknik-mimari); güvenlik odaklı güven sınırı diyagramı yok. |
 | 1.1.5 | Üst düzey mimari güvenlik analizi | ⚠️ | Bu klasör ilk adım; bileşen bazlı analiz yok. |
@@ -100,7 +100,7 @@ içinde `otp` denetimi (`oidc-verifier.ts:133-136`; üretimde kapatılamaz `:53-
 | # | Gereksinim | Durum | Kanıt / not |
 | --- | --- | --- | --- |
 | 2.1.1 | Parola ≥ 12 karakter (operations) | ✅ | `passwordPolicy: length(12) and notUsername and passwordHistory(5)`. |
-| 2.1.1 | Parola ≥ 12 karakter (consumers) | ❌ | `length(8)` (G-9). |
+| 2.1.1 | Parola ≥ 12 karakter (consumers) | ✅ | `length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(3)` (T-081). |
 | 2.1.2 | ≥ 64 karaktere izin | ✅ | Keycloak varsayılanı (üst sınır politikası yok). |
 | 2.1.3 | Parola kırpılmaz | ✅ | Keycloak. |
 | 2.1.4 | Unicode parola | ✅ | Keycloak. |
@@ -113,16 +113,16 @@ içinde `otp` denetimi (`oidc-verifier.ts:133-136`; üretimde kapatılamaz `:53-
 | 2.1.11 | Yapıştırma ve parola yöneticisi | ✅ | Keycloak giriş sayfası. |
 | 2.1.12 | Parolayı geçici gösterme | ✅ | Keycloak 26 teması. |
 | 2.2.1 | Kaba kuvvet koruması (kullanıcı girişi) | ✅ | `bruteForceProtected: true`, `failureFactor` 5 (operations) / 10 (consumers). |
-| 2.2.1 | Kaba kuvvet koruması (cihaz eşleştirme kodu) | ⚠️ | Yalnız IP başına 10 hata / 15 dk (`enrollment.service.ts:31-33, 209-227`); global sayaç yok; `trust proxy` yok (G-1). |
+| 2.2.1 | Kaba kuvvet koruması (cihaz eşleştirme kodu) | ✅ | IP başına 10 hata / 15 dk (`enrollment.service.ts`) + `POST /devices/enroll` hız sınırı (IP, 20/10 dk, Redis, tüm kopyalar ortak); `TRUST_PROXY` ile gerçek istemci IP'si (T-081). |
 | 2.2.2 | Zayıf doğrulayıcılar sınırlı | ✅ | Operatör TOTP; davet kodu tek kullanımlık, 15 dk, yalnız özeti saklanır (`enrollment.service.ts:30, 78, 109-127`). |
-| 2.2.3 | Kimlik bilgisi değişince bildirim | ❌ | Keycloak e-posta/olay yapılandırması yok. |
+| 2.2.3 | Kimlik bilgisi değişince bildirim | ✅ | Realm'lerde `eventsListeners: [email]` + SMTP: parola / OTP değişikliği ve hatalı giriş kullanıcıya e-postalanır (T-081). |
 | 2.3.1 | İlk parola/aktivasyon kodu rastgele, kısa ömürlü | ✅ | `randomInt` 6 hane, 15 dk (`enrollment.service.ts:115`); operatöre ilk girişte `UPDATE_PASSWORD`. |
 | 2.4.1 | Parola saklama (tuzlu, yavaş özet) | ✅ | Keycloak (PBKDF2-SHA512 varsayılanı). |
 | 2.5.1 | Sıfırlama sırrı yalnız kurtarmada | ✅ | `resetPasswordAllowed: false` (yönetici sıfırlar). |
 | 2.5.2 | Parola ipucu / bilgi sorusu yok | ✅ | — |
 | 2.5.3 | Parola geri gönderilmez | ✅ | — |
 | 2.5.4 | Paylaşılan / varsayılan hesap yok | ⚠️ | `ADMIN_TOKEN` paylaşımlı sır (G-4); Keycloak `admin/admin` yalnız `infra/docker-compose.yml` (yerel). |
-| 2.5.5 | Doğrulama faktörü değişince bildirim | ❌ | Aynı (2.2.3). |
+| 2.5.5 | Doğrulama faktörü değişince bildirim | ✅ | Aynı (2.2.3): `UPDATE_TOTP` / `REMOVE_TOTP` e-postası. |
 | 2.5.6 | Unutulan parola akışı güvenli | ⚠️ | Self-servis kapalı; yönetici sıfırlama süreci belgelenmemiş. |
 | 2.5.7 | OTP kaybında güvenli kurtarma | ⚠️ | Belgelenmiş süreç yok. |
 | 2.7.x | Bant dışı doğrulayıcı (SMS OTP) | N/A | SMS OTP kullanılmıyor. |
@@ -130,7 +130,7 @@ içinde `otp` denetimi (`oidc-verifier.ts:133-136`; üretimde kapatılamaz `:53-
 | 2.8.2 | OTP tohumları korunur | ✅ | Keycloak. |
 | 2.8.3 | Onaylı OTP algoritması | ✅ | TOTP (RFC 6238) HMAC-SHA1, 6 hane. |
 | 2.8.4 | OTP tek kullanımlık | ✅ | Keycloak varsayılanı (`otpPolicyCodeReusable` false). |
-| 2.8.5 | OTP yeniden kullanım girişimi loglanır | ❌ | Keycloak olay kaydı kapalı (`eventsEnabled` yok) (G-6). |
+| 2.8.5 | OTP yeniden kullanım girişimi loglanır | ✅ | Keycloak olay kaydı açık (`eventsEnabled`, 90 gün, DB'de; `LOGIN_ERROR` / `CODE_TO_TOKEN_ERROR`) (T-081). |
 | 2.9.x | Kriptografik doğrulayıcı (donanım anahtarı) | N/A | Kullanılmıyor. |
 | 2.10.1 | Servis kimlikleri statik değil | ⚠️ | Twilio, S3, FCM statik anahtar; `ADMIN_TOKEN`. |
 | 2.10.2 | Varsayılan kimlik bilgisi yok (üretim) | ✅ | Üretimde zorunlu sırlar yoksa açılmaz (`field-cipher.ts:33`, `device-token.ts:32`). |
@@ -146,7 +146,7 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | 3.1.1 | Token URL'de yok | ✅ | WS kimliği ilk mesajla (`api/modules/queue/queue.gateway.ts:52-56, 145-160`); OIDC `code` adresten silinir (`apps/console/src/lib/auth.ts:46-56`). |
 | 3.2.1 | Girişte yeni token | ✅ | Keycloak. |
 | 3.2.2 | ≥ 64 bit entropi / imzalı | ✅ | RS256/ES256 JWT; cihaz HMAC-SHA256. |
-| 3.2.3 | Tarayıcıda güvenli saklama | ⚠️ | `sessionStorage` (`auth.ts:18`): XSS'te okunabilir, CSP yok (G-5). |
+| 3.2.3 | Tarayıcıda güvenli saklama | ✅ | `sessionStorage` (`auth.ts:18`) + konsol CSP `script-src 'self'` (satır içi betik yok), `frame-ancestors 'none'` (`infra/caddy/Caddyfile`). |
 | 3.2.4 | Onaylı algoritmayla üretim | ✅ | — |
 | 3.3.1 | Çıkış token'ı geçersiz kılar | ⚠️ | Konsol `signoutRedirect` (`apps/console/src/App.tsx:62`); erişim token'ı API'de süresi (5 dk) dolana kadar geçerli. Cihaz iptali anında (`enrollment.service.ts:247-265`). |
 | 3.3.2 | Boşta/mutlak süre (operations) | ✅ | `ssoSessionIdleTimeout: 3600`, `ssoSessionMaxLifespan: 43200`, `accessTokenLifespan: 300`. |
@@ -225,10 +225,10 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | --- | --- | --- | --- |
 | 7.1.1 | Kimlik bilgisi/token log'da yok | ✅ | `oidc.guard.ts:36`, `enrollment.service.ts:88` ("kod, token, ad yok"). |
 | 7.1.2 | Diğer hassas veri log'da yok | ✅ | `safeError` (`api/common/safe-error.ts`); otomatik denetim: `apps/api/test/pii-logs.spec.ts` (akış boyunca log taraması), CI `e2e`/`console-e2e`/`security`/`load-v1` işlerinde `pii-audit-cli.ts`, Semgrep `yanimda-no-pii-in-logs`. |
-| 7.1.3 | Güvenlik olayları loglanır | ❌ | 401/403 ve doğrulama hataları loglanmıyor; Keycloak olay kaydı kapalı (G-6). |
-| 7.1.4 | Soruşturma için yeterli bağlam | ⚠️ | Zaman + bağlam var; istek/korelasyon kimliği yok. |
-| 7.2.1 | Tüm kimlik doğrulama kararları | ❌ | G-6. |
-| 7.2.2 | Erişim kontrol hataları | ❌ | G-6. |
+| 7.1.3 | Güvenlik olayları loglanır | ✅ | `common/security-events.ts`: 400/401/403/422/429 → `[güvenlik]` log'u (rota şablonu + istek kimliği, PII yok) ve `yanimda_security_events_total`; Keycloak olay kaydı açık. |
+| 7.1.4 | Soruşturma için yeterli bağlam | ✅ | `X-Request-Id` korelasyon kimliği (`common/http-security.ts`; gelen geçerli değer korunur, yanıtta döner, güvenlik log'unda). |
+| 7.2.1 | Tüm kimlik doğrulama kararları | ✅ | API 401'leri güvenlik olayı log'unda; Keycloak `LOGIN` / `LOGIN_ERROR` olayları (DB). |
+| 7.2.2 | Erişim kontrol hataları | ✅ | 403'ler güvenlik olayı log'unda (rota şablonu) + metrik. |
 | 7.3.1 | Log enjeksiyonu önlenir | ✅ | Log'a yalnız doğrulanmış kimlik/tür değerleri girer. |
 | 7.3.3 | Log'lar değiştirilemez | ⚠️ | `audit.log` yalnız eklenebilir, tetikleyiciyle (`0002_event_persistence/up.sql:23-43`); uygulama log deposu repoda yok. |
 | 7.3.4 | Saat eşitleme | ⚠️ | Altyapı; kanıt yok. |
@@ -240,11 +240,11 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 
 | # | Gereksinim | Durum | Kanıt / not |
 | --- | --- | --- | --- |
-| 8.1.1 | Sunucu/proxy önbelleğinden koruma | ⚠️ | Yalnız cihaz yapılandırmasında `Cache-Control: private, no-cache` (`enrollment.controller.ts:64`). |
+| 8.1.1 | Sunucu/proxy önbelleğinden koruma | ✅ | API varsayılanı `Cache-Control: no-store` (`common/http-security.ts`); cihaz yapılandırması `private, no-cache` + ETag. |
 | 8.1.2 | Önbellek kopyaları temizlenir | N/A | Sunucu tarafı önbellek yok. |
 | 8.1.3 | Gereksiz veri istenmez/dönülmez | ✅ | Tıbbi özet aileye geri okunmaz; olay kartı yalnız üstlenen operatöre. |
-| 8.1.4 | Anormal istek hacmi tespiti | ❌ | Hız sınırı yalnız cihaz kaydında (G-2). |
-| 8.2.1 | Hassas yanıtlarda önbellek önleme başlıkları | ❌ | `no-store` yok (olay kartı, profil, kişi listesi) (G-12). |
+| 8.1.4 | Anormal istek hacmi tespiti | ✅ | Uç bazlı hız sınırı (`common/rate-limit.ts`) + `SecurityEventsSpike` uyarısı (401/403/429 artışı). |
+| 8.2.1 | Hassas yanıtlarda önbellek önleme başlıkları | ✅ | Tüm API yanıtlarında `no-store` (T-081). |
 | 8.2.2 | Tarayıcı deposunda hassas veri yok | ⚠️ | Erişim/yenileme token'ı `sessionStorage`'da. |
 | 8.2.3 | Oturum sonunda istemci verisi silinir | ✅ | `sessionStorage` sekmeyle silinir. |
 | 8.3.1 | Hassas veri gövde/başlıkta | ✅ | Token başlıkta; URL'de yalnız UUID. |
@@ -284,13 +284,13 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | # | Gereksinim | Durum | Kanıt / not |
 | --- | --- | --- | --- |
 | 11.1.1 | Adımlar sırayla | ✅ | `event-state-machine.ts`; zincir adımı sıra dışı 409 (`chain.controller.ts:69-70`). |
-| 11.1.2 | Gerçekçi insan hızı | ⚠️ | Yalnız cihaz kaydında. |
-| 11.1.3 | İş limitleri | ⚠️ | Test-SOS idempotency (`profile.controller.ts:115-120`); kota yok. |
-| 11.1.4 | Aşırı çağrıya karşı otomasyon önlemi | ❌ | `/signals`, test-SOS, davet, telefoni uçlarında hız sınırı yok: arama/SMS maliyeti ve kuyruk taşması (G-2). |
+| 11.1.2 | Gerçekçi insan hızı | ✅ | Kayıt (IP 10/sa), SMS kodu (5/sa), doğrulama (10/sa), davet (10/sa), web push aboneliği (30/sa). |
+| 11.1.3 | İş limitleri | ✅ | Test SOS kişi başına 6/sa (+ 10 dk kuralı), davet 10/sa, SMS 5/sa; cihaz token yenileme 30/sa. |
+| 11.1.4 | Aşırı çağrıya karşı otomasyon önlemi | ✅ | `/signals` cihaz başına 600/dk (alarm sinyalleri muaf), test SOS, davet, kayıt, webhook'lar (IP 1200/dk); Redis yoksa açık (acil akışı durmaz). |
 | 11.1.5 | İş mantığı sınırları doğrulanır | ✅ | Kural paketi şeması (`packages/rules/schema.json`), tek açık olay, SLA/amir uyarıları (`api/modules/metrics/sla.ts`, `supervisor.service.ts`). |
 | 11.1.6 | Yarış durumu (TOCTOU) yok | ✅ | Satır kilidi, benzersiz indeks, idempotency. |
-| 11.1.7 | Anormal olay izleme | ⚠️ | Operasyonel amir uyarıları var; güvenlik olayı izleme yok. |
-| 11.1.8 | Otomatik saldırı uyarısı | ❌ | — |
+| 11.1.7 | Anormal olay izleme | ✅ | `yanimda_security_events_total{status,route}` + operasyonel amir uyarıları. |
+| 11.1.8 | Otomatik saldırı uyarısı | ✅ | Prometheus `SecurityEventsSpike` (`infra/monitoring/alerts.yml`). |
 
 ## V12 Dosya ve kaynaklar
 
@@ -325,7 +325,7 @@ gerekmez. CPaaS webhook'ları: imza zorunlu, `timingSafeEqual` (`cpaas.ts:70-80`
 | --- | --- | --- | --- |
 | 14.1.1 | Tekrarlanabilir derleme/dağıtım | ✅ | Çok aşamalı `Dockerfile`, `pnpm install --frozen-lockfile`, `ci.yml`. |
 | 14.1.2 | Derleyici güvenlik bayrakları | ✅ | TypeScript `strict` (`tsconfig.base.json:6`). |
-| 14.1.3 | Sunucu yapılandırması sıkılaştırılmış | ⚠️ | Güvenlik başlığı ara katmanı yok, `X-Powered-By` açık (`api/main.ts`) (G-5). |
+| 14.1.3 | Sunucu yapılandırması sıkılaştırılmış | ✅ | Güvenlik başlığı ara katmanı (`common/http-security.ts`), `x-powered-by` kapalı, salt okunur kap (`docker-compose.prod.yml`). |
 | 14.1.4 | Otomatik, güvenli yeniden dağıtım | ⚠️ | Dağıtım manifestleri repoda yok. |
 | 14.1.5 | Güvenlik yapılandırması bütünlüğü | ⚠️ | — |
 | 14.2.1 | Bileşenler güncel | ✅ | Trivy (`ci.yml` `image`), `apk upgrade` (`Dockerfile:22`); Dependabot CI güvenlik işlerine ekleniyor. |
@@ -335,10 +335,10 @@ gerekmez. CPaaS webhook'ları: imza zorunlu, `timingSafeEqual` (`cpaas.ts:70-80`
 | 14.2.5 | Bileşen envanteri (SBOM) | ✅ | SPDX SBOM, cosign attest (`release-image.yml`); BuildKit `sbom: true`. |
 | 14.2.6 | Saldırı yüzeyi daraltma (sandbox) | ✅ | non-root; `read_only: true`, `cap_drop: [ALL]` (`infra/docker-compose.prod.yml`), Helm `securityContext`. |
 | 14.3.2 | Üretimde debug kapalı | ✅ | `NODE_ENV=production` (`Dockerfile:19`), log düzeyi `log/warn/error` (`api/main.ts:10`), MFA kapatma yasak (`oidc-verifier.ts:53`). |
-| 14.3.3 | Sürüm bilgisi sızmaz | ❌ | `X-Powered-By: Express`. |
+| 14.3.3 | Sürüm bilgisi sızmaz | ✅ | `x-powered-by` kapalı (`configureHttpSecurity`), Caddy `-Server`. |
 | 14.4.1 | Content-Type + charset | ✅ | `application/problem+json` (`problem.filter.ts:43`), TwiML `text/xml; charset=utf-8`. |
-| 14.4.2 | API yanıtlarında `Content-Disposition` | ❌ | Yok. |
-| 14.4.3 | CSP | ❌ | Konsol için CSP yok (`apps/console/index.html`; sunum yapılandırması repoda yok). |
+| 14.4.2 | API yanıtlarında `Content-Disposition` | ✅ | Varsayılan `Content-Disposition: attachment; filename="api.json"`; kayıt indirme kendi değerini yazar. |
+| 14.4.3 | CSP | ✅ | Konsol CSP (`infra/caddy/Caddyfile`: `default-src 'self'`, Keycloak + Twilio kökenleri); API `default-src 'none'`. Aile web (Next.js) yalnız `frame-ancestors`/`object-src`/`base-uri`; Helm ingress'te CSP yok. |
 | 14.4.4 | `X-Content-Type-Options: nosniff` | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
 | 14.4.5 | HSTS | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
 | 14.4.6 | `Referrer-Policy` | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
@@ -346,7 +346,7 @@ gerekmez. CPaaS webhook'ları: imza zorunlu, `timingSafeEqual` (`cpaas.ts:70-80`
 | 14.5.1 | Yalnız gereken HTTP yöntemleri | ✅ | — |
 | 14.5.2 | `Origin` kimlik doğrulamada kullanılmaz | ✅ | — |
 | 14.5.3 | CORS izin listesi | ✅ | CORS etkin değil (`api/main.ts`); tarayıcıdan çapraz köken engelli. |
-| 14.5.4 | Proxy başlıklarına güven yapılandırılmış | ⚠️ | `trust proxy` yok; `@Ip()` kayıt hız sınırında kullanılıyor (`enrollment.controller.ts:37`) (G-1). |
+| 14.5.4 | Proxy başlıklarına güven yapılandırılmış | ✅ | `TRUST_PROXY` (atlama sayısı; compose / Helm: 1) → `req.ip` vekil arkasında doğru. |
 
 ## Açıklar (öncelik sırasıyla)
 
@@ -394,6 +394,19 @@ Altyapı maddeleri:
 Hedef (≥ %90) yine karşılanmıyor. Ayrıca `docker-compose.prod.yml`
 `env_file: [.env.prod]` kullanıyor: "`.env` üretimde yok" kuralıyla çelişmemesi için dosya repo dışında, dağıtım
 anında sır deposundan üretilmeli ve 600 izinli olmalı (`sirlar.md` §2–3).
+
+## T-081 ikinci tur (2026-11-11) — puana dahil
+
+Paket A (güvenlik başlıkları, CSP, `no-store`), C (güvenlik olayı log'u, korelasyon kimliği, Keycloak olayları +
+e-posta bildirimi), D (hız sınırı, `TRUST_PROXY`), F'nin parola kısmı ve G'nin tehdit modeli kısmı yapıldı:
+**%62,9 → %74,8 (151/202)**, ❌ 19 → 4. Giderilen bulgular: G-2 (hız sınırı), G-5 (API başlıkları + konsol CSP),
+G-6 (güvenlik olayı log'u; Keycloak olayları DB'de, log'a kullanıcı adı / IP yazılmaz), G-12 (`no-store`), G-13
+(`tehdit-modeli.md`), G-16; G-1 kısmen (gerçek IP + IP başına kayıt sınırı; dağıtık saldırgan sızma testinde), G-9
+kısmen (parola 12; ihlal listesi ve oturum süreleri açık).
+
+Kalan ❌: 2.1.7 ihlal edilmiş parola listesi (Keycloak `passwordBlacklist` dosyası her ortamda bağlanmalı), 2.1.8
+parola gücü göstergesi (Keycloak teması), 6.4.1 / 6.4.2 sır yönetimi ve KMS (paket E, `sirlar.md`). %90 için ayrıca
+paket B (üretim altyapısı kanıtı) şart.
 
 ## %90'a giden yol
 

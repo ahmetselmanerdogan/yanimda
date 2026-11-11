@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { NotifyService } from './notify.service';
 
@@ -53,6 +54,7 @@ export class NotifyWebhookController {
   constructor(@Inject(NotifyService) private readonly notify: NotifyService) {}
 
   @Post('sms')
+  @RateLimit(WEBHOOK_LIMIT)
   @HttpCode(200)
   async sms(
     @Query('n') id: string,

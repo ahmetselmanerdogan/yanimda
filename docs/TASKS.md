@@ -70,11 +70,11 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-071 Yanlış alarm sayacı ve geri bildirim (D-07, C-12) — API; aile ekranı T-061, amir ekranı T-074
 - [x] T-072 Otomatik sesli ön eleme (D-12) — API + kural paketi; gerçek STT "evet" ≥ %95 denemesi Twilio hesabı bekliyor
 - [ ] T-073 iOS Companion — başladı (repo `yanimda-ios`): iskelet, izin sihirbazı, SOS 3 sn → /v1/signals, kalıcı tampon, önemli konum değişikliği, arka plan yenilemesi; sunucuda `IOS_PHONE` adaptörü. eşleşme (davet kodu/bağlantısı → cihaz token'ı, Keychain, kaldırılınca yeniden eşleşme), CMMotionActivity hareketsizlik → INACTIVITY + "İyiyim", HealthKit adım/nabız → HEARTBEAT. APNs sessiz uyandırma (15 dk). Açık: gerçek APNs anahtarı ve cihazda deneme, pil ölçümü (<%5/24 sa), TestFlight
-- [x] T-074 Amir panosu (E-11) — taşma bayrağı yalnız işaret (yönlendirme v2.0); operatörün kendi durum seçimi açık
+- [x] T-074 Amir panosu (E-11) — taşma bayrağı yalnız işaret (yönlendirme v2.0); operatörün kendi durum seçimi yapıldı (konsol, `PUT /v1/operators/me/status`)
 
 ## Epik 8 · Sertleştirme (S8)
 - [x] T-080 Yük ve kaos testleri, olay kaybı 0 — kayıp 0, toparlanma < 2 dk, p95 1,1 sn (docs/test-reports/yuk-kaos-v1.md); CI `load-v1`
-- [ ] T-081 Güvenlik taramaları, sertifika sabitleme, PII denetimi — CI Semgrep, gitleaks, ZAP, Trivy, imaj imzası, PII log denetimi yapıldı; açık: ASVS L2 %62,9 (hedef %90), sızma testi (docs/security/)
+- [ ] T-081 Güvenlik taramaları, sertifika sabitleme, PII denetimi — CI Semgrep, gitleaks, ZAP, Trivy, imaj imzası, PII log denetimi yapıldı; ikinci tur: güvenlik başlıkları, CSP, hız sınırı, güvenlik olayı log'u, Keycloak olayları, tehdit modeli; açık: ASVS L2 %74,8 (hedef %90: sır yönetimi/KMS, üretim altyapısı kanıtı, ihlal parola listesi), sızma testi (docs/security/)
 - [ ] T-082 Erişilebilirlik denetimi ve 5 kullanıcı testi — otomatik denetim yapıldı (konsol, aile web, aile uygulaması; 2 kontrast bulgusu düzeltildi; docs/test-reports/erisilebilirlik-v1.md); açık: kullanıcı testi, saat/telefon/iOS taraması
 - [x] T-083 Staging (Terraform + Helm), sentetik izleme — kod ve CI doğrulaması (terraform validate, helm + kubeconform, promtool); gerçek bulutta uygulanmadı
 - [ ] T-084 Beta dağıtımı, Kapı 2 raporu — mağaza hesapları (Play, App Store), gerçek kullanıcılar ve CPaaS/push hesapları bekleniyor

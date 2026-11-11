@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Post, Req, UseGuards } from '@nestjs/common';
 
+import { RateLimit } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { WebPushService } from './webpush.service';
 
@@ -16,6 +17,7 @@ export class WebPushController {
   }
 
   @Post('subscriptions')
+  @RateLimit({ name: 'webpush', limit: 30, windowSec: 3600, by: 'user' })
   @HttpCode(200)
   subscribe(@Req() req: UserRequest, @Body() body: unknown) {
     const u = userOf(req);

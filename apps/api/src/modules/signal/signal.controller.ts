@@ -1,5 +1,6 @@
 import { Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, UseGuards } from '@nestjs/common';
 
+import { alarmBatch, RateLimit } from '../../common/rate-limit';
 import { CompanionService } from '../device/companion.service';
 import { type DeviceRequest, SignalAuthGuard } from '../device/device-token.guard';
 import type { DevicePrincipal } from '../device/enrollment.service';
@@ -29,6 +30,13 @@ export class SignalController {
 
   /** POST /v1/signals — D-01. T-041: cihaz token'ı (SignalAuthGuard; token'sız yalnız simülatör açıkken). */
   @Post()
+  @RateLimit({
+    name: 'signals',
+    limit: 600,
+    windowSec: 60,
+    by: 'device',
+    exempt: (r) => alarmBatch((r as { body?: unknown }).body),
+  })
   @HttpCode(202)
   @UseGuards(SignalAuthGuard)
   async post(@Body() body: unknown[], @Req() req: DeviceRequest) {

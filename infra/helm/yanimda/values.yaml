@@ -31,6 +31,8 @@ api:
     DB_MIGRATE_ON_START: 'true'
     DATABASE_POOL_MAX: '10'
     SIMULATOR_ENABLED: 'false'
+    # T-081: ingress-nginx arkasında gerçek istemci IP'si (hız sınırı)
+    TRUST_PROXY: '1'
     OIDC_AUDIENCE: yanimda-api
     OIDC_REQUIRE_MFA: 'true'
     COUNTRY_CODE: TR

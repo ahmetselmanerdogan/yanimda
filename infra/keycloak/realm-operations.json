@@ -178,5 +178,16 @@
         "default.reference.maxAge": "43200"
       }
     }
-  ]
+  ],
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "eventsListeners": ["email"],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "smtpServer": {
+    "host": "mailhog",
+    "port": "1025",
+    "from": "noreply@yanimda.local",
+    "fromDisplayName": "Yanımda Operasyon"
+  }
 }

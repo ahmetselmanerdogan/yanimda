@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { validate as isUuid } from 'uuid';
 
+import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { SupervisorService } from '../metrics/supervisor.service';
 import {
@@ -47,6 +48,7 @@ export class InboundWebhookController {
   ) {}
 
   @Post(':kind')
+  @RateLimit(WEBHOOK_LIMIT)
   @HttpCode(200)
   async webhook(
     @Param('kind') kind: string,
