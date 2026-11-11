@@ -118,7 +118,7 @@ export function Console({
         onStatus: setOnline,
         onMessage: (m) => {
           if (m.type === 'snapshot') dispatch({ type: 'snapshot', items: m.items });
-          else if (m.type === 'upsert') dispatch({ type: 'upsert', item: m.item });
+          else if (m.type === 'upsert') dispatch({ type: 'upsert', item: m.item, alarm: m.alarm });
           else if (m.type === 'remove') dispatch({ type: 'remove', eventId: m.eventId });
           else if (m.type === 'alert') setFlash(t(m.alert.code, { type: t(`O-TYPE-${m.alert.eventType}`) }));
           else if (m.type === 'inbound') setInbound({ queued: m.queued, oldestQueuedSec: m.oldestQueuedSec });
@@ -129,9 +129,14 @@ export function Console({
 
   useEffect(() => {
     if (!queue.arrived) return;
-    alertSound(queue.arrived.type, queue.arrived.priority);
-    setFlash(t('O-UI-NEW-EVENT', { type: t(`O-TYPE-${queue.arrived.type}`) }));
-  }, [queue.arrived]);
+    const type = (queue.alarm ?? queue.arrived.type) as typeof queue.arrived.type;
+    alertSound(type, queue.arrived.priority);
+    setFlash(
+      queue.alarm
+        ? t('O-UI-NEW-ALARM', { type: t(`O-TYPE-${type}`) })
+        : t('O-UI-NEW-EVENT', { type: t(`O-TYPE-${type}`) }),
+    );
+  }, [queue.arrived, queue.alarm]);
 
   useEffect(() => {
     if (!flash) return;
@@ -291,6 +296,8 @@ export function Console({
     setTimeout(() => skipRef.current?.focus(), 0);
   };
   const skipSubmit = () => skipReason.trim() && void send({ result: 'SKIPPED', reason: skipReason.trim() });
+  /** Gerçek SOS / düşme: ulaşılamadıysa da 112 sorulur (sunucu aranmadıysa amire uyarır). */
+  const alarm = !!ev && !ev.isTest && (ev.type === 'SOS' || ev.type === 'FALL');
   const allowedOutcomes = (): CloseOutcome[] =>
     ev?.state === 'CONFIRMED_EMERGENCY' || ev?.state === 'DISPATCH'
       ? ['EMERGENCY']
@@ -508,7 +515,7 @@ export function Console({
           allowed={allowedOutcomes()}
           initialNote={note}
           busy={busy}
-          ask112={ev?.state === 'CONFIRMED_EMERGENCY'}
+          ask112For={ev?.state === 'DISPATCH' ? [] : alarm ? ['EMERGENCY', 'UNREACHABLE'] : ['EMERGENCY']}
           onSubmit={(o, n, f, x) => void close(o, n, f, x)}
           onCancel={() => setMode('normal')}
         />

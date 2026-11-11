@@ -3,12 +3,19 @@ import type { QueueItem } from './api';
 /** Canlı kuyruk durumu (T-022 mesajlarından). Saf; test edilir. */
 export interface QueueState {
   items: QueueItem[];
-  /** Son upsert'te ilk kez görülen bekleyen olay (ses + üst bar uyarısı için). */
+  /**
+   * Son upsert'te ses + üst bar uyarısı gerektiren olay: ilk kez görülen bekleyen olay, önceliği yükselen olay veya
+   * yeni alarm gelen olay (denetim bulgu 9).
+   */
   arrived?: QueueItem;
+  /** Mevcut olaya gelen yeni alarmın türü (varsa). */
+  alarm?: string;
 }
 
 export type QueueAction =
-  { type: 'snapshot'; items: QueueItem[] } | { type: 'upsert'; item: QueueItem } | { type: 'remove'; eventId: string };
+  | { type: 'snapshot'; items: QueueItem[] }
+  | { type: 'upsert'; item: QueueItem; alarm?: string }
+  | { type: 'remove'; eventId: string };
 
 /** Öncelik → yaş → kimlik (sunucuyla aynı sıra). */
 export const order = (a: QueueItem, b: QueueItem) =>
@@ -21,8 +28,10 @@ export function queueReducer(s: QueueState, a: QueueAction): QueueState {
     case 'upsert': {
       const prev = s.items.find((i) => i.eventId === a.item.eventId);
       const items = [...s.items.filter((i) => i.eventId !== a.item.eventId), a.item].sort(order);
-      const arrived = !prev && a.item.state === 'OPERATOR_QUEUE' ? a.item : undefined;
-      return { items, arrived };
+      const fresh = !prev && a.item.state === 'OPERATOR_QUEUE';
+      const raised = !!prev && a.item.priority < prev.priority;
+      const arrived = fresh || raised || a.alarm ? a.item : undefined;
+      return { items, arrived, ...(a.alarm && arrived ? { alarm: a.alarm } : {}) };
     }
     case 'remove':
       return { items: s.items.filter((i) => i.eventId !== a.eventId) };
