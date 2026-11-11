@@ -1256,6 +1256,23 @@ button.link {
   margin-top: 6px;
   flex-wrap: wrap;
 }
+/* T-089: "Soru gönder"in cevabı (satırda son soru, altta liste). */
+.device-prompt {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+.prompt-answers h3 {
+  margin: 12px 0 4px;
+  font-size: 1rem;
+}
+.prompt-answers ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.prompt-answers .prompt-help {
+  color: var(--help);
+  font-weight: 600;
+}
 .sup-coverage {
   display: flex;
   flex-wrap: wrap;
