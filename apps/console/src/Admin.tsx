@@ -373,7 +373,11 @@ function Wellness({ api, days, onError }: Part) {
                 <td data-label={t('O-UI-ADM-COL-TIME')}>{dt(c.dueAt)}</td>
                 <td data-label={t('O-UI-ADM-COL-PERSON')}>{c.person ?? '–'}</td>
                 <td data-label={t('O-UI-ADM-COL-CHANNEL')}>{t(`O-UI-ADM-CHANNEL-${c.channel}`)}</td>
-                <td data-label={t('O-UI-ADM-COL-STATUS')}>{t(`O-UI-ADM-CHECK-${c.status}`)}</td>
+                <td data-label={t('O-UI-ADM-COL-STATUS')}>
+                  {t(`O-UI-ADM-CHECK-${c.status}`)}
+                  {c.status === 'SKIPPED' && c.outcome ? ` · ${t(`O-UI-ADM-SKIP-${c.outcome}`)}` : ''}
+                  {c.status === 'MISSED' && c.outcome ? ` · ${t(`O-UI-ADM-MISS-${c.outcome}`)}` : ''}
+                </td>
                 <td data-label={t('O-UI-ADM-COL-OPERATOR')}>{c.operatorId ?? '–'}</td>
               </tr>
             ))}

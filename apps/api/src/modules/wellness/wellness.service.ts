@@ -16,6 +16,7 @@ import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, checkCall, checkPlan, event, protectedPerson } from '../../db/schema';
+import { subscriptionProtection } from '../billing/subscription-protection';
 import { EventService } from '../event/event.service';
 import { DEFAULT_TIMEZONE } from '../event/night';
 import type { Actor } from '../profile/contacts';
@@ -65,11 +66,22 @@ export interface Compliance {
   help: number;
   notified: number;
   missed: number;
-  /** (yapılan + bildirildi + yardım) / (planlanan − bekleyen); bekleyen yoksa 1. */
+  skipped: number;
+  /** (yapılan + bildirildi + yardım) / (planlanan − bekleyen − atlanan); yoksa 1. */
   ratio: number;
 }
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Operatörde (görüşme sürüyor) durumlar: pencere dolsa da KAÇIRILDI yazılmaz. */
+const HANDLING = new Set(['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH']);
+const RETRY_MIN = 30;
+const maxConcurrent = () => Number(process.env.WELLNESS_MAX_CONCURRENT ?? 5);
+/** Kişi kimliğinden sabit kaydırma (dk): pencerenin ilk yarısında, 0…windowMin/2. */
+export const spreadOffsetMin = (personId: string, windowMin: number) => {
+  let h = 0;
+  for (const ch of personId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % Math.max(1, Math.floor(windowMin / 2));
+};
 const OPEN: CheckStatus[] = ['SCHEDULED', 'IN_PROGRESS'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Rows<T> = { rows: T[] };
@@ -188,7 +200,14 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
       .select()
       .from(checkCall)
       .where(and(inArray(checkCall.status, OPEN), lte(checkCall.windowUntil, now)));
-    for (const c of late) if (await this.miss(c.id, 'WINDOW', now)) n++;
+    for (const c of late) {
+      // Operatör görüşüyorsa (olay operatörde) pencere dolsa da KAÇIRILDI yazılmaz; sonuç olay kapanınca gelir.
+      if (c.eventId) {
+        const [ev] = await this.db.select({ state: event.state }).from(event).where(eq(event.id, c.eventId));
+        if (ev && HANDLING.has(ev.state)) continue;
+      }
+      if (await this.miss(c.id, 'WINDOW', now)) n++;
+    }
     if (n) this.outbox.notifyCommitted();
     return n;
   }
@@ -209,17 +228,19 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
       .limit(1);
     const from = last && last.dueAt > now ? last.dueAt : now;
     const tz = await this.timezoneOf(personId);
-    const dueAt = nextDue(
+    const planned = nextDue(
       { frequency: p.frequency as Frequency, weekday: p.weekday, localTime: p.localTime, timezone: tz },
       from,
     );
+    // Yayılma: aynı saatli planlar aynı dakikada kuyruğa yığılmasın — kişiye sabit kaydırma (pencerenin ilk yarısı).
+    const dueAt = new Date(planned.getTime() + spreadOffsetMin(personId, p.windowMin) * 60_000);
     const ins = await this.db
       .insert(checkCall)
       .values({
         id: uuidv7(),
         protectedPersonId: personId,
         dueAt,
-        windowUntil: new Date(dueAt.getTime() + p.windowMin * 60_000),
+        windowUntil: new Date(planned.getTime() + p.windowMin * 60_000),
         channel: p.channel,
       })
       .onConflictDoNothing()
@@ -227,35 +248,104 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
     return ins.length > 0;
   }
 
+  /**
+   * Dönemi başlatır. Sıra: atlama kuralları → kapasite (ertele) → bildirim / geri arama olayı (kaynak kimliğiyle
+   * tekrarsız, yalnız YENİ olay: kişinin süren olayına eklenmez) → aynı işlemde satır IN_PROGRESS + olay bağı.
+   * Olay açılıp satır işaretlenmeden süreç ölürse sonraki tarama aynı kaynakla olayı bulup bağlar (kayıp yok).
+   */
   private async start(c: typeof checkCall.$inferSelect, now: Date): Promise<boolean> {
-    const notify = c.channel !== 'CALL';
+    const skip = await this.skipReason(c.protectedPersonId, now);
+    if (skip) return this.finishAs(c.id, 'SKIPPED', skip, now);
     const call = c.channel !== 'NOTIFY';
-    const claimed = await this.db.transaction(async (tx) => {
+    if (call && (await this.busy(c, now))) return false; // kapasite: sonraki taramada yeniden dene
+    const source = `wellness:${c.id}:${c.attempts}`;
+    let eventId: string | null = null;
+    if (call) {
+      await this.events.raiseCallback(c.protectedPersonId, source, 'düzenli arama (yanınızdayız)', true);
+      const [ev] = await this.db
+        .select({ id: event.id })
+        .from(event)
+        .where(sql`${event.sourceSignalIds} @> ARRAY[${source}]::text[]`);
+      if (!ev) return this.finishAs(c.id, 'SKIPPED', 'OPEN_EVENT', now); // arada açık olay oluştu
+      eventId = ev.id;
+    }
+    return this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(checkCall).where(eq(checkCall.id, c.id)).for('update');
       if (row?.status !== 'SCHEDULED') return false;
       await tx
         .update(checkCall)
-        .set({ status: call ? 'IN_PROGRESS' : 'NOTIFIED', startedAt: now, ...(call ? {} : { completedAt: now }) })
+        .set({
+          status: call ? 'IN_PROGRESS' : 'NOTIFIED',
+          startedAt: now,
+          eventId,
+          ...(call ? {} : { completedAt: now }),
+        })
         .where(eq(checkCall.id, c.id));
-      if (notify) await this.notify(tx, c.protectedPersonId, 'P-WELLNESS', 'ELDER', `wellness:${c.id}`, now);
+      if (c.channel !== 'CALL' && c.attempts === 0)
+        await this.notify(tx, c.protectedPersonId, 'P-WELLNESS', 'ELDER', `wellness:${c.id}`, now);
       await this.audit(tx, 'SYSTEM', null, 'wellness.started', c.protectedPersonId, {
         check: c.id,
         channel: c.channel,
+        attempt: c.attempts,
       });
       return true;
     });
-    if (!claimed || !call) return claimed;
-    const source = `wellness:${c.id}`;
-    await this.events.raiseCallback(c.protectedPersonId, source, 'düzenli arama (yanınızdayız)');
-    const [ev] = await this.db
-      .select({ id: event.id })
-      .from(event)
-      .where(sql`${event.sourceSignalIds} @> ARRAY[${source}]::text[]`);
-    if (ev) await this.db.update(checkCall).set({ eventId: ev.id }).where(eq(checkCall.id, c.id));
-    return true;
   }
 
-  private async miss(id: string, reason: string, now: Date, operatorId?: string | null): Promise<boolean> {
+  /** Atlama: süren olay (operatör zaten temasta), son 6 saatte operatörle kapanmış gerçek olay, koruma kapalı. */
+  private async skipReason(personId: string, now: Date): Promise<string | null> {
+    const [r] = (
+      (await this.db.execute(sql`
+        SELECT
+          EXISTS (SELECT 1 FROM event.event WHERE protected_person_id = ${personId} AND state <> 'CLOSED') AS open,
+          EXISTS (SELECT 1 FROM event.event WHERE protected_person_id = ${personId} AND state = 'CLOSED' AND NOT is_test
+                  AND operator_id IS NOT NULL AND confirmed_outcome IN ('OK', 'EMERGENCY')
+                  AND closed_at > ${now}::timestamptz - interval '6 hours') AS recent`)) as unknown as Rows<{
+        open: boolean;
+        recent: boolean;
+      }>
+    ).rows;
+    if (r?.open) return 'OPEN_EVENT';
+    if (r?.recent) return 'RECENT_CONTACT';
+    const p = await subscriptionProtection(this.db, personId, now);
+    if (!p.protectionActive) return 'NOT_PROTECTED';
+    return null;
+  }
+
+  /** Kapasite: kuyrukta P1–P2 bekliyorken ya da kuyruktaki düzenli arama sayısı sınırdayken başlatma (dönemin
+   *  ikinci yarısına kadar; sonra yine başlat ki dönem boşa düşmesin). */
+  private async busy(c: typeof checkCall.$inferSelect, now: Date): Promise<boolean> {
+    const lateHalf = now.getTime() >= c.windowUntil.getTime() - (c.windowUntil.getTime() - c.dueAt.getTime()) / 2;
+    if (lateHalf) return false;
+    const [r] = (
+      (await this.db.execute(sql`
+        SELECT
+          (SELECT count(*) FROM event.event WHERE state = 'OPERATOR_QUEUE' AND priority <= 2 AND NOT is_test)::int AS urgent,
+          (SELECT count(*) FROM event.check_call k JOIN event.event e ON e.id = k.event_id
+            WHERE k.status = 'IN_PROGRESS' AND e.state = 'OPERATOR_QUEUE')::int AS queued`)) as unknown as Rows<{
+        urgent: number;
+        queued: number;
+      }>
+    ).rows;
+    return (r?.urgent ?? 0) > 0 || (r?.queued ?? 0) >= maxConcurrent();
+  }
+
+  private async finishAs(id: string, status: CheckStatus, outcome: string, now: Date): Promise<boolean> {
+    const r = await this.db
+      .update(checkCall)
+      .set({ status, outcome, completedAt: now })
+      .where(and(eq(checkCall.id, id), eq(checkCall.status, 'SCHEDULED')))
+      .returning({ id: checkCall.id });
+    return r.length > 0;
+  }
+
+  private async miss(
+    id: string,
+    reason: string,
+    now: Date,
+    operatorId?: string | null,
+    family = false,
+  ): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(checkCall).where(eq(checkCall.id, id)).for('update');
       if (!row || !OPEN.includes(row.status as CheckStatus)) return false;
@@ -274,7 +364,9 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
         this.envelope(TOPICS.supervisorAlert, row.protectedPersonId, alert, now),
         tx,
       );
-      await this.audit(tx, 'SYSTEM', null, 'wellness.missed', row.protectedPersonId, { check: id, reason });
+      // İki denemede de ulaşılamadı: aileye haber (yaşlıya ulaşamadık, siz de arayın).
+      if (family) await this.notify(tx, row.protectedPersonId, 'F-WELLNESS-MISSED', 'FAMILY', `wellness:${id}`, now);
+      await this.audit(tx, 'SYSTEM', null, 'wellness.missed', row.protectedPersonId, { check: id, reason, family });
       return true;
     });
   }
@@ -286,7 +378,24 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
     if (!row || !OPEN.includes(row.status as CheckStatus)) return;
     const at = ev.closedAt ? new Date(ev.closedAt) : new Date();
     if (ev.confirmedOutcome === 'UNREACHABLE') {
-      await this.miss(row.id, 'UNREACHABLE', at, ev.operatorId);
+      if (row.attempts < 1) {
+        // Ulaşılamadı: 30 dk sonra bir kez daha (yeni geri arama olayı); pencere yeniden denemeyi kapsayacak kadar uzar.
+        const retryAt = new Date(at.getTime() + RETRY_MIN * 60_000);
+        await this.db
+          .update(checkCall)
+          .set({
+            status: 'SCHEDULED',
+            attempts: row.attempts + 1,
+            dueAt: retryAt,
+            windowUntil: new Date(Math.max(row.windowUntil.getTime(), retryAt.getTime() + 60 * 60_000)),
+            eventId: null,
+            operatorId: ev.operatorId ?? null,
+            outcome: 'UNREACHABLE',
+          })
+          .where(and(eq(checkCall.id, row.id), inArray(checkCall.status, OPEN)));
+        return;
+      }
+      await this.miss(row.id, 'UNREACHABLE', at, ev.operatorId, true);
       this.outbox.notifyCommitted();
       return;
     }
@@ -342,6 +451,7 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
              count(*) FILTER (WHERE status = 'DONE_HELP')::int AS help,
              count(*) FILTER (WHERE status = 'NOTIFIED')::int AS notified,
              count(*) FILTER (WHERE status = 'MISSED')::int AS missed,
+             count(*) FILTER (WHERE status = 'SKIPPED')::int AS skipped,
              count(*) FILTER (WHERE status IN ('SCHEDULED', 'IN_PROGRESS'))::int AS pending
       FROM event.check_call
       WHERE due_at >= ${since} AND due_at <= ${now}
@@ -351,10 +461,12 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
       help: number;
       notified: number;
       missed: number;
+      skipped: number;
       pending: number;
     }>;
-    const x = r.rows[0] ?? { planned: 0, done: 0, help: 0, notified: 0, missed: 0, pending: 0 };
-    const closed = x.planned - x.pending;
+    const x = r.rows[0] ?? { planned: 0, done: 0, help: 0, notified: 0, missed: 0, skipped: 0, pending: 0 };
+    // Atlanan dönem (süren olay / yakın temas / koruma kapalı) paydaya girmez.
+    const closed = x.planned - x.pending - x.skipped;
     return {
       days,
       planned: x.planned,
@@ -362,6 +474,7 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
       help: x.help,
       notified: x.notified,
       missed: x.missed,
+      skipped: x.skipped,
       ratio: closed > 0 ? (x.done + x.help + x.notified) / closed : 1,
     };
   }

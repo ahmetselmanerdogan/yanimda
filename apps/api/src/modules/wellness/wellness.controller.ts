@@ -30,6 +30,19 @@ export class WellnessController {
     return this.wellness.setPlan(actorOf(req), id, body);
   }
 
+  /** GET /v1/protected-persons/{id}/checks — aile (üye okur): son 60 gün ve sıradaki dönemler; operatör / not yok. */
+  @Get('protected-persons/:id/checks')
+  @Roles('FAMILY', 'SUPERVISOR', 'ADMIN')
+  async familyChecks(@Param('id') id: string, @Req() req: UserRequest) {
+    await this.wellness.plan(actorOf(req), id); // yetki: aile üyesi okur, başkası 404
+    const rows = await this.wellness.checks({
+      personId: id,
+      from: new Date(Date.now() - 60 * 86_400_000),
+      to: new Date(Date.now() + 14 * 86_400_000),
+    });
+    return rows.map(({ operatorId: _o, eventId: _e, person: _p, ...r }) => r);
+  }
+
   @Get('wellness/checks')
   @Roles('OPERATOR', 'SUPERVISOR', 'ADMIN')
   checks(@Query('personId') personId?: string, @Query('status') status?: string, @Query('days') days?: string) {

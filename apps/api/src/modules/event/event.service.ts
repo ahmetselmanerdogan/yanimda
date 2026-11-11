@@ -59,6 +59,8 @@ interface EventSource {
   location?: Signal['location'];
   /** CREATED geçişinin notu (ör. T-071 eşik görüşmesi). */
   note?: string;
+  /** Açık olay varsa ekleme, açma (düzenli arama: süren olaya karışmasın). */
+  exclusive?: boolean;
 }
 
 /** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
@@ -427,8 +429,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    * T-071: kişiye "eşik görüşmesi" CALLBACK olayı (P4) açar. Aynı kaynak için bir kez; kişinin açık olayı varsa ona
    * eklenir. Yeni olay açıldıysa true.
    */
-  raiseCallback(protectedPersonId: string, sourceId: string, note: string): Promise<boolean> {
-    return this.create('CALLBACK', { protectedPersonId, sourceId, note });
+  raiseCallback(protectedPersonId: string, sourceId: string, note: string, exclusive = false): Promise<boolean> {
+    return this.create('CALLBACK', { protectedPersonId, sourceId, note, exclusive });
   }
 
   // ---- Taramalar ----
@@ -593,6 +595,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         // Outbox en az bir kez teslim eder: aynı kaynak ikinci kez olay açmasın.
         if (await this.repo.hasSource(tx, s.sourceId)) return;
         const open = await this.repo.findOpenForUpdate(tx, s.protectedPersonId);
+        if (open && s.exclusive) return;
         if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId);
 
         const now = new Date();

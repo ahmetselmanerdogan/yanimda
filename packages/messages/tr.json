@@ -288,6 +288,11 @@
     "text": "{name} {hospital} hastanesine ulaştı.",
     "action": "Olayı aç"
   },
+  "F-WELLNESS-MISSED": {
+    "channel": "family",
+    "text": "Bugünkü \"yanınızdayız\" aramamızda {name} ile iki denemede görüşemedik. Lütfen siz de arayın; endişe varsa uygulamadan bize ulaşın.",
+    "action": "Ara"
+  },
   "F-DAILY": {
     "channel": "family",
     "text": "Bugün iyi: {steps} adım, saat {wristHours} saat takılı."
@@ -990,6 +995,26 @@
   "O-UI-ADM-CHECK-SKIPPED": {
     "channel": "console",
     "text": "Atlandı"
+  },
+  "O-UI-ADM-SKIP-OPEN_EVENT": {
+    "channel": "console",
+    "text": "süren olay vardı"
+  },
+  "O-UI-ADM-SKIP-RECENT_CONTACT": {
+    "channel": "console",
+    "text": "son 6 saatte görüşüldü"
+  },
+  "O-UI-ADM-SKIP-NOT_PROTECTED": {
+    "channel": "console",
+    "text": "koruma kapalı"
+  },
+  "O-UI-ADM-MISS-WINDOW": {
+    "channel": "console",
+    "text": "süre doldu"
+  },
+  "O-UI-ADM-MISS-UNREACHABLE": {
+    "channel": "console",
+    "text": "iki denemede ulaşılamadı"
   },
   "O-UI-ADM-AUDIT-ACTION": {
     "channel": "console",
