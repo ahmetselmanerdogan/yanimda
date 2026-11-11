@@ -45,6 +45,8 @@ services:
       PORT: '3000'
       METRICS_PORT: '9464'
       OUTBOX_WORKER: ${API_OUTBOX_WORKER:-off}
+      # T-081: Caddy arkasında gerçek istemci IP'si (hız sınırı, IP başına anahtar).
+      TRUST_PROXY: '1'
     deploy:
       replicas: 2
       resources:

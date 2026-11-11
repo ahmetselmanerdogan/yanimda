@@ -10,10 +10,11 @@ import {
 } from '@nestjs/common';
 import { type EventState, TOPICS } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
-import { collectDefaultMetrics, Gauge, Histogram, Registry } from 'prom-client';
+import { collectDefaultMetrics, Counter, Gauge, Histogram, Registry } from 'prom-client';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
 import { safeError } from '../../common/safe-error';
+import { setSecurityEventSink } from '../../common/security-events';
 import { DB, type Db } from '../../db/client';
 import { EventService } from '../event/event.service';
 import { falseAlarmStats } from '../false-alarm/stats';
@@ -115,6 +116,13 @@ export class MetricsService implements OnModuleInit, OnApplicationBootstrap, OnA
         this.set((await falseAlarmStats(store, new Date(), 30, 3)).ratio);
       },
     });
+    const security = new Counter({
+      name: 'yanimda_security_events_total',
+      help: 'T-081: 400/401/403/422/429 güvenlik olayları (rota şablonu bazında)',
+      labelNames: ['status', 'route'],
+      registers,
+    });
+    setSecurityEventSink((e) => security.inc({ status: String(e.status), route: e.route }));
     collectDefaultMetrics({ register: this.registry, prefix: 'yanimda_api_' });
   }
 

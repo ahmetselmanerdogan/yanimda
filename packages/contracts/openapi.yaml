@@ -33,6 +33,7 @@ paths:
         ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '202':
           description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)
           content:
@@ -222,6 +223,7 @@ paths:
                 endpoint: { type: string, format: uri }
                 keys: { type: object, properties: { p256dh: { type: string }, auth: { type: string } } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: Kaydedildi }
         '400': { $ref: '#/components/responses/Problem' }
     delete:
@@ -558,6 +560,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, additionalProperties: { type: string } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
           content: { text/xml: { schema: { type: string } } }
@@ -592,6 +595,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, additionalProperties: { type: string } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
           content: { text/xml: { schema: { type: string } } }
@@ -699,6 +703,7 @@ paths:
                 Confidence: { type: string }
               additionalProperties: { type: string }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
           content: { text/xml: { schema: { type: string } } }
@@ -964,7 +969,7 @@ paths:
           }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
-        '429': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /protected-persons/{id}/test-sos/{eventId}:
     get:
       summary: Test ilerlemesi ve operatör notu. C-05, T-063
@@ -1109,6 +1114,7 @@ paths:
                 MessageStatus: { enum: [queued, sent, delivered, undelivered, failed] }
                 ErrorCode: { type: string }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: TwiML, content: { text/xml: { schema: { type: string } } } }
         '403': { $ref: '#/components/responses/Problem' }
   /supervisor/dashboard:
@@ -1372,6 +1378,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '201':
           description: Kod
           content:
@@ -1536,6 +1543,7 @@ paths:
       security: [{ deviceToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { $ref: '#/components/responses/DeviceToken' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1846,7 +1854,7 @@ paths:
                   devCode: { type: string, description: 'Yalnız geliştirmede, sahte SMS sağlayıcısıyla' }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
-        '429': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Problem' }
   /signup/{id}/phone/code:
     post:
@@ -1872,6 +1880,7 @@ paths:
           application/json:
             schema: { type: object, required: [code], properties: { code: { type: string, pattern: '^\d{6}$' } } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: Doğrulandı }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1913,6 +1922,7 @@ paths:
       security: []
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: Alındı
           content:
@@ -1936,6 +1946,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, required: [token], properties: { token: { type: string } } }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '303': { description: Web'e yönlendirme }
         '400': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
@@ -2038,6 +2049,21 @@ components:
       schema: { type: string, format: uuid }
     CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
+    TooManyRequests:
+      description: >-
+        T-081 hız sınırı aşıldı (Redis sabit pencere; uç başına kimlik: kullanıcı, cihaz, kişi veya IP).
+        `Retry-After` kadar bekleyip yeniden deneyin. Alarm içeren sinyal partileri (SOS, FALL, INACTIVITY,
+        CANCEL, OK, CALLBACK_REQUEST) hiç sınırlanmaz.
+      headers:
+        Retry-After:
+          description: Saniye
+          schema: { type: integer, minimum: 1 }
+        X-Request-Id:
+          description: Korelasyon kimliği (her yanıtta; geçerli gelen değer korunur)
+          schema: { type: string }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     Subscription:
       description: Abonelik
       content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } }

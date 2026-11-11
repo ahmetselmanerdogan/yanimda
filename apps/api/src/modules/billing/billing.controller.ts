@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import type { Actor } from '../profile/contacts';
 import { ProfileGuard } from '../profile/profile.controller';
 import { BillingService } from './billing.service';
@@ -44,17 +45,20 @@ export class BillingController {
 
   /** POST /v1/signup — adım 2 hesap: Keycloak consumers hesabı + kişi + TRIAL abonelik. */
   @Post('signup')
+  @RateLimit({ name: 'signup', limit: 10, windowSec: 3600, by: 'ip' })
   signup(@Body() body: unknown, @Req() req: RawRequest) {
     return this.billing.signup(body, req.ip);
   }
 
   @Post('signup/:id/phone/code')
+  @RateLimit({ name: 'signup-sms', limit: 5, windowSec: 3600, by: 'param:id' })
   @HttpCode(200)
   resend(@Param('id') id: string, @Headers('x-signup-token') token?: string) {
     return this.billing.resendPhoneCode(id, token);
   }
 
   @Post('signup/:id/phone/verify')
+  @RateLimit({ name: 'signup-verify', limit: 10, windowSec: 3600, by: 'param:id' })
   @HttpCode(200)
   verify(@Param('id') id: string, @Body() body: unknown, @Headers('x-signup-token') token?: string) {
     return this.billing.verifyPhone(id, token, body);
@@ -74,6 +78,7 @@ export class BillingController {
 
   /** POST /v1/webhooks/payments — iyzico (X-IYZ-SIGNATURE-V3), Stripe (Stripe-Signature), sahte (X-Fake-Signature). */
   @Post('webhooks/payments')
+  @RateLimit(WEBHOOK_LIMIT)
   @HttpCode(200)
   webhook(@Req() req: RawRequest) {
     const raw = req.rawBody ?? Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {}));
@@ -82,6 +87,7 @@ export class BillingController {
 
   /** iyzico tarayıcı dönüşü (form POST, token) → web adım 3'e 303. */
   @Post('payments/iyzico/callback')
+  @RateLimit(WEBHOOK_LIMIT)
   async iyzicoCallback(@Body() body: { token?: unknown } | undefined, @Res() res: Redirectable) {
     res.redirect(303, await this.billing.iyzicoCallback(body?.token));
   }
