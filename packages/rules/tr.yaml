@@ -24,7 +24,7 @@ ladder:
   unclaimedSupervisorSec: 90
   unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: V-NO-OPERATOR }
   awayFromHomeM: 200
-  operatorPrompt: { windowSec: 60, tts: W-INACT-1 }
+  operatorPrompt: { windowSec: 60, tts: W-OP-PROMPT }
 # docs/07 S3.3–S3.7 (T-088) sinyal birleştirme. İki farklı cihaz corroborateSec içinde düşme bildirirse olay
 # doğrulanmış: soru süresi corroboratedPromptSec; doğrulanmış düşme başka cihazdan iptal edilirse aynı gün takip
 # araması (crossCancelFollowUp, followUpMin sonra). Açık P1/P2'de konum: gpsFreshSec'ten yeni GPS önce.
