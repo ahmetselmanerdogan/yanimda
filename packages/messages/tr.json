@@ -3708,5 +3708,82 @@
   "O-UI-SUP-COVERAGE-TOTAL": {
     "channel": "console",
     "text": "Toplam {n} kişi"
+  },
+  "O-OEM-LATENCY": {
+    "channel": "console",
+    "text": "Ortak cihaz merkezinin gecikmesi son 1 saatte 60 sn'yi aştı (p99). Bu ortağın cihazları kapsamada zayıf sayılıyor; ortağın 7/24 hattını arayın."
+  },
+  "O-TYPE-PARTNER": {
+    "channel": "console",
+    "text": "Ortak cihaz"
+  },
+  "O-UI-GAP-NOT_WORN": {
+    "channel": "console",
+    "text": "Kolye günlerdir takılmadı (üretici bildirimi)"
+  },
+  "O-UI-COVERAGE-REASON-PARTNER_LATENCY": {
+    "channel": "console",
+    "text": "Ortak merkezi gecikmeli (zayıf)"
+  },
+  "O-UI-COVERAGE-REASON-HOME_UNIT_POWER_LOSS": {
+    "channel": "console",
+    "text": "Ev ünitesinin elektriği kesik"
+  },
+  "O-UI-COVERAGE-REASON-LINE_LOSS": {
+    "channel": "console",
+    "text": "Kolye veya ev ünitesi hattı düştü"
+  },
+  "O-UI-SUP-PARTNERS": {
+    "channel": "console",
+    "text": "Ortak gecikmesi (son 1 saat)"
+  },
+  "O-UI-SUP-PARTNER-ROW": {
+    "channel": "console",
+    "text": "{partner}: p95 {p95} sn, p99 {p99} sn ({n} olay)"
+  },
+  "O-UI-SUP-PARTNER-NODATA": {
+    "channel": "console",
+    "text": "{partner}: son 1 saatte olay yok"
+  },
+  "O-UI-SUP-PARTNER-DEGRADED": {
+    "channel": "console",
+    "text": "Zayıf"
+  },
+  "O-UI-SUP-WORK-ORDERS": {
+    "channel": "console",
+    "text": "Kolye pili iş emirleri"
+  },
+  "O-UI-SUP-WORK-ORDERS-NONE": {
+    "channel": "console",
+    "text": "Açık iş emri yok"
+  },
+  "O-UI-SUP-WORK-ORDER-ROW": {
+    "channel": "console",
+    "text": "Pil %{pct} · son tarih {due}"
+  },
+  "O-UI-SUP-WORK-ORDER-DONE": {
+    "channel": "console",
+    "text": "Pil değiştirildi olarak işaretle",
+    "action": "Değiştirildi"
+  },
+  "O-UI-WO-LOW_BATTERY": {
+    "channel": "console",
+    "text": "Pil %20'nin altında"
+  },
+  "O-UI-WO-PREDICTED_END": {
+    "channel": "console",
+    "text": "Tahmini bitime 30 günden az"
+  },
+  "F-PENDANT-BATTERY": {
+    "channel": "family",
+    "text": "{name}'ın kolye pili azalıyor (%{pct}). Ekibimiz {days} gün içinde pili evde değiştirecek; sizin bir şey yapmanız gerekmiyor."
+  },
+  "F-PENDANT-TEST": {
+    "channel": "family",
+    "text": "{name}'ın kolyesi bu ay denenmedi. Kolyedeki düğmeye bir kez basmasını hatırlatır mısınız? Merkezimiz arayıp doğrulayacak."
+  },
+  "P-PENDANT-TEST": {
+    "channel": "phone",
+    "text": "Kolyenizi bu ay denemediniz. Düğmesine bir kez basın; merkezimiz sizi arayıp doğrulayacak."
   }
 }
