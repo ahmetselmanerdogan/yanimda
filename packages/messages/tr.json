@@ -459,6 +459,10 @@
     "channel": "console",
     "text": "Acil olay 112 aranmadan kapatıldı ({type}). Gerekçeyi kontrol edin."
   },
+  "O-CLOSE-UNREACHABLE-NO-112": {
+    "channel": "console",
+    "text": "Ulaşılamayan {type} olayı 112 aranmadan kapatıldı. Kişiye ulaşıldığını veya 112'nin gerekmediğini doğrulayın."
+  },
   "O-WELLNESS-MISSED": {
     "channel": "console",
     "text": "Düzenli \"yanınızdayız\" araması yapılamadı ({type}). Kişiyi arayın ya da nedenini girin."
@@ -509,6 +513,10 @@
   "O-UI-NEW-EVENT": {
     "channel": "console",
     "text": "Yeni olay: {type}"
+  },
+  "O-UI-NEW-ALARM": {
+    "channel": "console",
+    "text": "Açık olaya yeni alarm: {type}"
   },
   "O-UI-NO-SELECTION": {
     "channel": "console",

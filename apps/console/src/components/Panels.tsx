@@ -224,8 +224,11 @@ export function ClosePanel(p: {
   allowed: CloseOutcome[];
   initialNote: string;
   busy: boolean;
-  /** Acil teyitli ama 112 adımı ulaşılmadı: "112 zincir dışında arandı" sorulur (aranmadıysa DISPATCH yok). */
-  ask112?: boolean;
+  /**
+   * Bu sonuçlarda "112 zincir dışında arandı" sorulur (aranmadıysa DISPATCH yok, amire uyarı): 112 adımı ulaşılmamış
+   * acil kapanış ve ulaşılamayan SOS / düşme (denetim bulgu 4–5).
+   */
+  ask112For?: CloseOutcome[];
   onSubmit(outcome: CloseOutcome, note: string, followUpAfterHours?: number, notified112?: boolean): void;
   onCancel(): void;
 }) {
@@ -254,7 +257,7 @@ export function ClosePanel(p: {
               outcome,
               note.trim(),
               plan ? hours : undefined,
-              p.ask112 && outcome === 'EMERGENCY' ? notified112 : undefined,
+              outcome && p.ask112For?.includes(outcome) ? notified112 : undefined,
             );
         }}
       >
@@ -290,7 +293,7 @@ export function ClosePanel(p: {
           )}
         </div>
         {forced && <p className="muted small">{t('O-UI-FOLLOWUP-REQUIRED')}</p>}
-        {p.ask112 && outcome === 'EMERGENCY' && (
+        {outcome && p.ask112For?.includes(outcome) && (
           <label className="radio">
             <input type="checkbox" checked={notified112} onChange={(e) => setNotified112(e.target.checked)} />
             {t('O-UI-CLOSE-NOTIFIED-112')}

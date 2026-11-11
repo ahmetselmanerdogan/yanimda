@@ -79,6 +79,8 @@ interface Uow {
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
 /** Gerçek alarm türleri: alarm olmayan açık olaya gelirse olayı yükseltir (attachToOpen). */
 const ALARM_TYPES = new Set<EventType>(['SOS', 'FALL', 'INACTIVITY']);
+/** Operatör kararını vermiş, yalnız kapatılmayı bekleyen durumlar: yeni gerçek alarm bunlara eklenmez, yeni olay açar. */
+const SUPERSEDABLE = new Set<EventState>(['CONFIRMED_OK', 'CANCELLED_BY_USER']);
 const WAIT_TIMERS: TimerKind[] = [
   'prompt-expire',
   'silent-ask-expire',
@@ -596,11 +598,28 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         if (await this.repo.hasSource(tx, s.sourceId)) return;
         const open = await this.repo.findOpenForUpdate(tx, s.protectedPersonId);
         if (open && s.exclusive) return;
-        if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId);
+        // Denetim bulgu 1: "iyi" teyit edilmiş (kapatılmayı bekleyen) olay yeni gerçek alarmı yutmaz — sistem eski olayı
+        // kapatır, alarm yeni olay olarak kendi akışına girer (SOS kuyruğa P1, 112 yolu açık).
+        let superseded: Uow | undefined;
+        if (open && ALARM_TYPES.has(type) && SUPERSEDABLE.has(open.state)) {
+          superseded = this.uow(tx, open, after);
+          superseded.ev.lockUntil = undefined;
+          this.close(superseded, 'OK', `yeni ${type} alarmı geldi; yeni olay açıldı`, 'SYSTEM');
+          await this.flush(superseded);
+          const id = superseded.ev.id;
+          superseded.after.push(() => this.cancelWaitTimers(id));
+        } else if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId);
 
         const now = new Date();
         const u = this.uow(tx, this.newRecord(type, rule, s, now), after, true);
         u.publishes.push({ topic: TOPICS.eventCreated, payload: u.ev });
+        if (superseded)
+          await this.repo.insertAudit(tx, {
+            actorKind: 'SYSTEM',
+            action: 'event.superseded',
+            entityId: superseded.ev.id,
+            data: { by: u.ev.id, alarm: type, sourceId: s.sourceId },
+          });
         this.transition(u, 'CREATED', 'SYSTEM', undefined, s.note);
         if (rule.devicePrompt?.enabled) {
           // T-061 (C-09): düşme sorusunun süresi aile ayarıyla (30–90 sn) değişebilir.
@@ -649,7 +668,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   private async attachToOpen(u: Uow, type: EventType, sourceId: string) {
     u.ev.sourceSignalIds.push(sourceId);
     u.dirty = true;
-    const upgrade = ALARM_TYPES.has(type) && !ALARM_TYPES.has(u.ev.type);
+    // Alarm olmayan olay her gerçek alarma; hareketsizlik (en hafif alarm) düşme / SOS'a yükseltilir (denetim bulgu 2:
+    // düşme hareketsizlik sorusunda P2 kalıp ses ön elemesine gitmesin).
+    const upgrade =
+      ALARM_TYPES.has(type) && (!ALARM_TYPES.has(u.ev.type) || (u.ev.type === 'INACTIVITY' && type !== 'INACTIVITY'));
     const rule = ruleFor(this.pack, type);
     const to = upgrade ? Math.min(u.ev.priority, rule?.priority ?? 1) : type === 'SOS' ? 1 : u.ev.priority;
     if (to < u.ev.priority) {
@@ -670,6 +692,12 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       this.escalate(u, `${type} geldi`);
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
     } else if (upgrade && u.ev.state === 'CREATED') this.escalate(u, `${type} geldi`);
+    else if (ALARM_TYPES.has(type) && !upgrade && OPERATOR_STATES.has(u.ev.state))
+      // Denetim bulgu 9: operatördeki olaya yeni alarm — olay aynı, konsol uyarır (ses + vurgu).
+      u.publishes.push({
+        topic: TOPICS.eventUpdated,
+        payload: { eventId: u.ev.id, priority: u.ev.priority, reason: 'NEW_ALARM', alarm: type, sourceId },
+      });
     this.log.log(`Açık olaya ${type} kaynağı eklendi (olay=${u.ev.id}${upgrade ? ', yükseltildi' : ''})`);
     await this.flush(u);
   }
@@ -864,10 +892,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       throw new BadRequestException(`Takip 1–${MAX_FOLLOW_UP_HOURS} saat arası olmalı`);
     const op = (to: EventState, n?: string) => this.transition(u, to, 'OPERATOR', operatorId, n);
     const emergency = outcome === 'EMERGENCY';
+    // Denetim bulgu 4: ulaşılamayan gerçek SOS / düşme. 112 arandıysa acil yolu (DISPATCH, ambulans takibi); aranmadıysa
+    // kapanır ama audit + amir uyarısı (sessiz kapanış olmasın).
+    const unreachableAlarm = outcome === 'UNREACHABLE' && !u.ev.isTest && (u.ev.type === 'SOS' || u.ev.type === 'FALL');
     switch (u.ev.state) {
       case 'OPERATOR_ASSIGNED':
       case 'CONTACT_CHAIN':
         if (emergency) op('CONFIRMED_EMERGENCY', note);
+        else if (unreachableAlarm && notified112) op('CONFIRMED_EMERGENCY', 'ulaşılamadı; 112 arandı');
         else if (outcome === 'UNREACHABLE') {
           if (u.ev.state === 'OPERATOR_ASSIGNED') op('CONTACT_CHAIN');
         } else op('CONFIRMED_OK', note);
@@ -903,6 +935,23 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           u.publishes.push({ topic: TOPICS.supervisorAlert, payload: alert });
         }
       }
+    }
+    if (unreachableAlarm && !notified112) {
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'OPERATOR',
+        actorId: operatorId,
+        action: 'event.closed_without_112',
+        entityId: u.ev.id,
+        data: { type: u.ev.type, outcome },
+      });
+      const alert: SupervisorAlert = {
+        code: 'O-CLOSE-UNREACHABLE-NO-112',
+        eventId: u.ev.id,
+        eventType: u.ev.type,
+        operatorId,
+        at: new Date().toISOString(),
+      };
+      u.publishes.push({ topic: TOPICS.supervisorAlert, payload: alert });
     }
     u.ev.lockUntil = undefined;
     this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
