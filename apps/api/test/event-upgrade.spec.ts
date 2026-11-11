@@ -87,7 +87,10 @@ describe('alarm olmayan açık olaya gerçek alarm → yükseltme', () => {
       'CALL_PHONE=SKIPPED(upgraded)',
       'CALL_WATCH',
       'CALL_PHONE',
+      'CALL_REDIAL',
       'CALL_CONTACT',
+      'CALL_CONTACT',
+      'CALL_KEY_HOLDER',
       'CALL_112',
     ]);
     expect(after.chain!.current).toBe(3);

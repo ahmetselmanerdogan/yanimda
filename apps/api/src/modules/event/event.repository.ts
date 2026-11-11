@@ -36,6 +36,12 @@ export interface EventRecord {
   isTest: boolean;
   /** D-04 operatör kilidi bitişi (T-021). */
   lockUntil?: string;
+  /** T-088 (docs/07 S3.3, S8.2): olayı bildiren farklı cihazlar (ilk eleman alarmı açan). */
+  sourceDeviceIds: string[];
+  /** İki farklı cihaz pencere içinde düşme bildirdi. */
+  corroboratedAt?: string;
+  /** Cihaz sorusunu "iyiyim" ile kapatan cihaz. */
+  cancelledByDeviceId?: string;
   transitions: TransitionRecord[];
 }
 
@@ -122,6 +128,9 @@ function toRecord(r: EventRow, transitions: TransitionRecord[] = []): EventRecor
     sourceSignalIds: r.sourceSignalIds,
     isTest: r.isTest,
     lockUntil: iso(r.lockUntil),
+    sourceDeviceIds: r.sourceDeviceIds,
+    corroboratedAt: iso(r.corroboratedAt),
+    cancelledByDeviceId: r.cancelledByDeviceId ?? undefined,
     transitions,
   };
 }
@@ -143,6 +152,9 @@ function toRow(e: EventRecord) {
     sourceSignalIds: e.sourceSignalIds,
     isTest: e.isTest,
     lockUntil: date(e.lockUntil),
+    sourceDeviceIds: e.sourceDeviceIds,
+    corroboratedAt: date(e.corroboratedAt),
+    cancelledByDeviceId: e.cancelledByDeviceId ?? null,
   };
 }
 
@@ -328,6 +340,16 @@ export class EventRepository {
       lastSeenAt: new Date(x.last_seen_at),
       batteryPct: x.battery_pct,
     }));
+  }
+
+  /**
+   * T-088 (S3.6): cihaz takılı mı (son bilinen durum). Bilinmiyorsa null. Yalnız iptalin hangi cihazdan kabul
+   * edileceği için okunur (salt okuma; cihaz modülü T-085'te kategoriyle birlikte servis olarak sunar).
+   */
+  async deviceWorn(q: Q, deviceId: string): Promise<boolean | null> {
+    if (!isUuid(deviceId)) return null;
+    const [r] = await q.select({ onWrist: device.onWrist }).from(device).where(eq(device.id, deviceId));
+    return r?.onWrist ?? null;
   }
 
   /** Operatör kilidi `now`'dan önce dolmuş olaylar (T-021). */

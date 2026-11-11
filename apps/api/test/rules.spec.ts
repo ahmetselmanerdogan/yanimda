@@ -18,6 +18,8 @@ import { createHarness, type Harness, sig } from './support/harness';
 let h: Harness;
 let dir: string;
 const file = () => join(dir, 'tr.yaml');
+/** Depodaki paketin sürümü (testler buna göre artırır). */
+const BASE = (YAML.parse(readFileSync(join(RULES_DIR, 'tr.yaml'), 'utf8')) as { version: number }).version;
 const edit = (fn: (doc: Record<string, unknown>) => void) => {
   const doc = YAML.parse(readFileSync(file(), 'utf8'));
   fn(doc);
@@ -50,14 +52,14 @@ describe('RulesService', () => {
   it('açılışta paketi doğrular ve sürümüyle kaydeder', async () => {
     const rules = new RulesService(h.db, { dir });
     await rules.init();
-    expect(rules.current()).toMatchObject({ country: 'TR', version: 1 });
-    expect(await templates()).toEqual([{ country: 'TR', version: 1, checksum: expect.any(String) }]);
+    expect(rules.current()).toMatchObject({ country: 'TR', version: BASE });
+    expect(await templates()).toEqual([{ country: 'TR', version: BASE, checksum: expect.any(String) }]);
   });
 
   it('aynı içerik yeniden yüklenirse değişiklik yok', async () => {
     const rules = new RulesService(h.db, { dir });
     await rules.init();
-    expect(await rules.reload()).toMatchObject({ version: 1, changed: false });
+    expect(await rules.reload()).toMatchObject({ version: BASE, changed: false });
     expect(await templates()).toHaveLength(1);
   });
 
@@ -71,9 +73,9 @@ describe('RulesService', () => {
 
   it('daha düşük sürüm reddedilir (409)', async () => {
     const rules = new RulesService(h.db, { dir });
-    edit((doc) => (doc.version = 3));
+    edit((doc) => (doc.version = BASE + 2));
     await rules.init();
-    edit((doc) => (doc.version = 2));
+    edit((doc) => (doc.version = BASE + 1));
     await expect(rules.reload()).rejects.toMatchObject({ status: 409 });
   });
 
@@ -81,11 +83,11 @@ describe('RulesService', () => {
     const rules = new RulesService(h.db, { dir });
     await rules.init();
     edit((doc) => {
-      doc.version = 2;
+      doc.version = BASE + 1;
       (doc.rules as { priority: number }[])[0].priority = 9;
     });
     await expect(rules.reload()).rejects.toMatchObject({ status: 400 });
-    expect(rules.current().version).toBe(1);
+    expect(rules.current().version).toBe(BASE);
     expect(await templates()).toHaveLength(1);
   });
 
@@ -93,7 +95,7 @@ describe('RulesService', () => {
     const rules = new RulesService(h.db, { dir });
     await rules.init();
     edit((doc) => {
-      doc.version = 2;
+      doc.version = BASE + 1;
       (doc.rules as { type: string; devicePrompt?: { tts?: string } }[]).find(
         (r) => r.type === 'FALL',
       )!.devicePrompt!.tts = 'W-YOK-1';
@@ -107,13 +109,13 @@ describe('RulesService', () => {
     await a.init();
     await b.init();
     edit((doc) => {
-      doc.version = 2;
+      doc.version = BASE + 1;
       fallWindow(doc, 30);
     });
     await a.reload();
-    expect(b.current().version).toBe(1);
+    expect(b.current().version).toBe(BASE);
     expect(await b.refresh()).toBe(true);
-    expect(b.current().version).toBe(2);
+    expect(b.current().version).toBe(BASE + 1);
   });
 });
 
@@ -128,10 +130,10 @@ describe('Sıcak yükleme → yeni pencere süresi uygulanır (kabul)', () => {
 
     await deliver(sig('FALL', { protectedPersonId: 'pp-1' }));
     edit((doc) => {
-      doc.version = 2;
+      doc.version = BASE + 1;
       fallWindow(doc, 30);
     });
-    expect(await rules.reload()).toMatchObject({ version: 2, changed: true });
+    expect(await rules.reload()).toMatchObject({ version: BASE + 1, changed: true });
     await deliver(sig('FALL', { protectedPersonId: 'pp-2' }));
 
     const all = await events.all();

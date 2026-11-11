@@ -54,12 +54,37 @@ export interface OfficialNumbers {
   social: string;
   health: string;
 }
+/** docs/07 S5 (T-087) ulaşılamama merdiveni. */
+export interface LadderParams {
+  /** Aramadan önce: cihaz son bu kadar dakikada görülmediyse adım OFFLINE_SKIPPED. */
+  offlineSkipMin: number;
+  /** P1 sesli cihaz otomatik cevap süresi (sn); yanınızdayız aramasında asla. */
+  autoAnswerSec: number;
+  /** Kuyrukta üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED). */
+  unclaimedSupervisorSec: number;
+  /** S5.3 (sahip kararı): üstlenilmeyen P1'de 1. yakına sesli mesaj. Varsayılan kapalı. */
+  unclaimedVoiceContact: { enabled: boolean; afterSec: number; phrase: string };
+  /** S5.5: evden bu kadar uzaktaysa komşu ve anahtar sahibi atlanır. */
+  awayFromHomeM: number;
+}
+/** docs/07 S3.3–S3.7 (T-088) sinyal birleştirme. */
+export interface FusionParams {
+  corroborateSec: number;
+  corroboratedPromptSec: number;
+  crossCancelFollowUp: boolean;
+  crossCancelFollowUpMin: number;
+  gpsFreshSec: number;
+}
 export interface RulePack {
   country: string;
   version: number;
   learning?: LearningParams;
   falseAlarm?: FalseAlarmParams;
   numbers?: OfficialNumbers;
+  /** T-087: kuyruğa düşüşten 112 son sınırı (sn), olay türüne göre. */
+  call112DeadlineSec?: Partial<Record<EventType, number>>;
+  ladder?: Partial<LadderParams>;
+  fusion?: Partial<FusionParams>;
   rules: Rule[];
 }
 
@@ -70,6 +95,25 @@ export const learningOf = (pack: RulePack): LearningParams => pack.learning ?? D
 export const falseAlarmOf = (pack: RulePack): FalseAlarmParams => pack.falseAlarm ?? DEFAULT_FALSE_ALARM;
 export const DEFAULT_NUMBERS: OfficialNumbers = { emergency: '112', social: '183', health: '182' };
 export const numbersOf = (pack: RulePack): OfficialNumbers => pack.numbers ?? DEFAULT_NUMBERS;
+export const DEFAULT_LADDER: LadderParams = {
+  offlineSkipMin: 15,
+  autoAnswerSec: 10,
+  unclaimedSupervisorSec: 90,
+  unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
+  awayFromHomeM: 200,
+};
+export const DEFAULT_FUSION: FusionParams = {
+  corroborateSec: 90,
+  corroboratedPromptSec: 30,
+  crossCancelFollowUp: true,
+  crossCancelFollowUpMin: 60,
+  gpsFreshSec: 120,
+};
+export const ladderOf = (pack: RulePack): LadderParams => ({ ...DEFAULT_LADDER, ...pack.ladder });
+export const fusionOf = (pack: RulePack): FusionParams => ({ ...DEFAULT_FUSION, ...pack.fusion });
+/** T-087: olayın 112 son sınırı (sn); türün sınırı yoksa null. */
+export const call112DeadlineSecOf = (pack: RulePack, type: EventType): number | null =>
+  pack.call112DeadlineSec?.[type] ?? null;
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {

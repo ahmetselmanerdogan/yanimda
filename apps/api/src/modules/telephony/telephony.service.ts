@@ -19,8 +19,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, call, contact, event } from '../../db/schema';
-import { type ContactInput, type ContactRole, replaceContacts } from '../profile/contacts';
+import { auditLog, call, contact, event, protectedPerson } from '../../db/schema';
+import { type ContactInput, type ContactRole, pickKeyHolder, replaceContacts } from '../profile/contacts';
 import { conferenceTwiml, type CpaasProvider, EMPTY_TWIML, sayTwiml, type WebhookUrls } from './cpaas';
 import type { RecordingStore } from './recording-store';
 import { clientIdentity, twilioVoiceToken, voiceConfigFromEnv } from './voice-token';
@@ -414,7 +414,21 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
     return replaceContacts(this.db, personId, input, { kind: 'ADMIN' });
   }
 
-  private async contactFor(q: Db | Tx, personId: string, step: ChainStep) {
+  private async contactFor(
+    q: Db | Tx,
+    personId: string,
+    step: ChainStep,
+    voice?: 'WATCH' | 'ELDER_PHONE',
+  ): Promise<typeof contact.$inferSelect | null> {
+    if (step.target === 'KEY_HOLDER') return this.keyHolderFor(q, personId);
+    if (step.target === 'VOICE_DEVICE') {
+      // T-087 en iyi cihaza yeniden: merdivenin seçtiği sesli hedef; yoksa saat, o da yoksa telefon.
+      for (const target of voice ? [voice] : (['WATCH', 'ELDER_PHONE'] as const)) {
+        const c = await this.contactFor(q, personId, { ...step, target, contactIndex: undefined });
+        if (c) return c;
+      }
+      return null;
+    }
     const role = ROLE_OF[step.target];
     if (!role) return null;
     const [c] = await q
@@ -431,6 +445,19 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
     return c ?? null;
   }
 
+  /** T-087 (S5.6): anahtarı olan, şu an ulaşılabilir, eve en çabuk varan yakın/komşu. */
+  private async keyHolderFor(q: Db | Tx, personId: string) {
+    const rows = await q
+      .select()
+      .from(contact)
+      .where(and(eq(contact.protectedPersonId, personId), eq(contact.hasKey, true)));
+    if (!rows.length) return null;
+    const [p] = /^[0-9a-f-]{36}$/i.test(personId)
+      ? await q.select({ tz: protectedPerson.timezone }).from(protectedPerson).where(eq(protectedPerson.id, personId))
+      : [];
+    return pickKeyHolder(rows, new Date(), p?.tz ?? 'Europe/Istanbul');
+  }
+
   // ---- arama ----
 
   /**
@@ -439,10 +466,10 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
    */
   async prepare(
     tx: Tx,
-    p: { eventId: string; personId: string; step: ChainStep; operatorId: string },
+    p: { eventId: string; personId: string; step: ChainStep; operatorId: string; voice?: 'WATCH' | 'ELDER_PHONE' },
   ): Promise<{ callId: string; fresh: boolean } | null> {
     if (!this.provider) return null;
-    const c = await this.contactFor(tx, p.personId, p.step);
+    const c = await this.contactFor(tx, p.personId, p.step, p.voice);
     if (!c) return null;
     const [last] = await tx
       .select()

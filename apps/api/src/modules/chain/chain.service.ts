@@ -2,19 +2,40 @@ import { BadRequestException, ConflictException, Inject, Injectable, Optional } 
 import {
   type ChainStep,
   type ChainView,
+  type LadderView,
   STEP_RESULTS,
   type StepAssessment,
   type StepResult,
   TOPICS,
 } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
+import { contact } from '../../db/schema';
+import { DeviceService } from '../device/device.service';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
+import {
+  call112DeadlineSecOf,
+  ladderOf,
+  loadRulePack,
+  RULES,
+  type RulesProvider,
+  staticRules,
+} from '../event/rules.loader';
+import { pickKeyHolder } from '../profile/contacts';
 import { type EventPersonCard, ProfileService } from '../profile/profile.service';
 import { type CallView, TelephonyService } from '../telephony/telephony.service';
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
+import {
+  autoSkip,
+  bestVoiceTarget,
+  call112Deadline,
+  distanceM,
+  isDeviceStep,
+  type LadderContext,
+  orderForCorroboration,
+} from './ladder';
 import { buildSteps, loadProcedures, type ProcedurePack, stepOf } from './procedures';
 
 export const PROCEDURES = Symbol('PROCEDURES');
@@ -38,7 +59,18 @@ export interface EventWithChain {
   chain: ChainView | null;
   /** T-050 CPaaS aramaları (numarasız özet). */
   calls: CallView[];
+  /** T-087/T-088: 112 son sınırı, doğrulama ("2 cihaz"), olası acil durum, Apple akışı. */
+  ladder: LadderView;
 }
+
+/** Merdiven için kişi bilgisi (numara ve tıbbi veri yok). */
+interface PersonFacts {
+  impaired: boolean;
+  home: { lat: number; lng: number } | null;
+  timezone: string;
+  keyHolders: { hasKey: boolean; arrivalMin: number | null; reachableHours: string | null }[];
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const NOTE_MAX = 2000;
 const REASON_MAX = 500;
@@ -64,6 +96,8 @@ const text = (v: unknown, max: number, field: string): string | undefined => {
 export class ChainService {
   private readonly repo: ChainRepository;
   private readonly proc: ProcedurePack;
+  private readonly rules: RulesProvider;
+  private readonly devices: DeviceService;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -71,22 +105,38 @@ export class ChainService {
     @Optional() @Inject(PROCEDURES) proc?: ProcedurePack,
     @Optional() @Inject(TelephonyService) private readonly telephony?: TelephonyService,
     @Optional() @Inject(ProfileService) private readonly profile?: ProfileService,
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+    @Optional() @Inject(DeviceService) devices?: DeviceService,
   ) {
     this.repo = new ChainRepository(db);
     this.proc = proc ?? loadProcedures();
+    this.rules = rules ?? staticRules(loadRulePack());
+    this.devices = devices ?? new DeviceService(db);
   }
 
   async get(id: string): Promise<EventWithChain> {
     const event = await this.events.get(id);
     const run = await this.repo.run(id);
-    return { event, chain: run ? view(run) : null, calls: (await this.telephony?.callsFor(id)) ?? [] };
+    return {
+      event,
+      chain: run ? view(run) : null,
+      calls: (await this.telephony?.callsFor(id)) ?? [],
+      ladder: await this.ladderView(this.db, event, run),
+    };
   }
 
+  /** Üstlenme: zincir oluşur; çevrimdışı / uygulanamaz ilk adımlar sistemce atlanır (T-087). */
   claim(id: string, operatorId: string, now?: Date): Promise<EventWithChain> {
-    return this.events.operate(id, operatorId, async (c) => this.result(c, await this.ensureRun(c)), {
-      claim: true,
-      now,
-    });
+    return this.events.operate(
+      id,
+      operatorId,
+      async (c) => {
+        const run = await this.ensureRun(c);
+        await this.advance(c, run);
+        return this.result(c, run);
+      },
+      { claim: true, now },
+    );
   }
 
   /** Operatör kilidini uzatır (konsol açıkken periyodik). */
@@ -112,11 +162,17 @@ export class ChainService {
           await this.repo.updateStep(c.tx, run.id, step);
         }
         if (c.ev.state === 'OPERATOR_ASSIGNED') c.transition('CONTACT_CHAIN');
+        // T-087: "en iyi cihaza yeniden" — doğrulayan veya en son görülen çevrimiçi sesli cihaz.
+        const voice =
+          step.target === 'VOICE_DEVICE' && this.telephony?.enabled
+            ? bestVoiceTarget(await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
+            : undefined;
         const p = await this.telephony?.prepare(c.tx, {
           eventId: c.ev.id,
           personId: c.ev.protectedPersonId,
           step,
           operatorId,
+          ...(voice ? { voice } : {}),
         });
         if (p) plan = { ...p, timeoutSec: step.timeoutSec };
         return this.result(c, run);
@@ -154,6 +210,9 @@ export class ChainService {
       async (c) => {
         const run = await this.ensureRun(c);
         const step = this.current(run, n, c);
+        // T-087 (S5.1): "bağlandı, ses yok" yalnız sesli cihaz aramasında (otomatik cevap) anlamlıdır.
+        if (b.result === 'SILENT' && !isDeviceStep(step))
+          throw new BadRequestException('Sessiz sonuç yalnız cihaz aramasında');
         Object.assign(step, {
           result: b.result,
           assessment: b.assessment,
@@ -176,6 +235,16 @@ export class ChainService {
         } else if (b.result === 'REACHED' && b.assessment === 'EMERGENCY') {
           c.transition('CONFIRMED_EMERGENCY', `adım ${step.n}`);
           await this.toEmergency(c, run, operatorId, 'emergency');
+        } else if (b.result === 'SILENT') {
+          // S5.1: otomatik cevaplı arama 20 sn sessiz → "cevap yok" değil, olası acil durum (işitme/konuşma güçlüğü
+          // varsa yalnız "ulaşılamadı"; S5.9). Zincir sürer, konsol uyarır; 112 kararı operatörün (S5.8).
+          if (!(await this.personFacts(c.tx, c.ev.protectedPersonId)).impaired) {
+            await this.repo.audit(c.tx, c.ev.id, operatorId, 'chain.possible_emergency', {
+              n: step.n,
+              kind: step.kind,
+            });
+            c.publish(TOPICS.eventUpdated, { eventId: c.ev.id, reason: 'POSSIBLE_EMERGENCY', n: step.n });
+          }
         }
 
         c.publish(TOPICS.chainStepResult, {
@@ -193,6 +262,7 @@ export class ChainService {
           result: b.result,
           assessment: b.assessment ?? null,
         });
+        await this.advance(c, run);
         return this.result(c, run);
       },
       { now },
@@ -301,7 +371,119 @@ export class ChainService {
   }
 
   private async result(c: OperatorCtx, run: Run | null): Promise<EventWithChain> {
-    return { event: c.ev, chain: run ? view(run) : null, calls: (await this.telephony?.callsFor(c.ev.id, c.tx)) ?? [] };
+    return {
+      event: c.ev,
+      chain: run ? view(run) : null,
+      calls: (await this.telephony?.callsFor(c.ev.id, c.tx)) ?? [],
+      ladder: await this.ladderView(c.tx, c.ev, run),
+    };
+  }
+
+  // ---- T-087 merdiven ----
+
+  /** Kişi bilgisi: işitme/konuşma güçlüğü, ev konumu, saat dilimi, anahtar sahipleri (numarasız). */
+  private async personFacts(q: Db | Tx, personId: string): Promise<PersonFacts> {
+    const r = UUID.test(personId)
+      ? ((await q.execute(sql`
+          SELECT hearing_speech_impaired AS impaired, lat, lng, timezone
+          FROM profile.protected_person WHERE id = ${personId}::uuid`)) as unknown as {
+          rows: { impaired: boolean; lat: number | null; lng: number | null; timezone: string }[];
+        })
+      : { rows: [] };
+    const p = r.rows[0];
+    const keyHolders = await q
+      .select({ hasKey: contact.hasKey, arrivalMin: contact.arrivalMin, reachableHours: contact.reachableHours })
+      .from(contact)
+      .where(and(eq(contact.protectedPersonId, personId), eq(contact.hasKey, true)));
+    return {
+      impaired: !!p?.impaired,
+      home: p && p.lat !== null && p.lng !== null ? { lat: p.lat, lng: p.lng } : null,
+      timezone: p?.timezone ?? 'Europe/Istanbul',
+      keyHolders,
+    };
+  }
+
+  private async ladderContext(q: Db | Tx, ev: EventRecord, now: Date): Promise<LadderContext> {
+    const params = ladderOf(this.rules.current());
+    const facts = await this.personFacts(q, ev.protectedPersonId);
+    const loc = ev.location;
+    return {
+      now,
+      params,
+      devices: await this.devices.ladderDevices(ev.protectedPersonId, q),
+      impaired: facts.impaired,
+      awayFromHome: !!(loc && facts.home && distanceM(loc, facts.home) > params.awayFromHomeM),
+      hasKeyHolder: !!pickKeyHolder(facts.keyHolders, now, facts.timezone),
+    };
+  }
+
+  /**
+   * Sıradaki adım(lar) sistemce atlanabiliyorsa atlanır (S5.1 çevrimdışı cihaz, S5.5 evden uzak, S5.6 anahtar sahibi
+   * yok, S5.9 işitme/konuşma güçlüğü). Operatör yalnız aranabilir adımı görür; her atlama kayıtlı (SYSTEM).
+   */
+  private async advance(c: OperatorCtx, run: Run) {
+    if (c.ev.state !== 'OPERATOR_ASSIGNED' && c.ev.state !== 'CONTACT_CHAIN') return;
+    let ctx: LadderContext | undefined;
+    for (let step = currentStep(run.steps); step; step = currentStep(run.steps)) {
+      ctx ??= await this.ladderContext(c.tx, c.ev, c.now);
+      const skip = autoSkip(
+        step,
+        run.steps.filter((s) => s.result),
+        ctx,
+      );
+      if (!skip) return;
+      Object.assign(step, { result: skip.result, reason: skip.reason, completedAt: c.now.toISOString() });
+      await this.repo.updateStep(c.tx, run.id, step);
+      c.publish(TOPICS.chainStepResult, {
+        eventId: c.ev.id,
+        n: step.n,
+        kind: step.kind,
+        result: skip.result,
+        reason: skip.reason,
+        operatorId: null,
+        at: c.now.toISOString(),
+      });
+      await this.repo.audit(c.tx, c.ev.id, null, 'chain.step.auto_skipped', {
+        n: step.n,
+        kind: step.kind,
+        result: skip.result,
+        reason: skip.reason,
+      });
+    }
+  }
+
+  /**
+   * Olay türünün adımları: P1'de sesli cihaz adımları otomatik cevap süresini taşır (yanınızdayız aramasında asla;
+   * S5.8); doğrulanmış düşmede doğrulayan cihaz önce aranır (S3.3).
+   */
+  private async plan(c: OperatorCtx): Promise<ChainStep[]> {
+    if (!c.rule) return [];
+    const { autoAnswerSec } = ladderOf(this.rules.current());
+    let steps = buildSteps(c.rule, c.ev.isTest, this.proc);
+    if (c.rule.priority === 1 && autoAnswerSec > 0)
+      steps = steps.map((s) => (isDeviceStep(s) ? { ...s, autoAnswerSec } : s));
+    const by = corroboratorOf(c.ev);
+    if (by) {
+      const d = (await this.devices.ladderDevices(c.ev.protectedPersonId, c.tx)).find((x) => x.id === by);
+      steps = orderForCorroboration(steps, d?.voice);
+    }
+    return steps;
+  }
+
+  /** Konsol özeti: 112 son sınırı (kuyruğa düşüşten), doğrulama, olası acil durum, Apple akışı. */
+  private async ladderView(q: Db | Tx, ev: EventRecord, run: Run | null): Promise<LadderView> {
+    const sec = ev.isTest ? null : call112DeadlineSecOf(this.rules.current(), ev.type);
+    const impaired = (await this.personFacts(q, ev.protectedPersonId)).impaired;
+    return {
+      call112DeadlineAt: call112Deadline(ev, sec),
+      call112DeadlineSec: sec,
+      corroborated: !!ev.corroboratedAt,
+      sourceDeviceCount: ev.sourceDeviceIds.length,
+      cancelledByDeviceId: ev.cancelledByDeviceId ?? null,
+      possibleEmergency: !impaired && !!run?.steps.some((s) => s.result === 'SILENT'),
+      hearingSpeechImpaired: impaired,
+      platformSosFlow: await platformSosFlow(q, ev.sourceSignalIds),
+    };
   }
 
   private async ensureRun(c: OperatorCtx): Promise<Run> {
@@ -310,7 +492,7 @@ export class ChainService {
       const stale = existing.eventType && (existing.eventType !== c.ev.type || existing.isTest !== c.ev.isTest);
       return stale ? this.replan(c, existing) : existing;
     }
-    const steps = c.rule ? buildSteps(c.rule, c.ev.isTest, this.proc) : [];
+    const steps = await this.plan(c);
     return this.repo.createRun(
       c.tx,
       c.ev.id,
@@ -335,7 +517,7 @@ export class ChainService {
       await this.repo.updateStep(c.tx, run.id, s);
     }
     const base = run.steps.at(-1)?.n ?? 0;
-    const fresh = c.rule ? buildSteps(c.rule, c.ev.isTest, this.proc).map((s, i) => ({ ...s, n: base + i + 1 })) : [];
+    const fresh = (await this.plan(c)).map((s, i) => ({ ...s, n: base + i + 1 }));
     for (const s of fresh) await this.repo.appendStep(c.tx, run.id, s);
     await this.repo.replanned(c.tx, run.id, c.ev.type, c.ev.isTest);
     return { ...run, steps: [...run.steps, ...fresh], eventType: c.ev.type, isTest: c.ev.isTest };
@@ -391,6 +573,23 @@ export class ChainService {
       ...(reason ? { reason } : {}),
     };
   }
+}
+
+/** S3.3: doğrulayan cihaz (alarmı açandan sonraki ilk farklı cihaz); doğrulanmamışsa null. */
+const corroboratorOf = (ev: EventRecord) => (ev.corroboratedAt ? (ev.sourceDeviceIds[1] ?? null) : null);
+
+/** S5.7: olayın sinyallerinden biri kaynağın kendi SOS akışını (ör. Apple düşme → 112) çalıştırdığını bildirdi mi. */
+async function platformSosFlow(q: Db | Tx, keys: string[]): Promise<boolean> {
+  if (!keys.length) return false;
+  const list = sql.join(
+    keys.map((k) => sql`${k}`),
+    sql`, `,
+  );
+  const r = (await q.execute(sql`
+    SELECT 1 FROM signal.signal
+    WHERE idempotency_key IN (${list}) AND payload->'payload'->>'platformSosFlow' = 'true'
+    LIMIT 1`)) as unknown as { rows: unknown[] };
+  return r.rows.length > 0;
 }
 
 async function personOf(tx: Tx, id: string): Promise<{ displayName: string; birthYear: number | null } | null> {

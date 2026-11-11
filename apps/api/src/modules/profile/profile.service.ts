@@ -48,9 +48,20 @@ export interface PersonView {
   dailySummary: boolean;
   /** T-061 (C-09): aile uygulaması son konumu görür mü. */
   locationSharing: boolean;
+  /** T-087 (docs/07 S5.9): işitme/konuşma güçlüğü — otomatik cevap ulaşılamadı sayılır, yakınlara erken geçilir. */
+  hearingSpeechImpaired: boolean;
+  /**
+   * S4.10 "hastanede / seyahatte" modu (bitiş tarihli): bu sürede kapsama uyarıları durur (T-085/T-086), SOS ve
+   * düşme her zaman çalışır. Süresi geçmişse null.
+   */
+  holdMode: { kind: HoldKind; until: string } | null;
   medical: { present: boolean; consentAt: string | null; updatedAt: string | null };
   createdAt: string;
 }
+export const HOLD_KINDS = ['HOSPITAL', 'TRAVEL'] as const;
+export type HoldKind = (typeof HOLD_KINDS)[number];
+/** Bekleme modunun en uzun süresi. */
+export const HOLD_MAX_DAYS = 180;
 export const BLOOD_TYPES = ['0+', '0-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'] as const;
 export interface Medical {
   conditions: string[];
@@ -186,6 +197,11 @@ export class ProfileService {
       myRole: role,
       dailySummary: row.dailySummaryEnabled,
       locationSharing: row.locationSharing,
+      hearingSpeechImpaired: row.hearingSpeechImpaired,
+      holdMode:
+        row.holdMode && row.holdUntil && row.holdUntil > new Date()
+          ? { kind: row.holdMode as HoldKind, until: row.holdUntil.toISOString() }
+          : null,
       medical: {
         present: !!med,
         consentAt: med?.consentAt.toISOString() ?? null,
@@ -462,6 +478,26 @@ export class ProfileService {
     if (b.locationSharing !== undefined) {
       if (typeof b.locationSharing !== 'boolean') throw new BadRequestException('locationSharing true/false');
       p.locationSharing = b.locationSharing;
+    }
+    if (b.hearingSpeechImpaired !== undefined) {
+      if (typeof b.hearingSpeechImpaired !== 'boolean')
+        throw new BadRequestException('hearingSpeechImpaired true/false');
+      p.hearingSpeechImpaired = b.hearingSpeechImpaired;
+    }
+    if (b.holdMode !== undefined) {
+      if (b.holdMode === null) Object.assign(p, { holdMode: null, holdUntil: null });
+      else {
+        const h = obj(b.holdMode);
+        const until = typeof h.until === 'string' ? new Date(h.until) : null;
+        if (
+          !until ||
+          Number.isNaN(until.getTime()) ||
+          until <= now ||
+          until.getTime() - now.getTime() > HOLD_MAX_DAYS * 86_400_000
+        )
+          throw new BadRequestException(`holdMode.until gelecekte ve en çok ${HOLD_MAX_DAYS} gün olmalı`);
+        Object.assign(p, { holdMode: oneOf(h.kind, HOLD_KINDS, 'holdMode.kind'), holdUntil: until });
+      }
     }
     if (b.language !== undefined) p.language = oneOf(b.language, ['tr'] as const, 'language');
     if (b.timezone !== undefined) {

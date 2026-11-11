@@ -188,6 +188,44 @@ describe('kişi (C-02)', () => {
     expect(u2).toMatchObject({ timezone: 'Europe/Berlin', birthYear: 1950 });
   });
 
+  it('T-087: işitme/konuşma güçlüğü ve "hastanede / seyahatte" modu (bitiş tarihli); geçersiz 400', async () => {
+    const p = await create();
+    expect(p).toMatchObject({ hearingSpeechImpaired: false, holdMode: null });
+    const until = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const u = await profile.update(ALICE, p.id, { hearingSpeechImpaired: true, holdMode: { kind: 'HOSPITAL', until } });
+    expect(u).toMatchObject({ hearingSpeechImpaired: true, holdMode: { kind: 'HOSPITAL', until } });
+    expect((await profile.update(ALICE, p.id, { holdMode: null })).holdMode).toBeNull();
+    for (const holdMode of [
+      { kind: 'BEACH', until },
+      { kind: 'TRAVEL', until: new Date(Date.now() - 1000).toISOString() },
+      { kind: 'TRAVEL', until: new Date(Date.now() + 200 * 86_400_000).toISOString() },
+      { kind: 'TRAVEL' },
+    ])
+      expect(await status(profile.update(ALICE, p.id, { holdMode }))).toBe(400);
+    expect(await status(profile.update(ALICE, p.id, { hearingSpeechImpaired: 'evet' }))).toBe(400);
+    // Süresi geçen mod görünmez
+    await h.pg.query(
+      `UPDATE profile.protected_person SET hold_mode = 'TRAVEL', hold_until = now() - interval '1 minute'`,
+    );
+    expect((await profile.get(ALICE, p.id)).holdMode).toBeNull();
+  });
+
+  it('T-087: rehberde anahtar sahibi alanları (yakın/komşu), numara dönmez', async () => {
+    const p = await create();
+    await profile.setContacts(ALICE, p.id, [
+      { role: 'CONTACT', phone: '+905550000021', hasKey: true, arrivalMin: 15, reachableHours: '08:00-22:00' },
+      { role: 'NEIGHBOR', phone: '+905550000039' },
+    ]);
+    const list = await profile.contacts(ALICE, p.id);
+    expect(list.map((c) => [c.role, c.hasKey, c.arrivalMin, c.reachableHours])).toEqual([
+      ['CONTACT', true, 15, '08:00-22:00'],
+      ['NEIGHBOR', false, null, null],
+    ]);
+    expect(
+      await status(profile.setContacts(ALICE, p.id, [{ role: 'WATCH', phone: '+905550000001', hasKey: true }])),
+    ).toBe(400);
+  });
+
   it('geocoder hatası kaydı engellemez (konum boş kalır)', async () => {
     profile = new ProfileService(h.db, new FieldCipher(KEYS), enrollment, {
       geocode: async () => {

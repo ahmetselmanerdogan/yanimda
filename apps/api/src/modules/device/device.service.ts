@@ -1,8 +1,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Signal } from '@yanimda/contracts';
-import { inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { DB, type Db } from '../../db/client';
+import { DB, type Db, type Tx } from '../../db/client';
 import { device } from '../../db/schema';
 import { AdapterRegistry } from './adapter.registry';
 import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
@@ -10,6 +10,7 @@ import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
 import { type DeviceAdapter, type PromptRequest, type RingRequest, UnsupportedSignalError } from './device.types';
+import { classOf, type LadderDevice } from './device-class';
 import { PUSH, type PushPort, RecordingPush } from './push.port';
 
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
@@ -67,6 +68,24 @@ export class DeviceService {
         throw e;
       }
     });
+  }
+
+  /**
+   * T-087 merdiven: kişinin etkin (iptal edilmemiş) cihazları, sınıf ve sesli hedefiyle. Numara ve konum yok.
+   * Çağıranın transaction'ında okunabilir (olay kilidi altında).
+   */
+  async ladderDevices(protectedPersonId: string, q: Db | Tx = this.db): Promise<LadderDevice[]> {
+    if (!/^[0-9a-f-]{36}$/i.test(protectedPersonId)) return [];
+    const rows = await q
+      .select({
+        id: sql<string>`${device.id}::text`,
+        kind: device.kind,
+        lastSeenAt: device.lastSeenAt,
+        onWrist: device.onWrist,
+      })
+      .from(device)
+      .where(and(eq(device.protectedPersonId, protectedPersonId), isNull(device.revokedAt)));
+    return rows.map((r) => ({ ...r, ...classOf(r) }));
   }
 
   async adapterFor(deviceId: string): Promise<DeviceAdapter> {

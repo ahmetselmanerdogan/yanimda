@@ -135,6 +135,11 @@ export const protectedPerson = profileSchema.table('protected_person', {
   dailySummaryEnabled: boolean('daily_summary_enabled').notNull().default(true),
   /** T-061: aile uygulaması son konumu görebilir mi. */
   locationSharing: boolean('location_sharing').notNull().default(true),
+  /** 0031 (T-087, S5.9): işitme/konuşma güçlüğü — otomatik cevap "ulaşılamadı" sayılır. */
+  hearingSpeechImpaired: boolean('hearing_speech_impaired').notNull().default(false),
+  /** 0031 (S4.10): "hastanede / seyahatte" modu (HOSPITAL | TRAVEL) ve bitişi; ikisi birlikte dolu/boş. */
+  holdMode: text('hold_mode'),
+  holdUntil: timestamptz('hold_until'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
@@ -229,6 +234,10 @@ export const contact = profileSchema.table('contact', {
   displayName: text('display_name'),
   phoneE164: text('phone_e164').notNull(),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
+  /** 0031 (T-087, S5.6) anahtar sahibi: anahtarı var, eve varma süresi (dk), ulaşılabilir saatler "HH:MM-HH:MM". */
+  hasKey: boolean('has_key').notNull().default(false),
+  arrivalMin: integer('arrival_min'),
+  reachableHours: text('reachable_hours'),
 });
 
 export const notifySchema = pgSchema('notify');
@@ -361,6 +370,10 @@ export const event = eventSchema.table('event', {
   sourceSignalIds: text('source_signal_ids').array().notNull().default([]),
   isTest: boolean('is_test').notNull().default(false),
   lockUntil: timestamptz('lock_until'),
+  /** 0031 (T-088, S8.2): olayı bildiren cihazlar, doğrulanma zamanı, iptal eden cihaz. */
+  sourceDeviceIds: text('source_device_ids').array().notNull().default([]),
+  corroboratedAt: timestamptz('corroborated_at'),
+  cancelledByDeviceId: text('cancelled_by_device_id'),
 });
 
 export const transition = eventSchema.table('transition', {
@@ -434,6 +447,8 @@ export const chainStep = chainSchema.table(
     operatorId: text('operator_id'),
     completedAt: timestamptz('completed_at'),
     scriptReadAt: timestamptz('script_read_at'),
+    /** 0031 (T-087): P1 sesli cihaz adımında otomatik cevap süresi (sn). */
+    autoAnswerSec: integer('auto_answer_sec'),
   },
   (t) => [primaryKey({ columns: [t.runId, t.n] })],
 );

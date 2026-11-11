@@ -51,9 +51,18 @@ export interface Delivery {
   parallelSmsVoice: boolean;
   /** INFO: push bu sürede teslim edilmezse (uygulama onayı yok / push başarısız) ilk yakına SMS. null = yedek yok. */
   smsFallbackSec: number | null;
+  /** Yalnız ilk yakına sesli arama (push/SMS yok) — T-087 üstlenilmeyen P1 sesli mesajı. */
+  voiceOnly?: boolean;
 }
 
 const URGENT: Delivery = { urgency: 'URGENT', parallelSmsVoice: true, smsFallbackSec: null };
+/** T-087 (docs/07 S5.3): üstlenilmeyen P1'de 1. yakına sesli mesaj ("lütfen 112'yi arayın"). */
+const VOICE_FIRST_CONTACT: Delivery = {
+  urgency: 'URGENT',
+  parallelSmsVoice: false,
+  smsFallbackSec: null,
+  voiceOnly: true,
+};
 const INFO: Delivery = { urgency: 'INFO', parallelSmsVoice: false, smsFallbackSec: 10 };
 /** Akış bilgisi: yalnız push (aile o olaydan haberdar değildi; SMS gürültü olur). */
 const FEED: Delivery = { urgency: 'INFO', parallelSmsVoice: false, smsFallbackSec: null };
@@ -62,6 +71,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-EVT-FALL': URGENT,
   'F-EVT-SOS': URGENT,
   'F-EVT-112': URGENT,
+  'V-NO-OPERATOR': VOICE_FIRST_CONTACT,
   'F-112-ON-SCENE': INFO, // 112 süreci: ekip ulaştı
   'F-112-TRANSPORT': INFO, // 112 süreci: hastaneye nakil
   'F-112-HOSPITAL': INFO, // 112 süreci: hastaneye ulaştı

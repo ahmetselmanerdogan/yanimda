@@ -57,6 +57,21 @@ const status = async (p: Promise<unknown>) => {
     return (e as { status?: number }).status ?? (e as Error).message;
   }
 };
+/** T-087 SOS zinciri; anahtar sahibi kayıtlı değilse o adım sistemce atlanır, 112 7. adımdır. */
+const SOS_KINDS = [
+  'CALL_WATCH',
+  'CALL_PHONE',
+  'CALL_REDIAL',
+  'CALL_CONTACT',
+  'CALL_CONTACT',
+  'CALL_KEY_HOLDER',
+  'CALL_112',
+];
+const N112 = 7;
+/** Kişiye ve yakınlara ulaşılamadı (1–5 cevapsız; 6 anahtar sahibi yok → atlandı): sıradaki 112. */
+const toStep112 = async (id: string) => {
+  for (const n of [1, 2, 3, 4, 5]) await chain.stepResult(id, n, OP, { result: 'NO_ANSWER' });
+};
 const states = async (id: string) =>
   (
     await h.rows<{ to_state: string }>('SELECT to_state FROM event.transition WHERE event_id = $1 ORDER BY seq', [id])
@@ -67,9 +82,28 @@ describe('prosedür şablonu', () => {
     buildSteps(ruleFor(pack, type)!, test, proc).map((s) => (s.contactIndex ? `${s.kind}:${s.contactIndex}` : s.kind));
 
   it.each([
-    ['SOS', ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_112']],
-    ['FALL', ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_NEIGHBOR', 'CALL_112']],
-    ['INACTIVITY', ['CALL_PHONE', 'CALL_WATCH', 'CALL_CONTACT:1', 'CALL_NEIGHBOR', 'CALL_112']],
+    // T-087 (docs/07 S5.2, S5.4): sesli cihaz → telefon → en iyi cihaza yeniden → yakınlar → anahtar sahibi → 112
+    [
+      'SOS',
+      ['CALL_WATCH', 'CALL_PHONE', 'CALL_REDIAL', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_KEY_HOLDER', 'CALL_112'],
+    ],
+    [
+      'FALL',
+      [
+        'CALL_WATCH',
+        'CALL_PHONE',
+        'CALL_REDIAL',
+        'CALL_CONTACT:1',
+        'CALL_CONTACT:2',
+        'CALL_KEY_HOLDER',
+        'CALL_NEIGHBOR',
+        'CALL_112',
+      ],
+    ],
+    [
+      'INACTIVITY',
+      ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_KEY_HOLDER', 'CALL_NEIGHBOR', 'CALL_112'],
+    ],
     ['WATCH_OFF', ['CALL_PHONE', 'CALL_CONTACT:1']],
     ['BATTERY_LOW', ['NOTIFY_FAMILY']],
     ['BATTERY_DEAD', ['CALL_PHONE', 'CALL_CONTACT:1']],
@@ -84,14 +118,23 @@ describe('prosedür şablonu', () => {
   it('kural paketindeki her tip için şablon var; süreler pakette, etiket/metin katalogda', () => {
     for (const r of pack.rules) expect(buildSteps(r, false, proc).length).toBe(r.chain.length);
     const fall = buildSteps(ruleFor(pack, 'FALL')!, false, proc);
-    expect(fall.map((s) => s.timeoutSec)).toEqual([15, 15, 25, 25, 25, 0]);
+    expect(fall.map((s) => s.timeoutSec)).toEqual([20, 20, 15, 25, 25, 25, 25, 0]);
     expect(fall[0]).toMatchObject({ n: 1, label: 'O-STEP-WATCH', script: 'O-SCRIPT-ELDER', target: 'WATCH' });
-    expect(fall[2]).toMatchObject({ n: 3, contactIndex: 1, label: 'O-STEP-CONTACT' });
-    expect(fall[4]).toMatchObject({ kind: 'CALL_NEIGHBOR', required: false });
+    expect(fall[2]).toMatchObject({ n: 3, kind: 'CALL_REDIAL', target: 'VOICE_DEVICE', label: 'O-STEP-REDIAL' });
+    expect(fall[3]).toMatchObject({ n: 4, contactIndex: 1, label: 'O-STEP-CONTACT' });
+    expect(fall[5]).toMatchObject({ kind: 'CALL_KEY_HOLDER', target: 'KEY_HOLDER', required: false });
+    expect(fall[6]).toMatchObject({ kind: 'CALL_NEIGHBOR', required: false });
   });
 
   it('test olayında 112 yok', () => {
-    expect(kinds('SOS', true)).toEqual(['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1']);
+    expect(kinds('SOS', true)).toEqual([
+      'CALL_WATCH',
+      'CALL_PHONE',
+      'CALL_REDIAL',
+      'CALL_CONTACT:1',
+      'CALL_CONTACT:2',
+      'CALL_KEY_HOLDER',
+    ]);
   });
 });
 
@@ -100,10 +143,10 @@ describe('üstlenme ve zincir', () => {
     const id = await queued();
     const r = await chain.claim(id, OP);
     expect(r.event.state).toBe('OPERATOR_ASSIGNED');
-    expect(r.chain!.steps.map((s) => s.kind)).toEqual(['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT', 'CALL_112']);
+    expect(r.chain!.steps.map((s) => s.kind)).toEqual(SOS_KINDS);
     expect(r.chain!.current).toBe(1);
     expect(await status(chain.claim(id, OP2))).toBe(409);
-    expect((await chain.claim(id, OP)).chain!.steps).toHaveLength(4); // aynı operatör: aynı zincir
+    expect((await chain.claim(id, OP)).chain!.steps).toHaveLength(SOS_KINDS.length); // aynı operatör: aynı zincir
     const [{ n }] = await h.rows<{ n: number }>('SELECT count(*)::int n FROM chain.chain_run');
     expect(n).toBe(1);
   });
@@ -159,10 +202,9 @@ describe('üstlenme ve zincir', () => {
     const r = await chain.stepResult(id, 2, OP, { result: 'REACHED', assessment: 'OK', note: 'yanlışlıkla bastı' });
     expect(r.event.state).toBe('CONFIRMED_OK');
     expect(r.chain!.current).toBeNull();
-    expect(r.chain!.steps.slice(2).map((s) => [s.result, s.reason])).toEqual([
-      ['SKIPPED', 'resolved'],
-      ['SKIPPED', 'resolved'],
-    ]);
+    expect(r.chain!.steps.slice(2).map((s) => [s.result, s.reason])).toEqual(
+      Array(SOS_KINDS.length - 2).fill(['SKIPPED', 'resolved']),
+    );
     expect(await status(chain.close(id, OP, { outcome: 'EMERGENCY' }))).toBe(409);
     await chain.close(id, OP, { outcome: 'FALSE_ALARM' });
     expect(await states(id)).toEqual([
@@ -179,8 +221,8 @@ describe('üstlenme ve zincir', () => {
   it('112 adımı ulaşıldı → CONFIRMED_EMERGENCY → DISPATCH; kapatma EMERGENCY', async () => {
     const id = await queued();
     await chain.claim(id, OP);
-    for (const n of [1, 2, 3]) await chain.stepResult(id, n, OP, { result: 'NO_ANSWER' });
-    const r = await chain.stepResult(id, 4, OP, { result: 'REACHED' });
+    await toStep112(id);
+    const r = await chain.stepResult(id, N112, OP, { result: 'REACHED' });
     expect(r.event.state).toBe('DISPATCH');
     expect(await status(chain.close(id, OP, { outcome: 'OK' }))).toBe(409);
     await chain.close(id, OP, { outcome: 'EMERGENCY', note: 'ambulans yolda' });
@@ -190,16 +232,10 @@ describe('üstlenme ve zincir', () => {
   it('112 meşgul → yeni 112 adımı (tekrar dene)', async () => {
     const id = await queued();
     await chain.claim(id, OP);
-    for (const n of [1, 2, 3]) await chain.stepResult(id, n, OP, { result: 'NO_ANSWER' });
-    const r = await chain.stepResult(id, 4, OP, { result: 'BUSY' });
-    expect(r.chain!.steps.map((s) => s.kind)).toEqual([
-      'CALL_WATCH',
-      'CALL_PHONE',
-      'CALL_CONTACT',
-      'CALL_112',
-      'CALL_112',
-    ]);
-    expect(r.chain!.current).toBe(5);
+    await toStep112(id);
+    const r = await chain.stepResult(id, N112, OP, { result: 'BUSY' });
+    expect(r.chain!.steps.map((s) => s.kind)).toEqual([...SOS_KINDS, 'CALL_112']);
+    expect(r.chain!.current).toBe(N112 + 1);
   });
 
   it('ulaşıldı + acil → CONFIRMED_EMERGENCY, aradaki adımlar atlanır, sıradaki 112', async () => {
@@ -207,9 +243,9 @@ describe('üstlenme ve zincir', () => {
     await chain.claim(id, OP);
     const r = await chain.stepResult(id, 1, OP, { result: 'REACHED', assessment: 'EMERGENCY' });
     expect(r.event.state).toBe('CONFIRMED_EMERGENCY');
-    expect(r.chain!.steps.slice(1, 3).map((s) => s.reason)).toEqual(['emergency', 'emergency']);
-    expect(r.chain!.current).toBe(4);
-    expect(await status(chain.stepResult(id, 4, OP, { result: 'REACHED' }))).toBe('ok');
+    expect(r.chain!.steps.slice(1, N112 - 1).map((s) => s.reason)).toEqual(Array(N112 - 2).fill('emergency'));
+    expect(r.chain!.current).toBe(N112);
+    expect(await status(chain.stepResult(id, N112, OP, { result: 'REACHED' }))).toBe('ok');
   });
 
   it('Ctrl+1 112 kısayolu: gerekçe zorunlu; kalan adımlar SKIPPED(escalate); test olayında 112 eklenir', async () => {
@@ -218,10 +254,10 @@ describe('üstlenme ve zincir', () => {
     expect(await status(chain.escalate112(id, OP, {}))).toBe(400);
     const r = await chain.escalate112(id, OP, { reason: 'sessiz hat, nefes sesi' });
     expect(r.event.state).toBe('CONFIRMED_EMERGENCY');
-    expect(r.chain!.steps.slice(0, 3).map((s) => [s.result, s.reason, s.note])).toEqual(
-      Array(3).fill(['SKIPPED', 'escalate', 'sessiz hat, nefes sesi']),
+    expect(r.chain!.steps.slice(0, N112 - 1).map((s) => [s.result, s.reason, s.note])).toEqual(
+      Array(N112 - 1).fill(['SKIPPED', 'escalate', 'sessiz hat, nefes sesi']),
     );
-    expect(r.chain!.current).toBe(4);
+    expect(r.chain!.current).toBe(N112);
 
     const t = await queued('TEST', 'pp-test');
     await chain.claim(t, OP);
@@ -287,7 +323,7 @@ describe('operatör kilidi (D-04)', () => {
     expect(await events.releaseExpiredLocks(later)).toBe(1);
     expect(await events.releaseExpiredLocks(later)).toBe(0);
     expect(await events.get(id)).toMatchObject({ state: 'CONFIRMED_EMERGENCY', operatorId: OP });
-    expect(await status(chain.stepResult(id, 4, OP, { result: 'REACHED' }))).toBe('ok'); // operatör sürdürür
+    expect(await status(chain.stepResult(id, N112, OP, { result: 'REACHED' }))).toBe('ok'); // operatör sürdürür
   });
 
   it('kilidi dolan acil teyitli olayı başka operatör devralır, 112 adımını sürdürür; eski operatör 409', async () => {
@@ -302,8 +338,8 @@ describe('operatör kilidi (D-04)', () => {
     const taken = await chain.claim(id, OP2, later);
     expect(taken.event).toMatchObject({ state: 'CONFIRMED_EMERGENCY', operatorId: OP2 });
     expect(new Date(taken.event.lockUntil!).getTime()).toBe(later.getTime() + 300_000);
-    expect(await status(chain.stepResult(id, 4, OP, { result: 'REACHED' }, later))).toBe(409);
-    expect(await status(chain.stepResult(id, 4, OP2, { result: 'REACHED' }, later))).toBe('ok');
+    expect(await status(chain.stepResult(id, N112, OP, { result: 'REACHED' }, later))).toBe(409);
+    expect(await status(chain.stepResult(id, N112, OP2, { result: 'REACHED' }, later))).toBe('ok');
     const audit = await h.rows<{ actor_id: string; data: unknown }>(
       "SELECT actor_id, data FROM audit.log WHERE action = 'event.taken_over' AND entity_id = $1",
       [id],
