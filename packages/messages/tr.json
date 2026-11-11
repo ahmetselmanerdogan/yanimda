@@ -370,6 +370,14 @@
     "channel": "console",
     "text": "Komşuyu ara"
   },
+  "O-STEP-REDIAL": {
+    "channel": "console",
+    "text": "En iyi cihazı yeniden ara"
+  },
+  "O-STEP-KEY-HOLDER": {
+    "channel": "console",
+    "text": "Anahtar sahibini ara"
+  },
   "O-STEP-112": {
     "channel": "console",
     "text": "112'yi ara"
@@ -393,6 +401,14 @@
   "O-SCRIPT-NEIGHBOR": {
     "channel": "console",
     "text": "Merhaba, ben Yanımda acil yardım servisinden {operator}. Komşunuz {name} için bir uyarı aldık ve ulaşamıyoruz. Kapısını çalıp bakabilir misiniz?"
+  },
+  "O-SCRIPT-KEY-HOLDER": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda acil yardım servisinden {operator}. {name} için bir uyarı aldık ve kendisine ulaşamıyoruz. Evin anahtarı sizde kayıtlı. Gidip bakabilir misiniz? Eve kaç dakikada varabilirsiniz?"
+  },
+  "O-SCRIPT-APPLE-112": {
+    "channel": "console",
+    "text": "Apple 112'yi aramış olabilir. 112'yi yeniden aramadan önce kişiye veya yakına sorun: \"Apple 112'yi aradı mı?\" Gerekirse 112'yi arayıp ihbarı teyit edin."
   },
   "O-SCRIPT-112": {
     "channel": "console",
@@ -426,6 +442,26 @@
     "channel": "console",
     "text": "Atla"
   },
+  "O-RES-SILENT": {
+    "channel": "console",
+    "text": "Bağlandı, ses yok"
+  },
+  "O-RES-SKIPPED_OFFLINE": {
+    "channel": "console",
+    "text": "Çevrimdışı, atlandı"
+  },
+  "O-SKIP-AWAY": {
+    "channel": "console",
+    "text": "Kişi evden uzakta, atlandı"
+  },
+  "O-SKIP-IMPAIRED": {
+    "channel": "console",
+    "text": "İşitme/konuşma güçlüğü: yakınlara geçildi"
+  },
+  "O-SKIP-NO-KEY-HOLDER": {
+    "channel": "console",
+    "text": "Anahtar sahibi kayıtlı değil"
+  },
   "O-ASSESS-OK": {
     "channel": "console",
     "text": "Kişi iyi"
@@ -450,6 +486,11 @@
   "O-QUEUE-UNCLAIMED": {
     "channel": "console",
     "text": "Kuyrukta üstlenilmeyen olay ({type}) hedef süreyi aştı. Hemen üstlenin."
+  },
+  "O-P1-UNCLAIMED": {
+    "channel": "console",
+    "text": "Acil olay ({type}) hâlâ üstlenilmedi. Amir: hemen üstlenin ya da bir operatöre verin.",
+    "action": "Üstlen"
   },
   "O-DISPATCH-ESCALATE": {
     "channel": "console",
@@ -1291,6 +1332,30 @@
     "channel": "console",
     "text": "Gerekçe (zorunlu)"
   },
+  "O-UI-112-DEADLINE": {
+    "channel": "console",
+    "text": "112 son sınırı: {time}"
+  },
+  "O-UI-112-DEADLINE-PASSED": {
+    "channel": "console",
+    "text": "112 son sınırı geçti. Kişiye ulaşılmadıysa 112'yi şimdi arayın."
+  },
+  "O-UI-CORROBORATED": {
+    "channel": "console",
+    "text": "{n} cihaz doğruladı"
+  },
+  "O-UI-POSSIBLE-EMERGENCY": {
+    "channel": "console",
+    "text": "Otomatik cevaplanan arama sessiz kaldı: olası acil durum."
+  },
+  "O-UI-AUTO-ANSWER": {
+    "channel": "console",
+    "text": "otomatik cevap {n} sn"
+  },
+  "O-UI-IMPAIRED": {
+    "channel": "console",
+    "text": "İşitme/konuşma güçlüğü var: otomatik cevap ulaşıldı sayılmaz."
+  },
   "O-UI-ERROR": {
     "channel": "console",
     "text": "İşlem yapılamadı: {detail}"
@@ -1462,6 +1527,10 @@
   "V-SCREEN-HELP": {
     "channel": "voice",
     "text": "Operatörümüz sizi birazdan arayacak."
+  },
+  "V-NO-OPERATOR": {
+    "channel": "voice",
+    "text": "Yanımda acil yardım servisi: {name} için acil durum uyarısı aldık. Lütfen hemen 112'yi arayın."
   },
   "O-CALL-queued": {
     "channel": "console",
