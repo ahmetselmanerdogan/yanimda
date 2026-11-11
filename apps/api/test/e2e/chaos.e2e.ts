@@ -84,7 +84,7 @@ describe.skipIf(!hasRedisServer())('Kaos', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify([sent[1]]),
     });
-    expect(await dupRes.json()).toEqual({ accepted: 0, duplicates: 1 }); // tekrar veritabanında yakalandı
+    expect(await dupRes.json()).toEqual({ accepted: 0, duplicates: 1, rejected: [] }); // tekrar veritabanında yakalandı
 
     // Redis yokken: yeni FALL yerel zamanlayıcıyla (6 sn), önceki FALL süreç içi yedekle (6+15 sn) yükselir
     await waitFor(async () => (await eventState('pp-redis-down')) === 'OPERATOR_QUEUE', 15_000, 'Redis yokken FALL');

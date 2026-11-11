@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 
+import { sanitizeRejected } from '../modules/signal/signal-reject';
 import { safeError } from './safe-error';
 import { recordSecurityEvent } from './security-events';
 
@@ -32,6 +33,7 @@ export class ProblemFilter implements ExceptionFilter {
     let status: number;
     let detail: unknown;
     let code: string | undefined;
+    let rejected: unknown[] | undefined;
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
@@ -39,6 +41,8 @@ export class ProblemFilter implements ExceptionFilter {
       // Katalog kodu (packages/messages, örn. F-MEMBER-CODE-USED): istemci metni kendi kataloğundan gösterir.
       const c = typeof body === 'object' && body ? (body as { code?: unknown }).code : undefined;
       if (typeof c === 'string' && CATALOG_CODE.test(c)) code = c;
+      // D-01: partideki her sinyal reddedildiyse (400/403) hangi sinyalin neden reddedildiği (sabit kod, PII yok).
+      if (typeof body === 'object' && body) rejected = sanitizeRejected((body as { rejected?: unknown }).rejected);
     } else if (isTransient(exception)) {
       log.warn(`[geçici] ${safeError(exception)}`);
       status = HttpStatus.SERVICE_UNAVAILABLE;
@@ -60,6 +64,7 @@ export class ProblemFilter implements ExceptionFilter {
         status,
         detail: Array.isArray(detail) ? detail.join('; ') : String(detail),
         ...(code ? { code } : {}),
+        ...(rejected ? { rejected } : {}),
       });
   }
 }

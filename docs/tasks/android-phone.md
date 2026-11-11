@@ -26,7 +26,7 @@ ON_BODY / BATTERY sinyalleri köprüden geçerken telefon durum şeridini günce
 - `POST /v1/devices/{telefonId}/companions` — telefon token'ıyla saat kaydı (saatte kod yazılmaz). Yeniden → 200 +
   yeni token; kaldırılmış saat yeniden etkinleşir; başka kişinin cihazı 409; telefon olmayan token 403.
 - `POST /v1/signals` köprü yetkisi — telefon token'ı aynı kişinin etkin WEAROS_WATCH cihazlarının sinyallerini saatin
-  kimliğiyle iletebilir (`CompanionService.assertBatchAllowed`); sinyal saat adaptöründen geçer.
+  kimliğiyle iletebilir (`CompanionService.authorizeBatch`; yetkisiz sinyal yalnız kendisi reddedilir, yanıtta `rejected`); sinyal saat adaptöründen geçer.
 - `PATCH /v1/devices/{id}/setup-state` + aile `GET /v1/protected-persons/{id}/setup-state` — kurulum durumu Redis'te
   (şema değişikliği yok); eksik izinle biten kurulum aileye **F-PERM** (gün + eksik kümesi başına bir kez).
 - `GET /v1/devices/{id}/status` — koruma durumu cihaz token'ıyla.

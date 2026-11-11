@@ -21,16 +21,24 @@ paths:
       description: |
         T-010 · D-01. Parti sırayla işlenir; her sinyal tek transaction'da signal.signal + event.outbox
         (signal.received) olarak yazılır. idempotencyKey 24 saat tekildir (Redis; Redis yoksa veritabanı tekil
-        indeksi). Geçersiz bir sinyal varsa partiden hiçbir şey yazılmaz (400). 503 alan cihaz partiyi
-        Retry-After sonrası aynen yeniden gönderir; önceden yazılanlar `duplicates` sayılır.
+        indeksi). 503 alan cihaz partiyi Retry-After sonrası aynen yeniden gönderir; önceden yazılanlar
+        `duplicates` sayılır.
+        Sinyal başına kabul (D-01): şemaya uymayan, cihazın gönderemeyeceği veya token yetkisi dışındaki sinyal
+        yalnız kendisi reddedilir ve 202 yanıtının `rejected` listesinde döner; partinin geri kalanı yazılır (SOS,
+        yanındaki geçersiz sinyal yüzünden kaybolmaz). Partide yazılabilecek tek sinyal yoksa 400 (ret nedenlerinden
+        biri yetki ise 403); Problem gövdesinde de `rejected` bulunur. Cihaz yalnız `rejected` içinde adı geçen
+        sinyali kalıcı hata sayıp tampondan atar; açıklamasız 4xx'te alarm sinyalini (SOS, FALL, INACTIVITY,
+        CANCEL, OK, CALLBACK_REQUEST) atmaz, geri çekilerek yeniden dener.
         T-015: her sinyal cihaz türünün adaptöründen geçer (deviceId → device.device.kind; kayıtsız → simülatör,
-        üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) partiyi 400 ile reddeder.
+        üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) `UNSUPPORTED_SIGNAL` ile reddedilir.
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
         T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
         T-041: `Authorization: Bearer <cihaz token>`. Token'lı cihaz yalnız kendi deviceId ve protectedPersonId'si
-        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). T-043 köprü (B-03): eşlikçi telefonun
+        ile sinyal gönderebilir (başka kişi → `PERSON_MISMATCH`, başka cihaz → `DEVICE_MISMATCH`; o sinyal
+        yazılmaz). T-043 köprü (B-03): eşlikçi telefonun
         (ANDROID_PHONE/IOS_PHONE) token'ı aynı kişinin etkin WEAROS_WATCH cihazlarının sinyallerini saatin deviceId'si
-        ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı). Token'sız istek yalnız simülatör açıkken
+        ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı; iptal edilmiş/kayıtsız/başka
+        kişiye geçmiş saatin sinyali `DEVICE_NOT_BRIDGED`). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -40,13 +48,25 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [accepted, duplicates]
+                required: [accepted, duplicates, rejected]
                 properties:
                   accepted: { type: integer, minimum: 0, description: Yeni yazılan sinyal sayısı }
                   duplicates: { type: integer, minimum: 0, description: Daha önce alınmış (yok sayılan) sinyal sayısı }
-        '400': { $ref: '#/components/responses/Problem' }
+                  rejected:
+                    type: array
+                    description: Reddedilen (yazılmayan) sinyaller; boşsa partinin tamamı yazıldı veya tekrardı
+                    items: { $ref: '#/components/schemas/RejectedSignal' }
+        '400':
+          description: Gövde dizi değil / boş veya partideki her sinyal reddedildi (yetki dışı ret yok)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SignalBatchProblem' }
         '401': { $ref: '#/components/responses/Problem' }
-        '403': { $ref: '#/components/responses/Problem' }
+        '403':
+          description: Partideki her sinyal reddedildi ve en az biri token yetkisi dışında
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SignalBatchProblem' }
         '503':
           description: Geçici olarak yazılamadı veya aynı sinyal şu an işleniyor; yeniden deneyin
           headers:
@@ -382,6 +402,8 @@ paths:
         Ekip olay yerinde → aileye F-112-ON-SCENE; nakil/hastanede → F-112-HOSPITAL. Ekip DISPATCH_ARRIVAL_SLA_MIN
         (15) içinde ulaşmazsa amire O-DISPATCH-NO-ARRIVAL, ulaştıktan sonra süreç açık kaldıkça O-DISPATCH-OPEN
         (DISPATCH_OPEN_REMIND_MIN, 60). Kapanmış süreç 409, geri aşama 409.
+        Yetki: SUPERVISOR/ADMIN her süreci; OPERATOR yalnız olayı yürüttüğü (olayın operatörü) süreci — olay
+        kapandıktan sonra da. Başka operatör 403 (`code: O-DISPATCH-NOT-OWNER`); süreç yoksa önce 404.
       operationId: updateDispatch
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }]
@@ -410,6 +432,7 @@ paths:
             content: { application/json: { schema: { $ref: '#/components/schemas/DispatchView' } } },
           }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
@@ -894,6 +917,9 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
     patch:
       summary: Kişiyi güncelle (verilen alanlar). Adres değişirse yeniden konumlanır; doorAccessNote null siler. T-040
+      description: |
+        Ad, adres, kapı notu ve diğer alanlar olay anında 112'ye okunur: aile tarafında yalnız hesap sahibi (OWNER)
+        değiştirir, MEMBER 403 (`code: F-MEMBER-OWNER-ONLY`); yönetici her kişiyi. Erişimi olmayan aile 404.
       operationId: updateProtectedPerson
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
@@ -904,6 +930,7 @@ paths:
         '200':
           { description: Kişi, content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } } }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/medical:
     put:
@@ -911,6 +938,7 @@ paths:
       description: |
         Tek şifreli kayıt olarak saklanır (AES-256-GCM, FIELD_ENC_KEYS). İçerik aileye de geri okunmaz (yalnız
         var/yok ve rıza zamanı); olay anında olayı yürüten operatöre çözülür. audit.log'a içerik yazılmaz.
+        Yalnız hesap sahibi (OWNER) veya yönetici; MEMBER 403 (`code: F-MEMBER-OWNER-ONLY`).
       operationId: setMedical
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
@@ -942,14 +970,16 @@ paths:
                   consentAt: { type: string, format: date-time }
                   updatedAt: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
     delete:
-      summary: Rıza geri alındı — tıbbi özeti sil. C-03, T-040
+      summary: Rıza geri alındı — tıbbi özeti sil (yalnız OWNER veya yönetici; MEMBER 403). C-03, T-040
       operationId: deleteMedical
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       responses:
         '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/test-sos:
     post:
@@ -2513,6 +2543,30 @@ components:
           description: |
             Varsa packages/messages katalog kodu (örn. F-MEMBER-CODE-USED); istemci metni kendi kataloğundan gösterir.
             `detail` aynı kodun Türkçe metnidir.
+    RejectedSignal:
+      type: object
+      description: D-01 sinyal başına ret. PII ve serbest metin yok; `reason` sabit koddur.
+      required: [index, reason]
+      properties:
+        index: { type: integer, minimum: 0, description: Partideki sıra (0'dan) }
+        idempotencyKey:
+          type: string
+          maxLength: 200
+          description: Sinyalin anahtarı (gönderilen değer geçerli biçimdeyse); cihaz tampon kaydını bununla bulur
+        reason:
+          enum: [SCHEMA_INVALID, UNSUPPORTED_SIGNAL, PERSON_MISMATCH, DEVICE_MISMATCH, DEVICE_NOT_BRIDGED]
+          description: |
+            SCHEMA_INVALID şemaya uymuyor; UNSUPPORTED_SIGNAL cihaz türü bu sinyali gönderemez / kayıtsız cihaz
+            (simülatör kapalı); PERSON_MISMATCH token'ın kişisi değil; DEVICE_MISMATCH token'ın cihazı değil ve
+            köprü yapılamaz; DEVICE_NOT_BRIDGED köprülenen cihaz bu kişinin etkin saati değil (iptal/kayıtsız).
+    SignalBatchProblem:
+      allOf:
+        - { $ref: '#/components/schemas/Problem' }
+        - type: object
+          properties:
+            rejected:
+              type: array
+              items: { $ref: '#/components/schemas/RejectedSignal' }
     MemberView:
       type: object
       description: T-040 aile hesabı (başka üyenin e-posta/telefon/kimliği dönmez)
@@ -2539,7 +2593,12 @@ components:
         conference: { type: boolean, description: Görüşme konferansa taşındı (T-051) }
         held: { type: boolean, description: Aranan beklemede (T-051) }
         parties: { type: integer, description: Konferansa eklenen yakın sayısı (T-051) }
-        error: { type: [string, 'null'] }
+        error:
+          type: [string, 'null']
+          description: |
+            Başarısızlık nedeni (numara yok). `stale`: arama asılı kaldı (queued/ringing CALL_SETUP_STALE_SEC,
+            in-progress CALL_MAX_DURATION_SEC aşıldı; webhook gelmedi veya arama başlatılamadı) — sistem kapattı,
+            öneri yok, "Ara" yeniden arar.
         createdAt: { type: string, format: date-time }
     ChainView:
       type: object

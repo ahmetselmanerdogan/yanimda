@@ -455,6 +455,10 @@
     "channel": "console",
     "text": "112 ekibi hâlâ ulaşmadı ({type}). 112'yi tekrar arayın, gecikmenin nedenini ve tahmini varışı girin."
   },
+  "O-DISPATCH-NOT-OWNER": {
+    "channel": "console",
+    "text": "Bu 112 sürecini yalnız olayı yürüten operatör ya da amir güncelleyebilir."
+  },
   "O-CLOSE-NO-112": {
     "channel": "console",
     "text": "Acil olay 112 aranmadan kapatıldı ({type}). Gerekçeyi kontrol edin."

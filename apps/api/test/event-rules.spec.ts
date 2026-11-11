@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { bus } from '../src/common/bus';
 import { InMemoryTimers } from '../src/common/timers/memory-timers';
+import { AbsorbedSourceService } from '../src/modules/event/absorbed-source.service';
 import type { EventService } from '../src/modules/event/event.service';
 import { createHarness, type Harness, sig } from './support/harness';
 
@@ -225,6 +226,46 @@ describe('Cihaz taraması: BATTERY_DEAD ve CONNECTION_LOST', () => {
     await setDevice(400, 60, night);
     expect(await events.sweepDevices(night)).toBe(0);
     expect(await events.sweepDevices(day)).toBe(1); // sessizlik sürüyor, sabah üretilir
+  });
+
+  it('başka türden açık olaya eklenen BATTERY_DEAD, o olay kapanınca cihaz hâlâ ölüyse yeniden açılır (denetim)', async () => {
+    const release = new AbsorbedSourceService(h.db);
+    release.subscribe(bus);
+    // 10:00 saat çıkarıldı → WATCH_OFF beklemesi (240 dk).
+    await deliver(sig('OFF_BODY', { protectedPersonId: person, deviceId, occurredAt: day.toISOString() }));
+    const [watchOff] = await events.all();
+    expect(watchOff).toMatchObject({ type: 'WATCH_OFF', state: 'DEVICE_PROMPT' });
+    // Saat öldü: tarama BATTERY_DEAD'i açık WATCH_OFF'a ekler (yeni olay yok).
+    await setDevice(121, 3);
+    expect(await events.sweepDevices(day)).toBe(0);
+    expect((await events.get(watchOff!.id)).sourceSignalIds).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^battery-dead:/)]),
+    );
+    // WATCH_OFF tespitle ilgilenilmeden kapanır (burada: bekleme dolar, operatör "iyi" der).
+    await timers.fire(watchOff!.id, 'watch-off-operator');
+    await events.claim(watchOff!.id, 'op-1');
+    await events.closeByOperator(watchOff!.id, 'op-1', 'OK');
+    await h.worker().drain(); // event.closed → yan şerit serbest bırakır
+    const closed = await events.get(watchOff!.id);
+    expect(closed.sourceSignalIds.filter((s) => s.startsWith('battery-dead:'))).toEqual([
+      expect.stringMatching(/#released$/),
+    ]);
+    const [audit] = await h.rows<{ data: unknown }>(
+      "SELECT data FROM audit.log WHERE action = 'event.source_released' AND entity_id = $1",
+      [watchOff!.id],
+    );
+    expect(audit?.data).toEqual({ eventType: 'WATCH_OFF', released: ['BATTERY_DEAD'] });
+    // Cihaz hâlâ ölü: sonraki tarama kendi BATTERY_DEAD olayını açar; bir kez.
+    expect(await events.sweepDevices(day)).toBe(1);
+    expect(await events.sweepDevices(day)).toBe(0);
+    const open = (await events.all()).filter((e) => e.state !== 'CLOSED');
+    expect(open).toEqual([expect.objectContaining({ type: 'BATTERY_DEAD', state: 'OPERATOR_QUEUE' })]);
+    // Kendi türündeki olay kapanınca kaynağı serbest bırakılmaz (tespit ele alındı).
+    expect(await release.onClosed(watchOff!.id)).toBe(0); // tekrar teslim: idempotent
+    await events.claim(open[0]!.id, 'op-1');
+    await events.closeByOperator(open[0]!.id, 'op-1', 'OK');
+    expect(await release.onClosed(open[0]!.id)).toBe(0);
+    expect(await events.sweepDevices(day)).toBe(0);
   });
 
   it('aynı sessizlik için ikinci tarama yeni olay açmaz', async () => {

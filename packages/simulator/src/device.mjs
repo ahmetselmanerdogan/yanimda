@@ -1,11 +1,21 @@
 // Sahte cihaz kütüphanesi (CLI, uçtan uca ve kaos testleri ortak kullanır).
 // Gerçek cihaz gibi davranır (A-09): sinyal sıralı tampona girer; ağ hatası, 5xx veya 429'da aynı idempotencyKey ile
-// üstel geri çekilmeyle (Retry-After'a uyarak) yeniden gönderilir; 202 alınca tampondan çıkar. 4xx (≠429) kalıcı hatadır.
+// üstel geri çekilmeyle (Retry-After'a uyarak) yeniden gönderilir; 202 alınca tampondan çıkar. Sunucu sinyali
+// açıkça reddederse (yanıttaki `rejected` listesinde, D-01) kalıcı hatadır, atılır. Başka 4xx (≠429): alarm sinyali
+// (SOS, FALL …) atılmaz, geri çekilerek yeniden denenir (token yenilenince/sunucu düzelince teslim edilir); alarm
+// olmayan sinyal atılır.
 import { readFileSync } from 'node:fs';
 
 import YAML from 'yaml';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** apps/api common/rate-limit ALARM_KINDS ile aynı küme: kaybı can güvenliğini etkileyen sinyaller. */
+export const ALARM_KINDS = new Set(['SOS', 'FALL', 'INACTIVITY', 'CANCEL', 'OK', 'CALLBACK_REQUEST']);
+
+/** Yanıt gövdesinde bu partinin `index` sıradaki sinyali açıkça reddedildi mi (202 veya 400/403 Problem)? */
+export const rejectionOf = (body, index) =>
+  Array.isArray(body?.rejected) ? body.rejected.find((r) => r?.index === index) : undefined;
 
 export function createDevice({
   api = process.env.API_URL ?? 'http://localhost:3000/v1',
@@ -60,6 +70,13 @@ export function createDevice({
         } catch (e) {
           r = { status: 0, error: e?.cause?.code ?? e?.message };
         }
+        const rejected = rejectionOf(r.body, 0);
+        if (r.status === 202 && rejected) {
+          queue.shift();
+          stats.failed++;
+          log(`${s.kind} -> reddedildi (${rejected.reason}, atıldı)`);
+          continue;
+        }
         if (r.status === 202) {
           queue.shift();
           stats.delivered++;
@@ -68,10 +85,10 @@ export function createDevice({
           log(`${s.kind} -> 202${r.body?.duplicates ? ' (tekrar)' : ''}`);
           continue;
         }
-        if (r.status >= 400 && r.status < 500 && r.status !== 429) {
+        if (r.status >= 400 && r.status < 500 && r.status !== 429 && (rejected || !ALARM_KINDS.has(s.kind))) {
           queue.shift();
           stats.failed++;
-          log(`${s.kind} -> ${r.status} (kalıcı hata, atıldı)`);
+          log(`${s.kind} -> ${r.status}${rejected ? ` ${rejected.reason}` : ''} (kalıcı hata, atıldı)`);
           continue;
         }
         stats.retries++;

@@ -65,7 +65,7 @@ Bölüm bazında:
 | 1.2.4 | Tüm kimlik doğrulama yolları eşit güçte | ⚠️ | `x-admin-token` MFA'sız yönetici yolu (`oidc.guard.ts:76`, `api/modules/profile/profile.controller.ts:45-49`) (G-4). |
 | 1.4.1 | Erişim kontrolü güvenilir uçta | ✅ | Tüm denetim API guard'larında; konsol rol kontrolü yalnız arayüz (`apps/console/src/lib/auth.ts:23`). |
 | 1.4.4 | Tek erişim kontrol mekanizması | ✅ | `@Roles` + `OidcGuard`/`AdminGuard`/`ProfileGuard`/`DeviceTokenGuard`. |
-| 1.4.5 | Kaynak/öznitelik düzeyinde erişim | ✅ | Operatör: üstlendiği olay (`api/modules/event/event.service.ts:560-575` `operate`); aile: kendi kişisi (`profile.service.ts`); cihaz: kendisi (`enrollment.service.ts:308` `assertSelf`, `signal.controller.ts:11` `assertOwnBatch`). |
+| 1.4.5 | Kaynak/öznitelik düzeyinde erişim | ✅ | Operatör: üstlendiği olay (`api/modules/event/event.service.ts:560-575` `operate`); aile: kendi kişisi (`profile.service.ts`); cihaz: kendisi (`enrollment.service.ts:308` `assertSelf`, `companion.service.ts` `authorizeBatch`: yetkisiz sinyal yazılmaz). |
 | 1.5.1 | Girdi/çıktı gereksinimleri tanımlı | ✅ | `packages/contracts/schemas/signal.schema.json`, `packages/contracts/openapi.yaml`. |
 | 1.5.2 | Güvenilmeyen istemciyle nesne serileştirme yok | ✅ | Yalnız JSON. |
 | 1.5.3 | Girdi doğrulama güvenilir katmanda | ✅ | `api/modules/signal/signal.service.ts` (Ajv), `enrollment.service.ts:192` `parse`. |
@@ -167,7 +167,7 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | 4.1.2 | Öznitelikler kullanıcıca değiştirilemez | ✅ | Roller imzalı token'dan ve realm'e bağlı (`oidc-verifier.ts:138-140`); `X-Operator-Id` kaldırıldı (`oidc.guard.ts:31`). |
 | 4.1.3 | En az yetki | ✅ | Uç bazında `@Roles` (`chain.controller.ts:21`, `queue.controller.ts:28,43`, `telephony.controller.ts:69`, `notify.controller.ts:24`); tıbbi özet yalnız üstlenen operatöre. |
 | 4.1.5 | Hata durumunda kapalı | ✅ | `ADMIN_TOKEN` boşsa yönetici uçları kapalı (`api/modules/rules/admin-token.guard.ts:16`); OIDC yapılandırılmamışsa 401 (`identity.module.ts:14`); üretimde token'sız sinyal 401 (`device-token.guard.ts:42-43`). |
-| 4.2.1 | IDOR koruması | ✅ | `assertSelf`, `assertOwnBatch`, aile için başka kişi 404 (`profile.controller.ts:60`), `operate()` sahiplik. |
+| 4.2.1 | IDOR koruması | ✅ | `assertSelf`, `authorizeBatch` (sinyal başına), aile için başka kişi 404 (`profile.controller.ts:60`), `operate()` sahiplik. |
 | 4.2.2 | CSRF koruması | ✅ | Bearer başlığı; çerez yok; CORS kapalı (`api/main.ts`). |
 | 4.3.1 | Yönetici arayüzü MFA | ⚠️ | OIDC ADMIN (operations, OTP) ✅; `x-admin-token` MFA'sız (G-4). |
 | 4.3.2 | Dizin listeleme kapalı | ✅ | API statik dosya sunmaz. |

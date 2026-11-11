@@ -259,10 +259,27 @@ describe('Sinyal alımı adaptör üzerinden', () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it('telefondan OFF_BODY → 400 ve partiden hiçbir şey yazılmaz', async () => {
-    await expect(
-      h.signals.accept([s('HEARTBEAT', { deviceId: PHONE }), s('OFF_BODY', { deviceId: PHONE })]),
-    ).rejects.toMatchObject({ status: 400 });
+  it('telefondan OFF_BODY yalnız kendisi reddedilir (UNSUPPORTED_SIGNAL); HEARTBEAT yazılır', async () => {
+    const off = s('OFF_BODY', { deviceId: PHONE });
+    expect(await h.signals.accept([s('HEARTBEAT', { deviceId: PHONE }), off])).toEqual({
+      accepted: 1,
+      duplicates: 0,
+      rejected: [{ index: 1, idempotencyKey: off.idempotencyKey, reason: 'UNSUPPORTED_SIGNAL' }],
+    });
+    expect(await h.rows('SELECT kind FROM signal.signal')).toEqual([{ kind: 'HEARTBEAT' }]);
+  });
+
+  it('telefon partisi [SOS, HEART_RATE]: telefon adaptöründe HEART_RATE yok → SOS yine yazılır', async () => {
+    const r = await h.signals.accept([s('SOS', { deviceId: PHONE }), s('HEART_RATE', { deviceId: PHONE, value: 80 })]);
+    expect(r).toMatchObject({ accepted: 1, rejected: [{ index: 1, reason: 'UNSUPPORTED_SIGNAL' }] });
+    expect((await outboxPayloads()).map((p) => p.kind)).toEqual(['SOS']);
+  });
+
+  it('partide yalnız desteklenmeyen sinyal → 400 (gövdede rejected)', async () => {
+    await expect(h.signals.accept([s('OFF_BODY', { deviceId: PHONE })])).rejects.toMatchObject({
+      status: 400,
+      response: { rejected: [{ index: 0, reason: 'UNSUPPORTED_SIGNAL' }] },
+    });
     expect(await h.rows('SELECT 1 FROM signal.signal')).toEqual([]);
   });
 

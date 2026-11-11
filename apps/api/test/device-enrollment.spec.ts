@@ -1,6 +1,7 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { CompanionService } from '../src/modules/device/companion.service';
 import { signDeviceToken, verifyDeviceToken } from '../src/modules/device/device-token';
 import { DeviceTokenGuard, SignalAuthGuard } from '../src/modules/device/device-token.guard';
 import {
@@ -12,7 +13,6 @@ import {
 import { simulatorEnabled } from '../src/modules/device/simulator-mode';
 import { ProtectionService } from '../src/modules/event/protection.service';
 import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
-import { assertOwnBatch } from '../src/modules/signal/signal.controller';
 import { createHarness, type Harness } from './support/harness';
 
 /**
@@ -335,19 +335,21 @@ describe('guard: POST /signals ve cihaz uçları', () => {
     expect(await status(new DeviceTokenGuard(svc).canActivate(ctx({}).ctx))).toBe(401);
   });
 
-  it('token sahibi başka cihaz/kişi adına sinyal gönderemez (403); kendi adına geçer', () => {
+  it('token sahibi başka cihaz/kişi adına sinyal gönderemez (o sinyal reddedilir); kendi adına geçer', async () => {
     const p: DevicePrincipal = { deviceId: DEV, protectedPersonId: PERSON, kind: 'IOS_PHONE' };
-    expect(() => assertOwnBatch(p, [{ deviceId: DEV, protectedPersonId: PERSON }])).not.toThrow();
-    expect(() => assertOwnBatch(p, [{ deviceId: DEV2, protectedPersonId: PERSON }])).toThrow(
-      expect.objectContaining({ status: 403 }),
-    );
-    expect(() =>
-      assertOwnBatch(p, [
+    const companion = new CompanionService(h.db, h.redis as never, h.outbox, svc);
+    const denied = async (pr: DevicePrincipal | undefined, b: unknown[]) =>
+      Object.fromEntries(await companion.authorizeBatch(pr, b));
+    expect(await denied(p, [{ deviceId: DEV, protectedPersonId: PERSON }])).toEqual({});
+    // DEV2 bu kişinin etkin saati değil (kayıtsız) → köprülenemez
+    expect(await denied(p, [{ deviceId: DEV2, protectedPersonId: PERSON }])).toEqual({ 0: 'DEVICE_NOT_BRIDGED' });
+    expect(
+      await denied(p, [
         { deviceId: DEV, protectedPersonId: PERSON },
         { deviceId: DEV, protectedPersonId: OTHER },
       ]),
-    ).toThrow(expect.objectContaining({ status: 403 }));
-    expect(() => assertOwnBatch(undefined, [{ deviceId: 'x' }])).not.toThrow(); // simülatör yolu
+    ).toEqual({ 1: 'PERSON_MISMATCH' });
+    expect(await denied(undefined, [{ deviceId: 'x' }])).toEqual({}); // simülatör yolu
   });
 
   it('SIMULATOR_ENABLED boş değer tanımsız sayılır (.env.example)', () => {

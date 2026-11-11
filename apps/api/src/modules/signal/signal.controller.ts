@@ -1,31 +1,22 @@
-import { Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Inject, Post, Req, UseGuards } from '@nestjs/common';
 
 import { alarmBatch, RateLimit } from '../../common/rate-limit';
 import { CompanionService } from '../device/companion.service';
 import { type DeviceRequest, SignalAuthGuard } from '../device/device-token.guard';
-import type { DevicePrincipal } from '../device/enrollment.service';
 import { SignalService } from './signal.service';
 
 /**
- * Token'lı cihaz kendi adına sinyal gönderir: partideki her sinyalin deviceId ve protectedPersonId'si token'dakiyle
- * aynı olmalı (değilse tüm parti 403, hiçbir şey yazılmaz). Tek istisna köprü (B-03): eşlikçi telefon aynı kişinin
- * etkin saatinin sinyallerini iletir — bunu CompanionService.assertBatchAllowed denetler (veritabanı gerekir).
+ * Token'lı cihaz kendi adına sinyal gönderir: her sinyalin deviceId ve protectedPersonId'si token'dakiyle aynı
+ * olmalı. Tek istisna köprü (B-03): eşlikçi telefon aynı kişinin etkin saatinin sinyallerini iletir. İzin sinyal
+ * başınadır (CompanionService.authorizeBatch): yetkisiz sinyal yazılmaz ve `rejected` içinde döner, partinin geri
+ * kalanı yazılır; partide kabul edilebilir sinyal yoksa 403.
  */
-export function assertOwnBatch(p: DevicePrincipal | undefined, batch: unknown): void {
-  if (!p || !Array.isArray(batch)) return;
-  for (const s of batch as { deviceId?: unknown; protectedPersonId?: unknown }[]) {
-    // Birebir eşleşme (UUID küçük harf): cihaz türü sorgusu da device.id::text ile birebir eşleşir.
-    if (s?.deviceId !== p.deviceId || s?.protectedPersonId !== p.protectedPersonId)
-      throw new ForbiddenException('Sinyal token sahibi cihaza ait değil');
-  }
-}
-
 @Controller('signals')
 export class SignalController {
   // tsx/esbuild emitDecoratorMetadata desteklemez: açık Inject
   constructor(
     @Inject(SignalService) private readonly signals: SignalService,
-    @Inject(CompanionService) private readonly companion: Pick<CompanionService, 'assertBatchAllowed'>,
+    @Inject(CompanionService) private readonly companion: Pick<CompanionService, 'authorizeBatch'>,
   ) {}
 
   /** POST /v1/signals — D-01. T-041: cihaz token'ı (SignalAuthGuard; token'sız yalnız simülatör açıkken). */
@@ -40,7 +31,7 @@ export class SignalController {
   @HttpCode(202)
   @UseGuards(SignalAuthGuard)
   async post(@Body() body: unknown[], @Req() req: DeviceRequest) {
-    await this.companion.assertBatchAllowed(req.device, body); // kendi sinyali veya köprülenen saat sinyali
-    return this.signals.accept(body);
+    const denied = await this.companion.authorizeBatch(req.device, body); // kendi sinyali veya köprülenen saat
+    return this.signals.accept(body, denied);
   }
 }
