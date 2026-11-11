@@ -96,6 +96,12 @@ const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
 describe('GET devices / coverage', () => {
   it('katalogdan kategori, sınıf, pil ömrü; şarj durumu sinyal alımında yazılır; sesli arama sırası', async () => {
+    // Gerçek saatle çalışır: boş gece penceresi (başlangıç = bitiş) sonucu gün içi saatten bağımsız yapar (22:00
+    // sonrası NIGHT seviyesi görülüyordu).
+    await h.pg.query(
+      `INSERT INTO event.threshold (protected_person_id, sleep_start, sleep_end) VALUES ($1, '00:00', '00:00')`,
+      [PERSON],
+    );
     await ingest(
       sig('HEARTBEAT', {
         deviceId: PHONE,
