@@ -37,7 +37,7 @@ import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog } from '../../db/schema';
 import { familyNoticeFor } from '../notify/policy';
-import { type DeviceFact, isAlarmWearable, onHold } from './coverage';
+import { type DeviceFact, isAlarmWearable, onHold, profileOf } from './coverage';
 import { decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
@@ -46,6 +46,7 @@ import { isInWindow } from './night';
 import { type CoverageUpdate, type ProtectionChange, ProtectionService } from './protection.service';
 import {
   fusionOf,
+  isLongLifeBattery,
   loadRulePack,
   type Rule,
   ruleFor,
@@ -514,6 +515,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   // ---- Sinyal işleme (outbox → bus) ----
   private async onSignal(e: KafkaEnvelope<Signal>) {
     const s = e.payload;
+    // T-085 OEM (S2.1, S10.1 aşama 4): C sınıfı (eğilim) sinyal kapsamayı değiştirmez ve olay açmaz; yalnız kayıttır
+    // (signal.signal → günlük özet / eğilim). Olay açacak türdeyse yok sayma denetime yazılır.
+    const tier = profileOf(s.source).tier;
+    if (tier === 'C') {
+      const d = decide(s, { pack: this.pack, night: false, tier });
+      if (d.action === 'ignore') await this.auditIgnored(s, d.reason);
+      return;
+    }
     const upd = await this.protection.applySignal(s); // D-05 / T-085: her sinyal kapsama olgularını günceller
     let night = false;
     if (s.kind === 'OFF_BODY') {
@@ -533,6 +542,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       charging: fact?.charging ?? false,
       alarmWorn: upd.coverage.worn.length > 0,
       alarmWearable: fact ? isAlarmWearable(fact) : true,
+      tier,
+      longLifeBattery: isLongLifeBattery(this.pack, s.source?.batteryLifeH),
     });
     switch (d.action) {
       case 'answer':
@@ -550,20 +561,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         );
         break;
       case 'ignore':
-        // S3.4: şarjındaki saatten düşme en sık yanlış düşmedir; yok sayılır ama denetime yazılır (PII yok).
-        await this.db.insert(auditLog).values({
-          actorKind: 'SYSTEM',
-          action: 'signal.ignored',
-          entityType: 'signal',
-          entityId: s.idempotencyKey,
-          data: { kind: s.kind, reason: d.reason },
-        });
-        this.log.log(`${s.kind} yok sayıldı (${d.reason})`);
+        // S3.4: şarjındaki saatten düşme en sık yanlış düşmedir; S2.1: B sınıfı P1 açamaz. Yok sayılır, denetimde.
+        await this.auditIgnored(s, d.reason);
         break;
       case 'create':
         await this.create(d.type, {
           protectedPersonId: s.protectedPersonId,
           sourceId: s.idempotencyKey,
+          note: d.note,
           location: s.location,
           deviceId: s.deviceId,
           deviceRole: s.source?.role,
@@ -578,6 +583,18 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     }
     if (s.location) await this.fuseLocation(s);
     await this.onCoverageUpdate(upd);
+  }
+
+  /** Yok sayılan sinyal denetime (PII yok: yalnız tür ve sabit kod). */
+  private async auditIgnored(s: Signal, reason: string) {
+    await this.db.insert(auditLog).values({
+      actorKind: 'SYSTEM',
+      action: 'signal.ignored',
+      entityType: 'signal',
+      entityId: s.idempotencyKey,
+      data: { kind: s.kind, reason },
+    });
+    this.log.log(`${s.kind} yok sayıldı (${reason})`);
   }
 
   /**

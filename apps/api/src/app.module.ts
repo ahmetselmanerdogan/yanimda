@@ -13,6 +13,7 @@ import { IdentityModule } from './modules/identity/identity.module';
 import { LearningModule } from './modules/learning/learning.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NotifyModule } from './modules/notify/notify.module';
+import { PartnerModule } from './modules/partner/partner.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { ReportModule } from './modules/report/report.module';
@@ -49,6 +50,7 @@ import { WellnessModule } from './modules/wellness/wellness.module';
     BillingModule,
     InboundModule,
     ScreeningModule,
+    PartnerModule,
   ],
 })
 export class AppModule {}

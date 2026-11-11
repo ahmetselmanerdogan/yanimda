@@ -99,6 +99,8 @@ const DELIVERY: Record<string, Delivery> = {
   'F-COVERAGE-BACK': FEED, // T-086 kapsama geri geldi
   'F-BAT-PLAN': INFO, //    T-086 18:00 pil akşama yetmeyecek (%15 altı)
   'F-DEVICE-LIMIT': INFO, // T-085 kişi başına cihaz sınırı aşıldı
+  'F-PENDANT-BATTERY': INFO, // T-085 OEM (S4.9) kolye pili iş emri açıldı (ekip değiştirecek)
+  'F-PENDANT-TEST': FEED, //    T-085 OEM (S4.9) kolyenin aylık düğme testi yapılmadı
 };
 
 /** Aile kodları için teslim biçimi; kişinin kendi cihazına giden kodlar (W-*, P-*) yalnız cihaz push'u. */
