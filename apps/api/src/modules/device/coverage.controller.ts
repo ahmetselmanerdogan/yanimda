@@ -24,9 +24,10 @@ import {
 } from '@nestjs/common';
 import type { DeviceSummary, EventType } from '@yanimda/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { DB, type Db } from '../../db/client';
-import { auditLog, device } from '../../db/schema';
+import { auditLog, device, devicePrompt } from '../../db/schema';
 import { isBodyLocation } from '../event/coverage.service';
 import { ProtectionService } from '../event/protection.service';
 import { ladderOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -286,20 +287,36 @@ export class DeviceManageController {
     if (type !== 'TEST' && !open) throw new ConflictException('Kişinin açık olayı yok');
     if (asked !== undefined && asked !== open?.id) throw new ConflictException('Olay kişinin açık olayı değil');
     const deviceId = id.toLowerCase();
+    const sentAt = new Date();
     let outcome: PushOutcome;
+    let prompt: PromptRequest | null = null;
     if (type === 'RING') outcome = await this.devices.ring(deviceId, { eventId: open!.id });
-    else if (type === 'PROMPT')
-      outcome = await this.devices.promptUser(deviceId, this.operatorPrompt(open!, new Date()));
-    else if (type === 'LOCATE') outcome = await this.devices.command(deviceId, { type, eventId: open!.id });
+    else if (type === 'PROMPT') {
+      prompt = this.operatorPrompt(open!, sentAt);
+      outcome = await this.devices.promptUser(deviceId, prompt);
+    } else if (type === 'LOCATE') outcome = await this.devices.command(deviceId, { type, eventId: open!.id });
     else outcome = await this.devices.command(deviceId, { type });
     const sent = delivered(outcome);
-    await this.db.insert(auditLog).values({
-      actorKind: actorKindOf(a),
-      actorId: subOf(a),
-      action: 'device.command',
-      entityType: 'device',
-      entityId: deviceId,
-      data: { type, eventId: open?.id ?? null, sent, outcome },
+    await this.db.transaction(async (tx) => {
+      await tx.insert(auditLog).values({
+        actorKind: actorKindOf(a),
+        actorId: subOf(a),
+        action: 'device.command',
+        entityType: 'device',
+        entityId: deviceId,
+        data: { type, eventId: open?.id ?? null, sent, outcome },
+      });
+      // T-089: sorunun cevabı (OK / yardım / cevapsız) olay ekranında gösterilir (event.device_prompt).
+      if (prompt)
+        await tx.insert(devicePrompt).values({
+          id: uuidv7(),
+          eventId: open!.id,
+          deviceId,
+          operatorId: subOf(a),
+          sentAt,
+          until: new Date(prompt.until),
+          delivered: sent,
+        });
     });
     this.log.log(`Cihaz komutu ${type}: ${outcome}`);
     return { type, eventId: open?.id ?? null, sent, outcome };

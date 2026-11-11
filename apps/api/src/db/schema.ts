@@ -362,6 +362,20 @@ export const inboundCall = telephonySchema.table('inbound_call', {
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
 
+/** 0034 (T-089, S7.1): operatörün "Soru gönder" komutu ve cihazın cevabı (OK / HELP; boşsa bekliyor / cevapsız). */
+export const devicePrompt = eventSchema.table('device_prompt', {
+  id: uuid('id').primaryKey(),
+  eventId: uuid('event_id').notNull(),
+  deviceId: text('device_id').notNull(),
+  operatorId: text('operator_id'),
+  sentAt: timestamptz('sent_at').notNull(),
+  until: timestamptz('until').notNull(),
+  delivered: boolean('delivered').notNull(),
+  answer: text('answer'),
+  answeredAt: timestamptz('answered_at'),
+  answeredBy: text('answered_by'),
+});
+
 /** T-072 (D-12) otomatik sesli ön eleme: olay başına bir arama. Numara ve konuşma dökümü tutulmaz. */
 export const voiceScreening = eventSchema.table('voice_screening', {
   id: uuid('id').primaryKey(),

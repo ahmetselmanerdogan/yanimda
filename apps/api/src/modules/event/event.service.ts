@@ -524,6 +524,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const inactivityMin =
       s.kind === 'INACTIVITY' ? (await this.protection.settingsOf(s.protectedPersonId)).inactivityMin : null;
     const fact = upd.facts.devices[s.deviceId];
+    // T-089: operatörün "Soru gönder"ine cihazın cevabı (İyiyim / yardım) — olay akışından bağımsız kaydedilir.
+    if (s.kind === 'OK' || s.kind === 'CANCEL' || s.kind === 'SOS') await this.recordPromptAnswer(s);
     const d = decide(s, {
       pack: this.pack,
       night,
@@ -639,6 +641,44 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   /** S4.10: kişi şu an "hastanede / seyahatte" modunda mı (bitişi geçmişse değil). */
   private async heldNow(protectedPersonId: string): Promise<boolean> {
     return onHold(await this.protection.settingsOf(protectedPersonId), new Date());
+  }
+
+  /**
+   * T-089 (S7.1): operatörün "Soru gönder" komutuna (event.device_prompt) cihazın cevabı. OK / CANCEL → "İyiyim",
+   * SOS → yardım. Cevap sorunun penceresinde (gönderim ≤ an ≤ until; sunucu saati) ve kişinin açık olayında olmalı;
+   * önce aynı cihaza sorulan, yoksa `payload.eventId` aynı olayı gösteriyorsa olayın son sorusu. Olay akışını
+   * değiştirmez (OK olayı kapatmaz: operatör karar verir; SOS ayrıca alarm olarak işlenir). Konsol `PROMPT_ANSWERED`
+   * güncellemesiyle yeniler.
+   */
+  private async recordPromptAnswer(s: Signal) {
+    const at = new Date(s.receivedAt ?? s.occurredAt).toISOString();
+    const forEvent = typeof s.payload?.eventId === 'string' ? s.payload.eventId : '';
+    const answer = s.kind === 'SOS' ? 'HELP' : 'OK';
+    await this.withOpenEvent(s.protectedPersonId, async (u) => {
+      const r = (await u.tx.execute(sql`
+        UPDATE event.device_prompt SET answer = ${answer}, answered_at = ${at}::timestamptz, answered_by = ${s.deviceId}
+        WHERE id = (
+          SELECT id FROM event.device_prompt
+          WHERE event_id = ${u.ev.id}::uuid AND answer IS NULL
+            AND sent_at <= ${at}::timestamptz AND until >= ${at}::timestamptz
+            AND (device_id = ${s.deviceId} OR ${forEvent} = ${u.ev.id})
+          ORDER BY (device_id = ${s.deviceId}) DESC, sent_at DESC
+          LIMIT 1)
+        RETURNING device_id`)) as unknown as { rows: { device_id: string }[] };
+      const row = r.rows[0];
+      if (!row) return;
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'USER',
+        actorId: s.deviceId,
+        action: 'device.prompt_answered',
+        entityId: u.ev.id,
+        data: { answer, deviceId: row.device_id, by: s.deviceId },
+      });
+      u.publishes.push({
+        topic: TOPICS.eventUpdated,
+        payload: { eventId: u.ev.id, reason: 'PROMPT_ANSWERED', answer, deviceId: row.device_id, by: s.deviceId },
+      });
+    });
   }
 
   /** Kapsama geri geldi: operatörün henüz üstlenmediği KAPSAMA BOŞLUĞU olayı sistemce kapanır. */

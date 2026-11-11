@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, Optional } 
 import {
   type ChainStep,
   type ChainView,
+  type DevicePromptView,
   type LadderView,
   STEP_RESULTS,
   type StepAssessment,
@@ -10,10 +11,10 @@ import {
   type WelfareReason,
 } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, contact } from '../../db/schema';
+import { auditLog, contact, devicePrompt } from '../../db/schema';
 import { deviceSummaries } from '../event/coverage.service';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
 import {
@@ -491,6 +492,7 @@ export class ChainService {
       hearingSpeechImpaired: impaired,
       platformSosFlow: await platformSosFlow(q, ev.sourceSignalIds),
       welfareReason: ev.type === 'WELFARE_CHECK' ? await welfareReasonOf(q, ev.id) : null,
+      prompts: await promptsOf(q, ev.id, new Date()),
     };
   }
 
@@ -592,6 +594,24 @@ async function welfareReasonOf(q: Db | Tx, eventId: string): Promise<WelfareReas
     .orderBy(desc(auditLog.id))
     .limit(1);
   return ((a?.data as { reason?: WelfareReason } | null)?.reason as WelfareReason | undefined) ?? null;
+}
+
+/** T-089: operatörün cihaz soruları ve cevapları; cevapsız ve süresi geçmiş soru NO_ANSWER. */
+async function promptsOf(q: Db | Tx, eventId: string, now: Date): Promise<DevicePromptView[]> {
+  const rows = await q
+    .select()
+    .from(devicePrompt)
+    .where(eq(devicePrompt.eventId, eventId))
+    .orderBy(asc(devicePrompt.sentAt));
+  return rows.map((r) => ({
+    deviceId: r.deviceId,
+    sentAt: r.sentAt.toISOString(),
+    until: r.until.toISOString(),
+    delivered: r.delivered,
+    answer: (r.answer as 'OK' | 'HELP' | null) ?? (r.until <= now ? 'NO_ANSWER' : null),
+    answeredAt: r.answeredAt?.toISOString() ?? null,
+    answeredByDeviceId: r.answeredBy ?? null,
+  }));
 }
 
 /** S3.3: doğrulayan cihaz (alarmı açandan sonraki ilk farklı cihaz); doğrulanmamışsa null. */

@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { InMemoryTimers } from '../src/common/timers/memory-timers';
+import { ChainService } from '../src/modules/chain/chain.service';
+import { loadProcedures } from '../src/modules/chain/procedures';
 import { CoverageAccess, type CoverageActor, DeviceManageController } from '../src/modules/device/coverage.controller';
 import { defaultRegistry, DeviceService } from '../src/modules/device/device.service';
 import { DevicePush } from '../src/modules/device/device-push';
 import { RecordingPush } from '../src/modules/device/push.port';
+import type { EventService } from '../src/modules/event/event.service';
 import { ProtectionService } from '../src/modules/event/protection.service';
+import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
 import type { FcmMessage, FcmResult } from '../src/modules/notify/fcm-client';
 import { createHarness, type Harness, sig } from './support/harness';
 
@@ -22,6 +26,7 @@ const PHONE = '00000000-0000-0000-0000-00000000d0f1';
 let h: Harness;
 let push: RecordingPush;
 let controller: DeviceManageController;
+let events: EventService;
 beforeAll(async () => {
   h = await createHarness();
 });
@@ -35,7 +40,7 @@ beforeEach(async () => {
       ('${WATCH}', '${PERSON}', 'WEAROS_WATCH', now()),
       ('${PHONE}', '${PERSON}', 'ANDROID_PHONE', now());`);
   const protection = new ProtectionService(h.db, h.outbox);
-  h.events(new InMemoryTimers());
+  events = h.events(new InMemoryTimers());
   push = new RecordingPush();
   controller = new DeviceManageController(
     h.db,
@@ -288,5 +293,86 @@ describe('komut cevapları (sözleşme): TEST → TEST sinyali trigger OPERATOR;
       payload: { trigger: 'LOCATE', eventId: ev!.id },
     });
     expect((await events())[0]!.location).toMatchObject({ lat: 41.03, source: 'GPS' });
+  });
+});
+
+describe('T-089 cihaz sorusunun cevabı (S7.1)', () => {
+  const ingest = async (s: ReturnType<typeof sig>) => {
+    await h.signals.accept([s]);
+    await h.worker().drain();
+  };
+  const view = async (id: string) =>
+    (
+      await new ChainService(h.db, events, loadProcedures('TR'), undefined, undefined, staticRules(loadRulePack())).get(
+        id,
+      )
+    ).ladder.prompts!;
+
+  it('İyiyim (OK) ve yardım (SOS) soruya bağlanır; cevapsız soru süre dolunca NO_ANSWER; olay akışı değişmez', async () => {
+    const id = await openEvent('SOS');
+    await controller.command(WATCH, { type: 'PROMPT' }, req(OP));
+    await controller.command(PHONE, { type: 'PROMPT' }, req(OP));
+    expect((await view(id)).map((p) => [p.deviceId, p.answer, p.delivered])).toEqual([
+      [WATCH, null, true],
+      [PHONE, null, true],
+    ]);
+    // Saat "İyiyim" dedi (payload.eventId): kendi sorusu cevaplandı; olay operatörde kalır.
+    await ingest(sig('OK', { deviceId: WATCH, protectedPersonId: PERSON, payload: { eventId: id } }));
+    let v = await view(id);
+    expect(v[0]).toMatchObject({ deviceId: WATCH, answer: 'OK', answeredByDeviceId: WATCH });
+    expect(v[0]!.answeredAt).not.toBeNull();
+    expect(v[1]!.answer).toBeNull();
+    const [ev] = await h.rows<{ state: string }>('SELECT state FROM event.event WHERE id = $1', [id]);
+    expect(ev!.state).toBe('OPERATOR_QUEUE');
+    // Telefonun sorusu cevapsız: süre doldu → NO_ANSWER; geç gelen cevap kaydedilmez.
+    await h.pg.exec(`UPDATE event.device_prompt SET sent_at = sent_at - interval '2 minutes'`);
+    await h.pg.query(`UPDATE event.device_prompt SET until = now() - interval '1 minute' WHERE device_id = $1`, [
+      PHONE,
+    ]);
+    await ingest(sig('OK', { deviceId: PHONE, protectedPersonId: PERSON }));
+    v = await view(id);
+    expect(v.map((p) => p.answer)).toEqual(['OK', 'NO_ANSWER']);
+    // Yeni soru → telefon yardım istedi (SOS): HELP; SOS olaya ayrıca eklenir.
+    await controller.command(PHONE, { type: 'PROMPT' }, req(OP));
+    await ingest(sig('SOS', { deviceId: PHONE, protectedPersonId: PERSON }));
+    v = await view(id);
+    expect(v.map((p) => [p.deviceId, p.answer])).toEqual([
+      [WATCH, 'OK'],
+      [PHONE, 'NO_ANSWER'],
+      [PHONE, 'HELP'],
+    ]);
+    const ups = await h.rows<{ e: { payload: Record<string, unknown> } }>(
+      `SELECT envelope AS e FROM event.outbox WHERE topic = 'event.updated'
+       AND envelope->'payload'->>'reason' = 'PROMPT_ANSWERED' ORDER BY id`,
+    );
+    expect(ups.map((u) => u.e.payload)).toEqual([
+      expect.objectContaining({ eventId: id, answer: 'OK', deviceId: WATCH, by: WATCH }),
+      expect.objectContaining({ eventId: id, answer: 'HELP', deviceId: PHONE, by: PHONE }),
+    ]);
+    const audit = await h.rows<{ data: unknown }>(
+      "SELECT data FROM audit.log WHERE action = 'device.prompt_answered' AND entity_id = $1 ORDER BY id",
+      [id],
+    );
+    expect(audit.map((a) => a.data)).toEqual([
+      { answer: 'OK', deviceId: WATCH, by: WATCH },
+      { answer: 'HELP', deviceId: PHONE, by: PHONE },
+    ]);
+  });
+
+  it('sorusu olmayan cihazdan, olay kimliği eşleşmeyen cevap kaydedilmez; eşleşen olay kimliği son soruyu cevaplar', async () => {
+    const id = await openEvent('SOS');
+    await controller.command(PHONE, { type: 'PROMPT' }, req(OP));
+    await ingest(sig('OK', { deviceId: WATCH, protectedPersonId: PERSON }));
+    await ingest(
+      sig('OK', {
+        deviceId: WATCH,
+        protectedPersonId: PERSON,
+        payload: { eventId: '00000000-0000-0000-0000-000000000000' },
+      }),
+    );
+    expect((await view(id))[0]!.answer).toBeNull();
+    // Telefona giden soruyu saat cevapladı (telefon saate iletti): olay kimliğiyle.
+    await ingest(sig('OK', { deviceId: WATCH, protectedPersonId: PERSON, payload: { eventId: id } }));
+    expect((await view(id))[0]).toMatchObject({ deviceId: PHONE, answer: 'OK', answeredByDeviceId: WATCH });
   });
 });
