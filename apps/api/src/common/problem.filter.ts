@@ -10,6 +10,9 @@ const log = new Logger('ProblemFilter');
  */
 const TRANSIENT = /^(ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|ENOTFOUND|EAI_AGAIN|08\d{3}|57P0[1-3])$/;
 
+/** packages/messages kod biçimi (örn. F-MEMBER-CODE-USED); başka bir şey `code` olarak dışarı verilmez. */
+const CATALOG_CODE = /^[A-Z]-[A-Z0-9-]{2,60}$/;
+
 export function isTransient(e: unknown): boolean {
   const err = e as { code?: string; message?: string; cause?: { code?: string; message?: string } };
   const code = err?.cause?.code ?? err?.code;
@@ -24,10 +27,14 @@ export class ProblemFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse();
     let status: number;
     let detail: unknown;
+    let code: string | undefined;
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
       detail = typeof body === 'string' ? body : ((body as { message?: unknown }).message ?? 'Error');
+      // Katalog kodu (packages/messages, örn. F-MEMBER-CODE-USED): istemci metni kendi kataloğundan gösterir.
+      const c = typeof body === 'object' && body ? (body as { code?: unknown }).code : undefined;
+      if (typeof c === 'string' && CATALOG_CODE.test(c)) code = c;
     } else if (isTransient(exception)) {
       log.warn(`[geçici] ${safeError(exception)}`);
       status = HttpStatus.SERVICE_UNAVAILABLE;
@@ -46,6 +53,7 @@ export class ProblemFilter implements ExceptionFilter {
         title: HttpStatus[status],
         status,
         detail: Array.isArray(detail) ? detail.join('; ') : String(detail),
+        ...(code ? { code } : {}),
       });
   }
 }

@@ -15,11 +15,23 @@ const b64url = (buf: ArrayBuffer | Uint8Array) =>
 const random = (n = 32) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 const redirectUri = () => `${window.location.origin}/hesap/callback`;
 
-export async function login(): Promise<void> {
+/** Girişten sonra dönülecek sayfa: yalnız uygulama içi bilinen yollar (açık yönlendirme yok). */
+const RETURN_PATHS = ['/hesap', '/hesap/davet'] as const;
+export type ReturnPath = (typeof RETURN_PATHS)[number];
+
+/** Callback: girişten önce kaydedilen dönüş yolunu bir kez okur (yoksa /hesap). */
+export function takeReturnPath(): ReturnPath {
+  const v = sessionStorage.getItem(`${KEY}.return`);
+  sessionStorage.removeItem(`${KEY}.return`);
+  return (RETURN_PATHS as readonly string[]).includes(v ?? '') ? (v as ReturnPath) : '/hesap';
+}
+
+export async function login(returnTo: ReturnPath = '/hesap'): Promise<void> {
   const verifier = random(48);
   const state = random(16);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   sessionStorage.setItem(`${KEY}.pkce`, JSON.stringify({ verifier, state }));
+  sessionStorage.setItem(`${KEY}.return`, returnTo);
   const q = new URLSearchParams({
     client_id: CLIENT_ID,
     response_type: 'code',

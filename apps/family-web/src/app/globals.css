@@ -164,3 +164,35 @@ select:focus-visible {
   outline: 3px solid var(--attention);
   outline-offset: 2px;
 }
+h3 {
+  font-size: 1.1em;
+  margin: 20px 0 4px;
+}
+.members {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.members li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+}
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--caption);
+  background: color-mix(in srgb, var(--brand) 15%, transparent);
+}
+.code {
+  font-size: 1.3em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}

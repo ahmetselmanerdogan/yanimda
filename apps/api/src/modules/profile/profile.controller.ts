@@ -129,4 +129,33 @@ export class ProfileController {
   invite(@Param('id') id: string, @Req() req: ActorRequest) {
     return this.profile.invite(actorOf(req), id);
   }
+
+  /** POST /v1/protected-persons/{id}/members/invite → { code, expiresAt, relation } (72 sa, tek kullanım; OWNER). */
+  @Post(':id/members/invite')
+  memberInvite(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+    return this.profile.createMemberInvite(actorOf(req), id, body ?? {});
+  }
+
+  @Get(':id/members')
+  members(@Param('id') id: string, @Req() req: ActorRequest) {
+    return this.profile.members(actorOf(req), id);
+  }
+
+  @Delete(':id/members/:memberId')
+  @HttpCode(204)
+  async removeMember(@Param('id') id: string, @Param('memberId') memberId: string, @Req() req: ActorRequest) {
+    await this.profile.removeMember(actorOf(req), id, memberId);
+  }
+}
+
+/** T-040 aile üyesi daveti kabulü: kodu giren aile hesabı (consumers FAMILY) MEMBER olur. */
+@Controller('family/members')
+@UseGuards(ProfileGuard)
+export class FamilyMembersController {
+  constructor(@Inject(ProfileService) private readonly profile: ProfileService) {}
+
+  @Post('accept')
+  accept(@Body() body: unknown, @Req() req: ActorRequest) {
+    return this.profile.acceptMemberInvite(actorOf(req), body);
+  }
 }

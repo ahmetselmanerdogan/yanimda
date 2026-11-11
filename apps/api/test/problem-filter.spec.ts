@@ -1,4 +1,4 @@
-import { type ArgumentsHost, ConflictException } from '@nestjs/common';
+import { type ArgumentsHost, BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
 import { isTransient, ProblemFilter } from '../src/common/problem.filter';
@@ -48,5 +48,13 @@ describe('ProblemFilter', () => {
       status: 409,
       detail: 'Başka operatör üstlendi',
     });
+  });
+
+  it('katalog kodu taşıyan hata: detail katalog metni, code alanı istemciye geçer (T-040 üye daveti)', () => {
+    const body = run(new BadRequestException({ message: 'Davet kodu geçersiz.', code: 'F-MEMBER-CODE-INVALID' })).body;
+    expect(body).toMatchObject({ status: 400, detail: 'Davet kodu geçersiz.', code: 'F-MEMBER-CODE-INVALID' });
+    // Katalog biçiminde olmayan "code" dışarı verilmez.
+    expect(run(new BadRequestException({ message: 'x', code: 'select * from' })).body).not.toHaveProperty('code');
+    expect(run(new ConflictException('düz')).body).not.toHaveProperty('code');
   });
 });

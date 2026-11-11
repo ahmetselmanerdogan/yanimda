@@ -95,6 +95,9 @@ test('KVKK ve hesabım sayfaları', async ({ page }) => {
   await axe(page);
   await page.goto('/hesap');
   await axe(page);
+  await page.goto('/hesap/davet');
+  await expect(page.getByRole('heading', { name: 'Aile davetini kabul et' })).toBeVisible();
+  await axe(page);
 });
 
 test('200% yakınlaştırma (320 px genişlik) yatay kaydırma yok', async ({ page }) => {

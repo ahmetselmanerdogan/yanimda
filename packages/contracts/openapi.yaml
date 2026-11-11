@@ -1385,6 +1385,109 @@ paths:
                   smsText: { type: string, description: Katalog S-INVITE }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/members/invite:
+    post:
+      summary: Aile üyesi (MEMBER) davet kodu üret (yalnız OWNER veya ADMIN). C-02, C-04, T-040
+      description: |
+        10 karakter Crockford base32 (`XXXXX-XXXXX`, ~50 bit), 72 saat geçerli, tek kullanımlık. Yalnız sha256 özeti
+        saklanır; kod denetim kaydına yazılmaz. Kişi başına en çok 5 açık davet (409 F-MEMBER-INVITE-LIMIT) ve en çok
+        10 aile hesabı (409 F-MEMBER-LIMIT). MEMBER 403 (F-MEMBER-OWNER-ONLY); erişimi olmayan 404.
+      operationId: createMemberInvite
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                relation: { type: [string, 'null'], maxLength: 50, description: Kabulde üyeliğe yazılır (örn. Oğlu) }
+      responses:
+        '201':
+          description: Kod (bir kez gösterilir)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expiresAt, relation]
+                properties:
+                  code: { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$' }
+                  expiresAt: { type: string, format: date-time }
+                  relation: { type: [string, 'null'] }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/members:
+    get:
+      summary: Aile hesapları (OWNER ve MEMBER görür). C-04, T-040
+      description: Sahipler önce, sonra katılma sırası. Başka üyenin e-posta, telefon veya kimliği dönmez; `isMe` işaretli.
+      operationId: listMembers
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Üyeler
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/MemberView' } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/members/{memberId}:
+    delete:
+      summary: Aile hesabını çıkar (OWNER herkesi, MEMBER yalnız kendini). C-04, T-040
+      description: |
+        Son hesap sahibi çıkarılamaz (409 F-MEMBER-LAST-OWNER). MEMBER başka hesabı çıkaramaz (403 F-MEMBER-OWNER-ONLY).
+        Erişimi olmayan, başka kişinin üyesi veya bilinmeyen kimlik 404. Çıkarılan hesap bildirim almaz.
+      operationId: removeMember
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Çıkarıldı }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /family/members/accept:
+    post:
+      summary: Aile üyesi davetini kabul et (yalnız aile hesabı, consumers FAMILY). C-02, T-040
+      description: |
+        Kod büyük/küçük harf, boşluk ve tireye duyarsız (O→0, I/L→1). Başarıda hesap MEMBER olarak eklenir.
+        400: F-MEMBER-CODE-INVALID | F-MEMBER-CODE-EXPIRED | F-MEMBER-CODE-USED; 409: F-MEMBER-ALREADY (kod harcanmaz)
+        | F-MEMBER-LIMIT; yönetici 403.
+      operationId: acceptMemberInvite
+      security: [{ userToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, maxLength: 40 }
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protectedPersonId, memberId, role]
+                properties:
+                  protectedPersonId: { type: string, format: uuid }
+                  memberId: { type: string, format: uuid }
+                  role: { const: MEMBER }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/learning:
     get:
       summary: Öğrenme modu ve kişiye özel eşikler (profil raporu özeti). D-06, T-070
@@ -2373,6 +2476,22 @@ components:
         title: { type: string }
         status: { type: integer }
         detail: { type: string }
+        code:
+          type: string
+          pattern: '^[A-Z]-[A-Z0-9-]{2,60}$'
+          description: |
+            Varsa packages/messages katalog kodu (örn. F-MEMBER-CODE-USED); istemci metni kendi kataloğundan gösterir.
+            `detail` aynı kodun Türkçe metnidir.
+    MemberView:
+      type: object
+      description: T-040 aile hesabı (başka üyenin e-posta/telefon/kimliği dönmez)
+      required: [id, role, relation, createdAt, isMe]
+      properties:
+        id: { type: string, format: uuid }
+        role: { enum: [OWNER, MEMBER] }
+        relation: { type: [string, 'null'], maxLength: 50 }
+        createdAt: { type: string, format: date-time }
+        isMe: { type: boolean, description: Kayıt isteği yapan hesaba mı ait }
     Signal:
       $ref: './schemas/signal.schema.json'
     CallView:

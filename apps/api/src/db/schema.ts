@@ -204,6 +204,19 @@ export const invite = profileSchema.table('invite', {
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
+/** T-040 aile üyesi (MEMBER) daveti: sha256(kod) saklanır; 72 saat, tek kullanım. created_by/used_by = OIDC sub. */
+export const memberInvite = profileSchema.table('member_invite', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  codeHash: text('code_hash').notNull(),
+  createdBy: text('created_by').notNull(),
+  relation: text('relation'),
+  expiresAt: timestamptz('expires_at').notNull(),
+  usedAt: timestamptz('used_at'),
+  usedBy: text('used_by'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+});
+
 /** T-050 aranacak numaralar (asgari; tam profil T-040). */
 export const contact = profileSchema.table('contact', {
   id: uuid('id').primaryKey(),
