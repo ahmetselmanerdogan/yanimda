@@ -6,6 +6,7 @@ import { verifyDeviceToken } from '../src/modules/device/device-token';
 import { type DevicePrincipal, EnrollmentService, operatorInfo } from '../src/modules/device/enrollment.service';
 import { ProtectionService } from '../src/modules/event/protection.service';
 import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
+import { SignalController } from '../src/modules/signal/signal.controller';
 import { createHarness, type Harness } from './support/harness';
 
 /**
@@ -96,31 +97,77 @@ describe('saat kaydı (telefon üzerinden)', () => {
   });
 });
 
-describe('köprü yetkisi (POST /signals)', () => {
+describe('köprü yetkisi (POST /signals, sinyal başına)', () => {
   const s = (deviceId: string, protectedPersonId = PERSON) => ({ deviceId, protectedPersonId });
+  const denied = async (p: DevicePrincipal | undefined, batch: unknown[]) =>
+    Object.fromEntries(await svc.authorizeBatch(p, batch));
+  const signal = (deviceId: string, kind: string, protectedPersonId = PERSON) => ({
+    schemaVersion: 1,
+    idempotencyKey: `${deviceId}:${Math.random().toString(36).slice(2)}:${kind}`,
+    deviceId,
+    protectedPersonId,
+    kind,
+    occurredAt: new Date().toISOString(),
+  });
 
   it('telefon kendi ve aynı kişinin etkin saatinin sinyallerini iletebilir', async () => {
     await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
-    await expect(svc.assertBatchAllowed(phone, [s(PHONE), s(WATCH), s(WATCH)])).resolves.toBeUndefined();
+    expect(await denied(phone, [s(PHONE), s(WATCH), s(WATCH)])).toEqual({});
   });
 
-  it('kayıtsız / başka kişinin / iptal edilmiş saat, başka kişi adına sinyal → 403', async () => {
-    expect(await status(svc.assertBatchAllowed(phone, [s(WATCH)]))).toBe(403); // kayıtsız
-    expect(await status(svc.assertBatchAllowed(phone, [s(OTHER_WATCH)]))).toBe(403);
-    expect(await status(svc.assertBatchAllowed(phone, [s(OTHER_WATCH, OTHER)]))).toBe(403);
-    expect(await status(svc.assertBatchAllowed(phone, [s(PHONE), s(PHONE, OTHER)]))).toBe(403);
+  it('kayıtsız / başka kişinin / iptal edilmiş saat, başka kişi adına sinyal → yalnız o sinyal reddedilir', async () => {
+    expect(await denied(phone, [s(PHONE), s(WATCH)])).toEqual({ 1: 'DEVICE_NOT_BRIDGED' }); // kayıtsız
+    expect(await denied(phone, [s(OTHER_WATCH)])).toEqual({ 0: 'DEVICE_NOT_BRIDGED' });
+    expect(await denied(phone, [s(OTHER_WATCH, OTHER)])).toEqual({ 0: 'PERSON_MISMATCH' });
+    expect(await denied(phone, [s(PHONE), s(PHONE, OTHER)])).toEqual({ 1: 'PERSON_MISMATCH' });
     await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
     await enrollment.revoke(WATCH);
-    expect(await status(svc.assertBatchAllowed(phone, [s(WATCH)]))).toBe(403);
+    expect(await denied(phone, [s(WATCH), s(PHONE)])).toEqual({ 0: 'DEVICE_NOT_BRIDGED' });
   });
 
   it('saat token’ı başka cihazı köprüleyemez; büyük harfli kimlik geçmez; token’sız (simülatör) dokunulmaz', async () => {
     await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
     const watch: DevicePrincipal = { deviceId: WATCH, protectedPersonId: PERSON, kind: 'WEAROS_WATCH' };
-    expect(await status(svc.assertBatchAllowed(watch, [s(PHONE)]))).toBe(403);
-    await expect(svc.assertBatchAllowed(watch, [s(WATCH)])).resolves.toBeUndefined();
-    expect(await status(svc.assertBatchAllowed(phone, [s(WATCH.toUpperCase())]))).toBe(403);
-    await expect(svc.assertBatchAllowed(undefined, [s('sim-1')])).resolves.toBeUndefined();
+    expect(await denied(watch, [s(PHONE), s(WATCH)])).toEqual({ 0: 'DEVICE_MISMATCH' });
+    expect(await denied(phone, [s(WATCH.toUpperCase())])).toEqual({ 0: 'DEVICE_MISMATCH' });
+    expect(await denied(phone, [null, 'x'])).toEqual({ 0: 'PERSON_MISMATCH', 1: 'PERSON_MISMATCH' });
+    expect(await denied(undefined, [s('sim-1')])).toEqual({});
+  });
+
+  it('telefonun SOS’u, az önce iptal edilmiş saatin HEARTBEAT’iyle aynı partide → SOS yazılır, 202', async () => {
+    await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
+    await enrollment.revoke(WATCH);
+    const ctl = new SignalController(h.signals, svc);
+    const hb = signal(WATCH, 'HEARTBEAT');
+    const sos = signal(PHONE, 'SOS');
+    const r = await ctl.post([hb, sos], { device: phone } as never);
+    expect(r).toEqual({
+      accepted: 1,
+      duplicates: 0,
+      rejected: [{ index: 0, idempotencyKey: hb.idempotencyKey, reason: 'DEVICE_NOT_BRIDGED' }],
+    });
+    expect(await h.rows('SELECT kind FROM signal.signal')).toEqual([{ kind: 'SOS' }]);
+    // cihaz partiyi yeniden gönderirse SOS tekrar sayılır, HEARTBEAT yine reddedilir
+    expect(await ctl.post([hb, sos], { device: phone } as never)).toMatchObject({ accepted: 0, duplicates: 1 });
+  });
+
+  it('başka kişi adına sinyal yanında kendi SOS’u yazılır; partide yalnız yetkisiz sinyal → 403 + rejected', async () => {
+    const ctl = new SignalController(h.signals, svc);
+    const foreign = signal(PHONE, 'HEARTBEAT', OTHER);
+    expect(await ctl.post([foreign, signal(PHONE, 'SOS')], { device: phone } as never)).toMatchObject({
+      accepted: 1,
+      rejected: [{ index: 0, reason: 'PERSON_MISMATCH' }],
+    });
+    await expect(ctl.post([foreign, signal(WATCH, 'HEARTBEAT')], { device: phone } as never)).rejects.toMatchObject({
+      status: 403,
+      response: {
+        rejected: [
+          { index: 0, reason: 'PERSON_MISMATCH' },
+          { index: 1, reason: 'DEVICE_NOT_BRIDGED' },
+        ],
+      },
+    });
+    expect(await h.rows('SELECT kind FROM signal.signal')).toEqual([{ kind: 'SOS' }]);
   });
 
   it('köprülenen saat sinyali saatin adaptörüyle kaydedilir', async () => {
@@ -134,9 +181,8 @@ describe('köprü yetkisi (POST /signals)', () => {
       occurredAt: T0.toISOString(),
       device: { onWrist: true, connectivity: 'BLE' },
     };
-    await svc.assertBatchAllowed(phone, [sig]);
-    const r = await h.signals.accept([sig]);
-    expect(r).toMatchObject({ accepted: 1, duplicates: 0 });
+    const r = await new SignalController(h.signals, svc).post([sig], { device: phone } as never);
+    expect(r).toMatchObject({ accepted: 1, duplicates: 0, rejected: [] });
     const [row] = await h.rows<{ source: { kind?: string; role?: string } | null }>(
       `SELECT payload->'source' AS source FROM signal.signal WHERE idempotency_key = '${sig.idempotencyKey}'`,
     );

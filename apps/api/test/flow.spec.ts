@@ -73,6 +73,6 @@ describe('FALL akışı', () => {
 
   it('aynı idempotencyKey iki kez işlenmez', async () => {
     const s = sig('HEARTBEAT');
-    expect(await h.signals.accept([s, s])).toEqual({ accepted: 1, duplicates: 1 });
+    expect(await h.signals.accept([s, s])).toEqual({ accepted: 1, duplicates: 1, rejected: [] });
   });
 });

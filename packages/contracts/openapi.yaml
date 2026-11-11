@@ -21,16 +21,24 @@ paths:
       description: |
         T-010 · D-01. Parti sırayla işlenir; her sinyal tek transaction'da signal.signal + event.outbox
         (signal.received) olarak yazılır. idempotencyKey 24 saat tekildir (Redis; Redis yoksa veritabanı tekil
-        indeksi). Geçersiz bir sinyal varsa partiden hiçbir şey yazılmaz (400). 503 alan cihaz partiyi
-        Retry-After sonrası aynen yeniden gönderir; önceden yazılanlar `duplicates` sayılır.
+        indeksi). 503 alan cihaz partiyi Retry-After sonrası aynen yeniden gönderir; önceden yazılanlar
+        `duplicates` sayılır.
+        Sinyal başına kabul (D-01): şemaya uymayan, cihazın gönderemeyeceği veya token yetkisi dışındaki sinyal
+        yalnız kendisi reddedilir ve 202 yanıtının `rejected` listesinde döner; partinin geri kalanı yazılır (SOS,
+        yanındaki geçersiz sinyal yüzünden kaybolmaz). Partide yazılabilecek tek sinyal yoksa 400 (ret nedenlerinden
+        biri yetki ise 403); Problem gövdesinde de `rejected` bulunur. Cihaz yalnız `rejected` içinde adı geçen
+        sinyali kalıcı hata sayıp tampondan atar; açıklamasız 4xx'te alarm sinyalini (SOS, FALL, INACTIVITY,
+        CANCEL, OK, CALLBACK_REQUEST) atmaz, geri çekilerek yeniden dener.
         T-015: her sinyal cihaz türünün adaptöründen geçer (deviceId → device.device.kind; kayıtsız → simülatör,
-        üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) partiyi 400 ile reddeder.
+        üretimde kapalı). Cihazın gönderemeyeceği sinyal (ör. telefondan OFF_BODY) `UNSUPPORTED_SIGNAL` ile reddedilir.
         Sunucu sinyale `source: {kind, role}` ekler; istemci bu alanı gönderemez.
         T-073: IOS_PHONE türü (telefon rolü, Android telefonla aynı sinyal kümesi).
         T-041: `Authorization: Bearer <cihaz token>`. Token'lı cihaz yalnız kendi deviceId ve protectedPersonId'si
-        ile sinyal gönderebilir (değilse 403, partiden hiçbir şey yazılmaz). T-043 köprü (B-03): eşlikçi telefonun
+        ile sinyal gönderebilir (başka kişi → `PERSON_MISMATCH`, başka cihaz → `DEVICE_MISMATCH`; o sinyal
+        yazılmaz). T-043 köprü (B-03): eşlikçi telefonun
         (ANDROID_PHONE/IOS_PHONE) token'ı aynı kişinin etkin WEAROS_WATCH cihazlarının sinyallerini saatin deviceId'si
-        ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı). Token'sız istek yalnız simülatör açıkken
+        ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı; iptal edilmiş/kayıtsız/başka
+        kişiye geçmiş saatin sinyali `DEVICE_NOT_BRIDGED`). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
       responses:
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -40,13 +48,25 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [accepted, duplicates]
+                required: [accepted, duplicates, rejected]
                 properties:
                   accepted: { type: integer, minimum: 0, description: Yeni yazılan sinyal sayısı }
                   duplicates: { type: integer, minimum: 0, description: Daha önce alınmış (yok sayılan) sinyal sayısı }
-        '400': { $ref: '#/components/responses/Problem' }
+                  rejected:
+                    type: array
+                    description: Reddedilen (yazılmayan) sinyaller; boşsa partinin tamamı yazıldı veya tekrardı
+                    items: { $ref: '#/components/schemas/RejectedSignal' }
+        '400':
+          description: Gövde dizi değil / boş veya partideki her sinyal reddedildi (yetki dışı ret yok)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SignalBatchProblem' }
         '401': { $ref: '#/components/responses/Problem' }
-        '403': { $ref: '#/components/responses/Problem' }
+        '403':
+          description: Partideki her sinyal reddedildi ve en az biri token yetkisi dışında
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SignalBatchProblem' }
         '503':
           description: Geçici olarak yazılamadı veya aynı sinyal şu an işleniyor; yeniden deneyin
           headers:
@@ -2510,6 +2530,30 @@ components:
           description: |
             Varsa packages/messages katalog kodu (örn. F-MEMBER-CODE-USED); istemci metni kendi kataloğundan gösterir.
             `detail` aynı kodun Türkçe metnidir.
+    RejectedSignal:
+      type: object
+      description: D-01 sinyal başına ret. PII ve serbest metin yok; `reason` sabit koddur.
+      required: [index, reason]
+      properties:
+        index: { type: integer, minimum: 0, description: Partideki sıra (0'dan) }
+        idempotencyKey:
+          type: string
+          maxLength: 200
+          description: Sinyalin anahtarı (gönderilen değer geçerli biçimdeyse); cihaz tampon kaydını bununla bulur
+        reason:
+          enum: [SCHEMA_INVALID, UNSUPPORTED_SIGNAL, PERSON_MISMATCH, DEVICE_MISMATCH, DEVICE_NOT_BRIDGED]
+          description: |
+            SCHEMA_INVALID şemaya uymuyor; UNSUPPORTED_SIGNAL cihaz türü bu sinyali gönderemez / kayıtsız cihaz
+            (simülatör kapalı); PERSON_MISMATCH token'ın kişisi değil; DEVICE_MISMATCH token'ın cihazı değil ve
+            köprü yapılamaz; DEVICE_NOT_BRIDGED köprülenen cihaz bu kişinin etkin saati değil (iptal/kayıtsız).
+    SignalBatchProblem:
+      allOf:
+        - { $ref: '#/components/schemas/Problem' }
+        - type: object
+          properties:
+            rejected:
+              type: array
+              items: { $ref: '#/components/schemas/RejectedSignal' }
     MemberView:
       type: object
       description: T-040 aile hesabı (başka üyenin e-posta/telefon/kimliği dönmez)

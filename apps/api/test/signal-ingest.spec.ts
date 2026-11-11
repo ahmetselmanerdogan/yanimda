@@ -34,7 +34,7 @@ const count = async (table: string) =>
 describe('POST /v1/signals → kalıcı kayıt', () => {
   it('1 sinyal → 1 signal satırı + 1 outbox satırı (signal.received)', async () => {
     const s = sig('FALL', { value: 1, location: { lat: 41, lng: 29 } });
-    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0 });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0, rejected: [] });
 
     const [row] = await h.rows<{ kind: string; idempotency_key: string; device_id: string; time: Date }>(
       'SELECT kind, idempotency_key, device_id, time FROM signal.signal',
@@ -62,23 +62,83 @@ describe('POST /v1/signals → kalıcı kayıt', () => {
     expect(validate(envelope), JSON.stringify(validate.errors)).toBe(true);
   });
 
-  it('şemaya uymayan sinyal 400 döner ve partiden hiçbir şey yazılmaz', async () => {
-    await expect(h.signals.accept([sig('FALL'), { ...sig('FALL'), kind: 'NOPE' }])).rejects.toMatchObject({
+  it('şemaya uymayan sinyal yalnız kendisi reddedilir; partinin geri kalanı yazılır (sinyal başına kabul)', async () => {
+    const fall = sig('FALL');
+    const bad = { ...sig('FALL'), kind: 'NOPE' };
+    expect(await h.signals.accept([fall, bad])).toEqual({
+      accepted: 1,
+      duplicates: 0,
+      rejected: [{ index: 1, idempotencyKey: bad.idempotencyKey, reason: 'SCHEMA_INVALID' }],
+    });
+    expect(await h.rows('SELECT idempotency_key FROM signal.signal')).toEqual([
+      { idempotency_key: fall.idempotencyKey },
+    ]);
+    expect(await count('event.outbox')).toBe(1);
+  });
+
+  it('SOS, önündeki ve arkasındaki geçersiz sinyallere rağmen yazılır; sıra korunur', async () => {
+    const sos = sig('SOS');
+    const r = await h.signals.accept([{ nope: 1 }, null, sos, { ...sig('HEARTBEAT'), occurredAt: 'dün' }]);
+    expect(r).toEqual({
+      accepted: 1,
+      duplicates: 0,
+      rejected: [
+        { index: 0, reason: 'SCHEMA_INVALID' },
+        { index: 1, reason: 'SCHEMA_INVALID' },
+        { index: 3, idempotencyKey: expect.any(String), reason: 'SCHEMA_INVALID' },
+      ],
+    });
+    const [{ envelope }] = await h.rows<{ envelope: KafkaEnvelope<Signal> }>('SELECT envelope FROM event.outbox');
+    expect(envelope.payload).toMatchObject({ kind: 'SOS', idempotencyKey: sos.idempotencyKey });
+  });
+
+  it('partideki her sinyal geçersizse 400 ve gövdede rejected; hiçbir şey yazılmaz', async () => {
+    const bad = { ...sig('FALL'), kind: 'NOPE' };
+    await expect(h.signals.accept([bad, { x: 1 }])).rejects.toMatchObject({
       status: 400,
+      response: {
+        rejected: [
+          { index: 0, idempotencyKey: bad.idempotencyKey, reason: 'SCHEMA_INVALID' },
+          { index: 1, reason: 'SCHEMA_INVALID' },
+        ],
+      },
     });
     expect(await count('signal.signal')).toBe(0);
     expect(await count('event.outbox')).toBe(0);
   });
 
-  it('boş parti 400', async () => {
+  it('reddedilen sinyal ile tekrarlar birlikte sayılır', async () => {
+    const sos = sig('SOS');
+    await h.signals.accept([sos]);
+    const hb = sig('HEARTBEAT');
+    expect(await h.signals.accept([sos, { ...sig('FALL'), kind: 'NOPE' }, hb, hb])).toEqual({
+      accepted: 1,
+      duplicates: 2,
+      rejected: [{ index: 1, idempotencyKey: expect.any(String), reason: 'SCHEMA_INVALID' }],
+    });
+    expect(await count('signal.signal')).toBe(2);
+  });
+
+  it("ret log'u yalnız neden kodu ve sayı içerir (PII yok)", async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => void logged.push(String(m)));
+    const bad = { ...sig('FALL', { protectedPersonId: 'pp-gizli-7', location: { lat: 41.0123, lng: 29 } }), kind: 'X' };
+    await h.signals.accept([sig('SOS'), bad]);
+    spy.mockRestore();
+    expect(logged.join('\n')).toContain('SCHEMA_INVALID=1');
+    for (const secret of ['pp-gizli-7', '41.0123', bad.idempotencyKey]) expect(logged.join('\n')).not.toContain(secret);
+  });
+
+  it('boş parti / dizi olmayan gövde 400', async () => {
     await expect(h.signals.accept([])).rejects.toMatchObject({ status: 400 });
+    await expect(h.signals.accept({} as never)).rejects.toMatchObject({ status: 400 });
   });
 });
 
 describe('Idempotency', () => {
   it('aynı key aynı partide iki kez → duplicates=1', async () => {
     const s = sig('HEARTBEAT');
-    expect(await h.signals.accept([s, s])).toEqual({ accepted: 1, duplicates: 1 });
+    expect(await h.signals.accept([s, s])).toEqual({ accepted: 1, duplicates: 1, rejected: [] });
     expect(await count('signal.signal')).toBe(1);
     expect(await count('event.outbox')).toBe(1);
   });
@@ -86,7 +146,7 @@ describe('Idempotency', () => {
   it('aynı key ayrı isteklerde → duplicates=1', async () => {
     const s = sig('SOS');
     await h.signals.accept([s]);
-    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1 });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1, rejected: [] });
     expect(await count('event.outbox')).toBe(1);
   });
 
@@ -94,7 +154,7 @@ describe('Idempotency', () => {
     const s = sig('FALL');
     await h.signals.accept([s]);
     await h.redis.flushall();
-    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1 });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1, rejected: [] });
     expect(await count('signal.signal')).toBe(1);
     expect(await count('event.outbox')).toBe(1);
   });
@@ -104,8 +164,8 @@ describe('Idempotency', () => {
     h.redis.set = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
     h.redis.get = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
     h.redis.del = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
-    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0 });
-    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1 });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0, rejected: [] });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 0, duplicates: 1, rejected: [] });
     expect(await count('event.outbox')).toBe(1);
   });
 
@@ -124,7 +184,7 @@ describe('Idempotency', () => {
     expect(await h.redis.get(`idem:${s.idempotencyKey}`)).toBeNull();
     expect(await count('signal.signal')).toBe(0); // signal insert de geri alındı (tek transaction)
     await h.pg.exec('ALTER TABLE event.outbox_off RENAME TO outbox');
-    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0 });
+    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0, rejected: [] });
   });
 
   it("hata log'larında PII yok (konum, kişi, anahtar, payload)", async () => {
@@ -198,7 +258,11 @@ describe('Cihaz durumu (geçici olarak signal içinde; device modülü gelince t
   });
 
   it('kayıtlı olmayan cihaz sinyali yine kabul edilir', async () => {
-    expect(await h.signals.accept([sig('SOS', { deviceId: 'bilinmeyen' })])).toEqual({ accepted: 1, duplicates: 0 });
+    expect(await h.signals.accept([sig('SOS', { deviceId: 'bilinmeyen' })])).toEqual({
+      accepted: 1,
+      duplicates: 0,
+      rejected: [],
+    });
   });
 });
 
@@ -421,6 +485,6 @@ describe('Migration geri alınabilir (X-05)', () => {
       await h.rows("SELECT 1 FROM information_schema.tables WHERE table_schema='event' AND table_name='outbox'"),
     ).toEqual([]);
     await migrate(h.exec);
-    expect(await h.signals.accept([sig('SOS')])).toEqual({ accepted: 1, duplicates: 0 });
+    expect(await h.signals.accept([sig('SOS')])).toEqual({ accepted: 1, duplicates: 0, rejected: [] });
   });
 });

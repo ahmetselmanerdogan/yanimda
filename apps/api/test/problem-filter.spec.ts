@@ -57,4 +57,27 @@ describe('ProblemFilter', () => {
     expect(run(new BadRequestException({ message: 'x', code: 'select * from' })).body).not.toHaveProperty('code');
     expect(run(new ConflictException('düz')).body).not.toHaveProperty('code');
   });
+
+  it('D-01: sinyal partisi ret listesi (rejected) yalnız doğrulanmış biçimde geçer', () => {
+    const body = run(
+      new BadRequestException({
+        message: 'Partide kabul edilebilir sinyal yok',
+        rejected: [
+          { index: 0, idempotencyKey: 'dev:1:SOS:abc', reason: 'SCHEMA_INVALID' },
+          { index: 1, idempotencyKey: 'boşluk var ve çok', reason: 'UNSUPPORTED_SIGNAL', extra: 'konum 41.01' },
+          { index: 2, reason: 'select * from' },
+          'x',
+        ],
+      }),
+    ).body;
+    expect(body).toMatchObject({
+      status: 400,
+      rejected: [
+        { index: 0, idempotencyKey: 'dev:1:SOS:abc', reason: 'SCHEMA_INVALID' },
+        { index: 1, reason: 'UNSUPPORTED_SIGNAL' },
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain('41.01');
+    expect(run(new ConflictException('düz')).body).not.toHaveProperty('rejected');
+  });
 });
