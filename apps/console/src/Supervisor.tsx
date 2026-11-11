@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { DispatchPanel } from './components/Dispatch';
-import type { DispatchView } from './lib/api';
+import type { DispatchView, SupervisorAlertView } from './lib/api';
 import {
   ApiError,
   OPERATOR_STATUSES,
@@ -54,6 +54,19 @@ export function SupervisorBoard({
         .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message }))),
     [api],
   );
+  // Kalıcı amir uyarıları (gördüm): 15 sn'de bir ve WS uyarısı gelince.
+  const [alerts, setAlerts] = useState<SupervisorAlertView[]>([]);
+  const loadAlerts = useCallback(() => void api.alerts(true).then(setAlerts, () => undefined), [api]);
+  useEffect(() => {
+    loadAlerts();
+    const id = setInterval(loadAlerts, 15_000);
+    return () => clearInterval(id);
+  }, [loadAlerts]);
+  const ackAlert = (id: string) =>
+    void api.ackAlert(id).then(
+      () => setAlerts((xs) => xs.filter((x) => x.id !== id)),
+      (e: Error) => setError(e.message),
+    );
   // PWA web push: amir uyarıları bu cihaza.
   const [push, setPush] = useState<PushState>('unsupported');
   useEffect(() => void pushState(api).then(setPush, () => undefined), [api]);
@@ -188,6 +201,27 @@ export function SupervisorBoard({
               rows={Object.entries(d.byType24h).map(([k, n]) => ({ label: t(`O-TYPE-${k}`), n }))}
               empty={t('O-UI-SUP-BY-TYPE-NONE')}
             />
+          </section>
+
+          <section className="sup-panel wide" data-testid="alerts" aria-labelledby="alerts-title">
+            <h2 id="alerts-title">
+              {t('O-UI-ALERTS')} ({alerts.length})
+            </h2>
+            {alerts.length === 0 ? (
+              <p className="muted">{t('O-UI-ALERTS-NONE')}</p>
+            ) : (
+              <ul className="alert-list">
+                {alerts.map((a) => (
+                  <li key={a.id} className={`alert-item a-${a.code}`}>
+                    <time className="muted small">{hhmm(a.at)}</time>
+                    <span>{t(a.code, { type: t(`O-TYPE-${a.eventType}`) })}</span>
+                    <button type="button" onClick={() => ackAlert(a.id)}>
+                      {t('O-UI-ALERT-ACK')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="sup-panel wide" data-testid="dispatches">

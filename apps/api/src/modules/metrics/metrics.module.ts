@@ -1,7 +1,21 @@
-import { Body, Controller, Get, Inject, Module, Param, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Module,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { EventModule } from '../event/event.module';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
+import { AlertsService } from './alerts.service';
 import { MetricsService } from './metrics.service';
 import { SupervisorService } from './supervisor.service';
 
@@ -13,7 +27,23 @@ import { SupervisorService } from './supervisor.service';
 @UseGuards(OidcGuard)
 @Roles('SUPERVISOR', 'ADMIN')
 export class SupervisorController {
-  constructor(@Inject(SupervisorService) private readonly supervisor: SupervisorService) {}
+  constructor(
+    @Inject(SupervisorService) private readonly supervisor: SupervisorService,
+    @Inject(AlertsService) private readonly alerts: AlertsService,
+  ) {}
+
+  /** GET /v1/supervisor/alerts?open=1 — kalıcı amir uyarıları (en yeni önce). */
+  @Get('alerts')
+  alertList(@Query('open') open?: string) {
+    return this.alerts.list({ open: open === '1' || open === 'true' });
+  }
+
+  /** POST /v1/supervisor/alerts/{id}/ack — "gördüm" (audit). */
+  @Post('alerts/:id/ack')
+  @HttpCode(200)
+  ack(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.alerts.ack(id, userOf(req).sub);
+  }
 
   @Get('dashboard')
   dashboard() {
@@ -36,8 +66,8 @@ export class SupervisorController {
 /** T-025 SLA ve metrikler (E-09, D-11), T-074 amir panosu. */
 @Module({
   imports: [EventModule],
-  providers: [MetricsService, SupervisorService],
+  providers: [MetricsService, SupervisorService, AlertsService],
   controllers: [SupervisorController],
-  exports: [MetricsService, SupervisorService],
+  exports: [MetricsService, SupervisorService, AlertsService],
 })
 export class MetricsModule {}

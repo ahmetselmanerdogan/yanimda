@@ -5,7 +5,7 @@ import { DB, type Db } from '../../db/client';
 import { auditLog, operator, supervisorFlag } from '../../db/schema';
 import { falseAlarmOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { type FalseAlarmStats, falseAlarmStats } from '../false-alarm/stats';
-import { CLAIM_SLA_SEC, FIRST_CALL_SLA_SEC } from './sla';
+import { CLAIM_SLA_BY_PRIORITY, CLAIM_SLA_SEC, claimSlaSec, FIRST_CALL_SLA_SEC } from './sla';
 
 type Rows<T> = { rows: T[] };
 
@@ -391,7 +391,9 @@ export class SupervisorService {
     const waiting = await this.q<{ id: string; type: string; priority: number; since: Date | string }>(sql`
       SELECT id, type, priority, coalesce(escalated_at, created_at) AS since FROM event.event
       WHERE state = 'OPERATOR_QUEUE' AND NOT is_test
-        AND coalesce(escalated_at, created_at) < ${nowIso}::timestamptz - make_interval(secs => ${CLAIM_SLA_SEC})`);
+        AND coalesce(escalated_at, created_at) < ${nowIso}::timestamptz - make_interval(secs => ${sql.raw(
+          `CASE priority WHEN 1 THEN ${CLAIM_SLA_BY_PRIORITY[1]} WHEN 2 THEN ${CLAIM_SLA_BY_PRIORITY[2]} WHEN 3 THEN ${CLAIM_SLA_BY_PRIORITY[3]} ELSE ${CLAIM_SLA_BY_PRIORITY[4]} END`,
+        )})`);
     for (const w of waiting)
       out.push({
         eventId: w.id,
@@ -451,7 +453,7 @@ export class SupervisorService {
       for (const r of rows) meta.set(r.id, { type: r.type, priority: r.priority });
       for (const c of late) {
         const m = meta.get(c.event_id);
-        if (!m) continue;
+        if (!m || c.s <= claimSlaSec(m.priority)) continue; // öncelik bazlı hedef (gece karar 2)
         out.push({
           eventId: c.event_id,
           ...m,
