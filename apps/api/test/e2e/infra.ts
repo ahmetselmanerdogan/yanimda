@@ -150,6 +150,8 @@ export async function startStack(
     PORT: String(apiPort),
     DATABASE_URL: db.url,
     DATABASE_POOL_MAX: '5',
+    // Kaos: Postgres dönerken asılı kalan sorgu 5 sn'de bırakılır (üretim varsayılanı 30 sn)
+    DATABASE_QUERY_TIMEOUT_MS: '5000',
     REDIS_URL: redis.url,
     RULES_DIR: dir,
     TIMERS_PREFIX: `e2e-${apiPort}`,
