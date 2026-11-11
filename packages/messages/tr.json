@@ -3080,6 +3080,15 @@
     "text": "Aylık deneme zamanı. Yardım düğmesini birlikte deneyelim mi?",
     "action": "Dene"
   },
+  "W-OP-PROMPT": {
+    "channel": "watch",
+    "text": "Operatörümüz soruyor: İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "W-RING": {
+    "channel": "watch",
+    "text": "Yanımda sizi arıyor. Lütfen saate bakın."
+  },
   "P-CHARGE-COVER": {
     "channel": "phone",
     "text": "Saatiniz şarjda. Telefonunuzu yanınızda tutun."
@@ -3145,6 +3154,15 @@
     "channel": "phone",
     "text": "Düşme algılandı. İyi misiniz?",
     "action": "İyiyim"
+  },
+  "P-OP-PROMPT": {
+    "channel": "phone",
+    "text": "Operatörümüz durumunuzu soruyor. İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "P-RING": {
+    "channel": "phone",
+    "text": "Yanımda sizi arıyor. Lütfen telefona bakın."
   },
   "P-NET-ERROR": {
     "channel": "phone",
@@ -3602,6 +3620,10 @@
   "O-UI-DEV-UNSUPPORTED": {
     "channel": "console",
     "text": "{device} bu komutu desteklemiyor"
+  },
+  "O-UI-DEV-NOT-DELIVERED": {
+    "channel": "console",
+    "text": "{device}: ulaştırılamadı"
   },
   "O-UI-SUP-COVERAGE": {
     "channel": "console",
