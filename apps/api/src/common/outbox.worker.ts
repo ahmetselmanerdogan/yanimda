@@ -8,16 +8,24 @@ import type { Db } from '../db/client';
 import { outbox, outboxDlq, outboxSide } from '../db/schema';
 import type { LocalBus } from './bus';
 import type { OutboxBus } from './outbox';
-import { safeError } from './safe-error';
+import { isTransient } from './problem.filter';
+import { safeError, safeErrorDetail } from './safe-error';
 
 export interface OutboxWorkerOptions {
   /** Yoklama aralığı (ms). Aynı süreçteki yazımlar işçiyi zaten anında uyandırır. */
   pollMs?: number;
   batchSize?: number;
-  /** Bu kadar başarısız denemeden sonra satır event.outbox_dlq'ya taşınır. */
+  /** Bu kadar kalıcı (geçici olmayan) başarısız denemeden sonra satır event.outbox_dlq'ya taşınır. */
   maxAttempts?: number;
   /** n. başarısızlıktan sonra bekleme (ms). */
   backoffMs?: (attempts: number) => number;
+  /**
+   * Core: geçici altyapı hatası (isTransient: Postgres bağlantısı/failover, sorgu zaman aşımı, ağ) bu kadar
+   * denemeye dek DLQ'ya düşmez (varsayılan 125 ≈ 1 saat). Kalıcı hata sayacını (maxAttempts) tüketmez.
+   */
+  transientMaxAttempts?: number;
+  /** Geçici hatada n. denemeden sonra bekleme (ms); varsayılan üstel, en çok 30 sn (kesinti bitince hızlı toparlanma). */
+  transientBackoffMs?: (attempts: number) => number;
   now?: () => Date;
   /** Kira süresi (ms): işçi ölürse başka işçi bu süreden sonra devralır. */
   leaseMs?: number;
@@ -33,7 +41,11 @@ export interface OutboxWorkerOptions {
  *
  * - Sıra: tek aktif işçi (event.outbox_lease kirası, satır başına yenilenir). Başarısız satır kuyruğun başında
  *   bekler; arkasındakiler ondan önce teslim edilmez (FALL'dan önce CANCEL işlenmesin).
- * - Yeniden deneme: üstel geri çekilme; `maxAttempts` (5) sonra outbox_dlq'ya taşınır, kuyruk ilerler.
+ * - Yeniden deneme: üstel geri çekilme; `maxAttempts` (5) kalıcı hatadan sonra outbox_dlq'ya taşınır, kuyruk ilerler.
+ *   Geçici altyapı hatası (denetim bulgusu: kısa veritabanı kesintisinde FALL DLQ'ya düşmesin) ayrı sayılır
+ *   (transient_attempts): en çok 30 sn geri çekilmeyle ~1 saat denenir, sonra DLQ (yanlış sınıflanmış kalıcı hata
+ *   core şeridini sonsuza dek tıkamasın). Bekleyen satır OutboxStalled uyarısını tetikler.
+ * - last_error yalnız hata adı + kodu (safeErrorDetail): Drizzle mesajındaki sorgu parametreleri PII içerebilir.
  * - En az bir kez teslim: teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir.
  * - Teslim transaction dışında: aboneler kendi transaction'larını açar, işçi bağlantı tutmaz (havuz 1 olsa da çalışır).
  * - Çoklu API örneğinde diğer örnekler kirayı alamaz ve beklemeye geçer; işçi ölürse kira leaseMs sonra düşer.
@@ -45,6 +57,8 @@ export class OutboxWorker {
   private readonly batchSize: number;
   private readonly maxAttempts: number;
   private readonly backoffMs: (attempts: number) => number;
+  private readonly transientMaxAttempts: number;
+  private readonly transientBackoffMs: (attempts: number) => number;
   private readonly now: () => Date;
   private timer?: NodeJS.Timeout;
   private running?: Promise<number>;
@@ -68,6 +82,8 @@ export class OutboxWorker {
     this.batchSize = opts.batchSize ?? 100;
     this.maxAttempts = opts.maxAttempts ?? 5;
     this.backoffMs = opts.backoffMs ?? ((n) => Math.min(1000 * 2 ** n, 60_000));
+    this.transientMaxAttempts = opts.transientMaxAttempts ?? 125;
+    this.transientBackoffMs = opts.transientBackoffMs ?? ((n) => Math.min(1000 * 2 ** n, 30_000));
     this.now = opts.now ?? (() => new Date());
     this.leaseMs = opts.leaseMs ?? 30_000;
   }
@@ -229,9 +245,12 @@ export class OutboxWorker {
         });
         delivered++;
       } catch (e) {
-        const attempts = row.attempts + 1;
-        const lastError = ((e as Error).message ?? String(e)).slice(0, 1000);
-        if (attempts >= this.maxAttempts) {
+        const transient = isTransient(e);
+        const attempts = row.attempts + (transient ? 0 : 1);
+        const transientAttempts = row.transientAttempts + (transient ? 1 : 0);
+        const lastError = `${transient ? '[geçici] ' : ''}${safeErrorDetail(e)}`.slice(0, 1000);
+        if (transient ? transientAttempts >= this.transientMaxAttempts : attempts >= this.maxAttempts) {
+          const total = attempts + transientAttempts;
           await this.db.transaction(async (tx) => {
             await tx.insert(outboxDlq).values({
               id: row.id,
@@ -239,19 +258,21 @@ export class OutboxWorker {
               envelope: row.envelope,
               createdAt: row.createdAt,
               failedAt: now,
-              attempts,
+              attempts: total,
               lastError,
             });
             await tx.delete(outbox).where(and(eq(outbox.id, row.id), isNull(outbox.processedAt)));
           });
-          this.log.error(`Outbox #${row.id} (${row.topic}) ${attempts} denemede başarısız → outbox_dlq`);
+          this.log.error(`Outbox #${row.id} (${row.topic}) ${total} denemede başarısız (${lastError}) → outbox_dlq`);
           continue;
         }
+        const wait = transient ? this.transientBackoffMs(transientAttempts) : this.backoffMs(attempts);
         await this.db
           .update(outbox)
-          .set({ attempts, lastError, nextAttemptAt: new Date(now.getTime() + this.backoffMs(attempts)) })
+          .set({ attempts, transientAttempts, lastError, nextAttemptAt: new Date(now.getTime() + wait) })
           .where(eq(outbox.id, row.id));
-        this.log.warn(`Outbox #${row.id} (${row.topic}) teslim edilemedi, deneme ${attempts}/${this.maxAttempts}`);
+        const n = transient ? `${transientAttempts}/${this.transientMaxAttempts}` : `${attempts}/${this.maxAttempts}`;
+        this.log.warn(`Outbox #${row.id} (${row.topic}) teslim edilemedi (${lastError}), deneme ${n}`);
         return { delivered, more: false };
       }
     }
@@ -307,7 +328,7 @@ export class OutboxWorker {
         delivered++;
       } catch (e) {
         const attempts = row.attempts + 1;
-        const lastError = ((e as Error).message ?? String(e)).slice(0, 1000);
+        const lastError = safeErrorDetail(e).slice(0, 1000);
         if (attempts >= this.maxAttempts) {
           await this.db.update(outboxSide).set({ attempts, lastError, deadAt: now }).where(eq(outboxSide.id, row.id));
           this.log.error(`Outbox side #${row.id} (${row.topic} → ${row.handler}) ${attempts} denemede başarısız → DLQ`);

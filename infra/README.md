@@ -160,8 +160,11 @@ GRANT SELECT ON event.outbox, event.outbox_dlq, event.outbox_side, event.event, 
 Outbox iki şeritlidir (0020): core (olay motoru, kuyruk, aile bildirimi planı) `event.outbox`'tan sırayla; kritik
 olmayan aboneler (`metrics.sla`, `billing.trial`, `false-alarm.record`) `event.outbox_side`'tan abone başına sırayla.
 5 denemede teslim edilemeyen core satırı `event.outbox_dlq`'ya taşınır (`OutboxDeadLetters`, critical: sinyal/olay
-kaybı riski), side satırının `dead_at`'i dolar. Nedeni (`last_error`) giderildikten sonra yeniden oynatma
-(aboneler idempotenttir):
+kaybı riski), side satırının `dead_at`'i dolar. Geçici altyapı hatası (Postgres bağlantısı/failover, sorgu zaman
+aşımı) core satırında ayrı sayılır (`transient_attempts`, 0029): en çok 30 sn aralıkla ~1 saat denenir, bu sürede satır
+kuyruğun başında bekler (`OutboxStalled`). `last_error` yalnız hata sınıfı + kod + kısıt adıdır (ör.
+`[geçici] DrizzleQueryError <- DatabaseError(57P01)`); mesaj ve sorgu parametreleri (PII olabilir) yazılmaz.
+Nedeni giderildikten sonra yeniden oynatma (aboneler idempotenttir):
 
 ```sql
 -- core: satırı kuyruğun sonuna geri koy
