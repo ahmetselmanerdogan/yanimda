@@ -24,9 +24,10 @@ import {
 } from '@nestjs/common';
 import type { DeviceSummary, EventType } from '@yanimda/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { DB, type Db } from '../../db/client';
-import { auditLog, device } from '../../db/schema';
+import { auditLog, device, devicePrompt } from '../../db/schema';
 import { isBodyLocation } from '../event/coverage.service';
 import { ProtectionService } from '../event/protection.service';
 import { ladderOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -205,11 +206,16 @@ export class DeviceManageController {
     this.rules = rules ?? staticRules(loadRulePack());
   }
 
-  /** PATCH /v1/devices/{id} — vücut konumu, takma ad, sesli arama sırası (aile / operasyon). */
+  /**
+   * PATCH /v1/devices/{id} — vücut konumu, takma ad, sesli arama sırası (aile / operasyon); cihaza özel sesli arama
+   * numarası `voiceNumber` (T-087 S5.2; yalnız operasyon, E.164; denetime değeri yazılmaz).
+   */
   @Patch(':id')
   async patch(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest): Promise<DeviceSummary> {
     const personId = await this.access.device(actorOf(req), id, 'patch');
     const set = parsePatch(body);
+    if (set.voiceNumber !== undefined && actorOf(req).kind === 'FAMILY')
+      throw new ForbiddenException('Cihaz numarasını operasyon girer');
     await this.db.transaction(async (tx) => {
       await tx.update(device).set(set).where(eq(device.id, id));
       await tx.insert(auditLog).values({
@@ -281,26 +287,43 @@ export class DeviceManageController {
     if (type !== 'TEST' && !open) throw new ConflictException('Kişinin açık olayı yok');
     if (asked !== undefined && asked !== open?.id) throw new ConflictException('Olay kişinin açık olayı değil');
     const deviceId = id.toLowerCase();
+    const sentAt = new Date();
     let outcome: PushOutcome;
+    let prompt: PromptRequest | null = null;
     if (type === 'RING') outcome = await this.devices.ring(deviceId, { eventId: open!.id });
-    else if (type === 'PROMPT') outcome = await this.devices.promptUser(deviceId, this.operatorPrompt(open!));
-    else if (type === 'LOCATE') outcome = await this.devices.command(deviceId, { type, eventId: open!.id });
+    else if (type === 'PROMPT') {
+      prompt = this.operatorPrompt(open!, sentAt);
+      outcome = await this.devices.promptUser(deviceId, prompt);
+    } else if (type === 'LOCATE') outcome = await this.devices.command(deviceId, { type, eventId: open!.id });
     else outcome = await this.devices.command(deviceId, { type });
     const sent = delivered(outcome);
-    await this.db.insert(auditLog).values({
-      actorKind: actorKindOf(a),
-      actorId: subOf(a),
-      action: 'device.command',
-      entityType: 'device',
-      entityId: deviceId,
-      data: { type, eventId: open?.id ?? null, sent, outcome },
+    await this.db.transaction(async (tx) => {
+      await tx.insert(auditLog).values({
+        actorKind: actorKindOf(a),
+        actorId: subOf(a),
+        action: 'device.command',
+        entityType: 'device',
+        entityId: deviceId,
+        data: { type, eventId: open?.id ?? null, sent, outcome },
+      });
+      // T-089: sorunun cevabı (OK / yardım / cevapsız) olay ekranında gösterilir (event.device_prompt).
+      if (prompt)
+        await tx.insert(devicePrompt).values({
+          id: uuidv7(),
+          eventId: open!.id,
+          deviceId,
+          operatorId: subOf(a),
+          sentAt,
+          until: new Date(prompt.until),
+          delivered: sent,
+        });
     });
     this.log.log(`Cihaz komutu ${type}: ${outcome}`);
     return { type, eventId: open?.id ?? null, sent, outcome };
   }
 
   /** Operatörün sorusu: olay türünün cihaz sorusu (metin, süre), yoksa kural paketi `ladder.operatorPrompt`. */
-  private operatorPrompt(ev: { id: string; type: string }): PromptRequest {
+  private operatorPrompt(ev: { id: string; type: string }, now: Date): PromptRequest {
     const pack = this.rules.current();
     const dp = ruleFor(pack, ev.type as EventType)?.devicePrompt;
     const op = ladderOf(pack).operatorPrompt;
@@ -310,7 +333,7 @@ export class DeviceManageController {
       kind: ev.type,
       tts: dp?.enabled && dp.tts ? dp.tts : op.tts,
       windowSec,
-      until: new Date(Date.now() + windowSec * 1000).toISOString(),
+      until: new Date(now.getTime() + windowSec * 1000).toISOString(),
       silent: false, // operatör soruyu sesli ister
     };
   }
@@ -342,7 +365,9 @@ function parsePatch(body: unknown): Partial<typeof device.$inferInsert> {
     throw new BadRequestException('Nesne bekleniyor');
   const b = body as Record<string, unknown>;
   const set: Partial<typeof device.$inferInsert> = {};
-  const unknownKeys = Object.keys(b).filter((k) => !['bodyLocation', 'nickname', 'voiceOrder'].includes(k));
+  const unknownKeys = Object.keys(b).filter(
+    (k) => !['bodyLocation', 'nickname', 'voiceOrder', 'voiceNumber'].includes(k),
+  );
   if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
   if (b.bodyLocation !== undefined) {
     if (b.bodyLocation !== null && !isBodyLocation(b.bodyLocation))
@@ -360,6 +385,12 @@ function parsePatch(body: unknown): Partial<typeof device.$inferInsert> {
     if (v !== null && (!Number.isInteger(v) || (v as number) < 1 || (v as number) > 6))
       throw new BadRequestException('voiceOrder 1–6 arası tam sayı olmalı');
     set.voiceOrder = v as number | null;
+  }
+  if (b.voiceNumber !== undefined) {
+    const v = b.voiceNumber;
+    if (v !== null && (typeof v !== 'string' || !/^\+[1-9]\d{6,14}$/.test(v)))
+      throw new BadRequestException('voiceNumber E.164 olmalı');
+    set.voiceNumber = v as string | null;
   }
   if (!Object.keys(set).length) throw new BadRequestException('Değiştirilecek alan yok');
   return set;

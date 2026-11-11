@@ -37,6 +37,7 @@ import {
   type LadderAction,
   type LadderState,
   legacyFacts,
+  onHold,
   planCheck,
   stepLadders,
   toProtectionState,
@@ -64,8 +65,10 @@ export interface CoverageUpdate {
   levelChange: { from: CoverageLevel | null; to: CoverageLevel } | null;
   /** Eski koruma durumu değiştiyse (user.protection.changed yayınlandı). */
   protection: ProtectionChange | null;
-  /** Olay işleri (KAPSAMA BOŞLUĞU aç / kapat). Bildirimler aynı transaction'da outbox'a yazıldı. */
+  /** Olay işleri (KAPSAMA BOŞLUĞU / YERİNDE KONTROL aç, boşluğu kapat). Bildirimler aynı transaction'da outbox'a yazıldı. */
   events: Exclude<LadderAction, { kind: 'notify' }>[];
+  /** S4.10 "hastanede / seyahatte" modu açık: olay işi yok; olay motoru bekleyen kapsama olaylarını kapatır. */
+  hold: boolean;
 }
 
 export interface PlanWindow {
@@ -76,9 +79,13 @@ export interface PlanWindow {
 }
 
 type Row = typeof coverageState.$inferSelect;
+/** Kişi ayarları: gece penceresi ve S4.10 "hastanede / seyahatte" modunun bitişi (yoksa null). */
+type PersonWindow = SleepWindow & { holdUntil?: Date | null };
 interface SettingsSource {
-  settingsOf(protectedPersonId: string, tx?: Pick<Db, 'execute'>): Promise<SleepWindow>;
+  settingsOf(protectedPersonId: string, tx?: Pick<Db, 'execute'>): Promise<PersonWindow>;
 }
+/** Kapsama değerlendirmesinin olay işleri (bildirimler değil): olay motoru commit'ten sonra yürütür. */
+const isEventAction = (a: LadderAction) => a.kind === 'gap-event' || a.kind === 'welfare-event';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WINDOW = /^([01][0-9]|2[0-3]):([0-5][0-9])-([01][0-9]|2[0-3]):([0-5][0-9])$/;
@@ -208,16 +215,20 @@ export class CoverageService {
       const facts = factsOf(r);
       const cov = this.compute(facts, now, ctx);
       const step = stepLadders(ladderOf(r), cov, facts, this.ladderCtx(r.protectedPersonId, now, ctx));
-      const plan = planCheck(facts, r.planCheckedOn, this.planCtx(r.protectedPersonId, now, ctx));
+      const plan = onHold(ctx.sleep, now)
+        ? null
+        : planCheck(facts, r.planCheckedOn, this.planCtx(r.protectedPersonId, now, ctx));
       const dirty =
         cov.level !== r.level ||
         cov.reasons.join() !== r.reasons.join() ||
-        step.actions.some((a) => a.kind !== 'gap-event') ||
+        step.actions.some((a) => !isEventAction(a)) ||
         !!plan ||
         !sameLadder(step.state, ladderOf(r));
       if (!dirty) {
         // Yalnız (tekrar ayıklanan) olay isteği: satır değişmez, transaction gerekmez.
-        const events = step.actions.filter((a) => a.kind === 'gap-event');
+        const events = step.actions.filter((a): a is Extract<LadderAction, { kind: 'gap-event' | 'welfare-event' }> =>
+          isEventAction(a),
+        );
         if (events.length)
           out.push({
             protectedPersonId: r.protectedPersonId,
@@ -227,6 +238,7 @@ export class CoverageService {
             levelChange: null,
             protection: null,
             events,
+            hold: onHold(ctx.sleep, now),
           });
         continue;
       }
@@ -363,28 +375,33 @@ export class CoverageService {
     return { start, end, source: 'DEFAULT', nightChargeAllowed: false };
   }
 
-  private compute(f: Facts, now: Date, ctx: { sleep: SleepWindow }): CoverageResult {
+  private compute(f: Facts, now: Date, ctx: { sleep: PersonWindow }): CoverageResult {
     const pack = this.pack;
+    const battery = batteryOf(pack);
     return computeCoverage(f, now, {
       params: coverageOf(pack),
-      deadPct: batteryOf(pack).deadPct,
+      deadPct: battery.deadPct,
       night: isInWindow(now, ctx.sleep.timezone, ctx.sleep.start, ctx.sleep.end),
+      hold: onHold(ctx.sleep, now),
+      droppedPct: battery.warnPct,
     });
   }
 
-  private ladderCtx(personId: string, now: Date, ctx: { sleep: SleepWindow; plan: PlanWindow }) {
+  private ladderCtx(personId: string, now: Date, ctx: { sleep: PersonWindow; plan: PlanWindow }) {
     const charging = chargingOf(this.pack);
+    const { timezone, start, end } = ctx.sleep;
     return {
       personId,
       now,
-      quiet: { ...ctx.sleep, resumeAfterWakeMin: charging.resumeAfterWakeMin ?? 30 },
+      quiet: { timezone, start, end, resumeAfterWakeMin: charging.resumeAfterWakeMin ?? 30 },
       plan: { start: ctx.plan.start, end: ctx.plan.end },
       charging,
       none: coverageNoneOf(this.pack),
+      hold: onHold(ctx.sleep, now),
     };
   }
 
-  private planCtx(personId: string, now: Date, ctx: { sleep: SleepWindow; plan: PlanWindow }) {
+  private planCtx(personId: string, now: Date, ctx: { sleep: PersonWindow; plan: PlanWindow }) {
     const b = batteryOf(this.pack);
     return {
       personId,
@@ -405,7 +422,7 @@ export class CoverageService {
   private async evaluate(
     tx: Tx,
     personId: string,
-    ctx: { sleep: SleepWindow; plan: PlanWindow },
+    ctx: { sleep: PersonWindow; plan: PlanWindow },
     mutate: ((f: Facts) => Facts) | null,
     nowOf: (f: Facts) => Date,
     ladderMutate?: (l: LadderState) => void,
@@ -436,7 +453,10 @@ export class CoverageService {
     const prev = ladderOf(fresh ? undefined : row);
     ladderMutate?.(prev);
     const step = stepLadders(prev, cov, facts, this.ladderCtx(personId, now, ctx));
-    const plan = planCheck(facts, row?.planCheckedOn ?? null, this.planCtx(personId, now, ctx));
+    // S4.10: hastanede / seyahatte modunda 18:00 planlı şarj kontrolü de yapılmaz.
+    const plan = onHold(ctx.sleep, now)
+      ? null
+      : planCheck(facts, row?.planCheckedOn ?? null, this.planCtx(personId, now, ctx));
     const from = fresh ? null : ((row?.level as CoverageLevel) ?? null);
     const changed = from !== cov.level;
     await tx
@@ -499,6 +519,7 @@ export class CoverageService {
       levelChange: changed ? { from, to: cov.level } : null,
       protection,
       events: all.filter((a): a is CoverageUpdate['events'][number] => a.kind !== 'notify'),
+      hold: onHold(ctx.sleep, now),
     };
   }
 
@@ -588,7 +609,7 @@ export async function deviceSummaries(
           SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
                  coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.voice_order, d.last_seen_at,
                  d.battery_pct, d.charging, d.charging_since, d.on_wrist, d.connectivity, m.capabilities,
-                 m.battery_life_h
+                 m.battery_life_h, right(d.voice_number, 2) AS voice_last2
           FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
           WHERE d.protected_person_id = ${personId}::uuid AND d.revoked_at IS NULL AND d.retired_at IS NULL
           ORDER BY d.created_at, d.id`)) as unknown as { rows: DeviceRow[] }
@@ -631,6 +652,7 @@ export async function deviceSummaries(
         estimatedHoursLeft: estimatedHoursLeft(f),
         voiceOrder: null as number | null,
         voiceOrderManual: false as boolean,
+        voiceNumberLast2: r?.voice_last2 ?? null,
       } satisfies DeviceSummary,
     };
   });
@@ -671,6 +693,8 @@ interface DeviceRow {
   connectivity: string | null;
   capabilities: Record<string, { available?: boolean }> | null;
   battery_life_h: number | null;
+  /** Cihaza özel numaranın son iki hanesi (numaranın kendisi okunmaz). */
+  voice_last2: string | null;
 }
 
 const planWindowOf = (p: typeof chargingPlan.$inferSelect): PlanWindow => ({

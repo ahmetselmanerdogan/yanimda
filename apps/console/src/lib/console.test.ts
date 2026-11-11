@@ -160,6 +160,8 @@ describe('katalog', () => {
       'HEART_ANOMALY',
       'TEST',
       'FOLLOW_UP',
+      'COVERAGE_GAP',
+      'WELFARE_CHECK',
     ];
     const states = [
       'OPERATOR_QUEUE',

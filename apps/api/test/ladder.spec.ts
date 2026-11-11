@@ -8,7 +8,9 @@ import { ChainService } from '../src/modules/chain/chain.service';
 import {
   autoSkip,
   bestVoiceTarget,
+  deviceForStep,
   distanceM,
+  dropMissingVoiceSteps,
   type LadderContext,
   orderForCorroboration,
   ringTargets,
@@ -30,6 +32,10 @@ import {
 } from '../src/modules/event/rules.loader';
 import { deliveryFor } from '../src/modules/notify/policy';
 import { parseContacts, pickKeyHolder, reachableAt } from '../src/modules/profile/contacts';
+import type { DialRequest } from '../src/modules/telephony/cpaas';
+import { FakeProvider } from '../src/modules/telephony/fake-cpaas';
+import { MemoryRecordingStore } from '../src/modules/telephony/recording-store';
+import { TelephonyService } from '../src/modules/telephony/telephony.service';
 import { createHarness, type Harness, sig } from './support/harness';
 
 /**
@@ -548,6 +554,44 @@ describe('saf kurallar', () => {
     expect(ringTargets(list).map((d) => d.id)).toEqual(['worn', 'unknown', 'phone']);
   });
 
+  it('S5.2 2. sesli cihaz: sesli giyilebilirlerin ikincisi; yoksa plana girmez, çevrimdışıysa atlanır', () => {
+    const voice2 = step('WATCH', { kind: 'CALL_VOICE_2', contactIndex: 2 });
+    const w1 = dev('w1', 'WATCH', { voiceOrder: 1 });
+    const k2 = dev('k2', 'PENDANT', { voiceOrder: 2 });
+    const p = dev('p', 'PHONE', { voiceOrder: 3 });
+    // İki çevrimiçi sesli giyilebilir: 1. adım ilkini, 2. adım ikincisini arar (telefon sayılmaz).
+    expect(deviceForStep(step('WATCH'), ctx({ devices: [w1, k2, p] }))!.id).toBe('w1');
+    expect(deviceForStep(voice2, ctx({ devices: [w1, k2, p] }))!.id).toBe('k2');
+    expect(deviceForStep(step('ELDER_PHONE'), ctx({ devices: [w1, k2, p] }))!.id).toBe('p');
+    // Doğrulayan cihaz 1. adımda öne alınır; öteki 2. adımda.
+    expect(deviceForStep(step('WATCH'), ctx({ devices: [w1, k2] }), 'k2')!.id).toBe('k2');
+    expect(deviceForStep(voice2, ctx({ devices: [w1, k2] }), 'k2')!.id).toBe('w1');
+    expect(autoSkip(voice2, [], ctx({ devices: [w1, k2, p] }))).toBeNull();
+    // İkincisi çevrimdışı → "çevrimdışı — atlandı"; ilk sıradaki çevrimdışıysa 1. adım çevrimiçi olanı arar.
+    const off = dev('k2', 'PENDANT', { voiceOrder: 2, online: false });
+    expect(autoSkip(voice2, [], ctx({ devices: [w1, off, p] }))).toEqual({
+      result: 'OFFLINE_SKIPPED',
+      reason: 'O-RES-SKIPPED_OFFLINE',
+    });
+    const off1 = dev('w1', 'WATCH', { voiceOrder: 1, online: false });
+    expect(deviceForStep(step('WATCH'), ctx({ devices: [off1, k2] }))!.id).toBe('k2');
+    expect(autoSkip(voice2, [], ctx({ devices: [off1, k2] }))!.result).toBe('OFFLINE_SKIPPED');
+    // İkinci sesli cihaz kalmadıysa (kaldırıldı) sistem atlar; telefon "2. sesli cihaz" sayılmaz.
+    expect(autoSkip(voice2, [], ctx({ devices: [w1, p] }))).toEqual({ result: 'SKIPPED', reason: 'O-SKIP-NO-VOICE-2' });
+    // Plan: ikinci sesli giyilebilir yoksa adım hiç girmez, numaralar yeniden verilir.
+    const sos = buildSteps(ruleFor(pack, 'SOS')!, false, proc);
+    expect(
+      dropMissingVoiceSteps(sos, [w1, p])
+        .map((s) => [s.n, s.kind])
+        .slice(0, 3),
+    ).toEqual([
+      [1, 'CALL_WATCH'],
+      [2, 'CALL_PHONE'],
+      [3, 'CALL_REDIAL'],
+    ]);
+    expect(dropMissingVoiceSteps(sos, [w1, off, p])).toBe(sos);
+  });
+
   it('doğrulayan cihaz telefonsa telefon adımı öne alınır', () => {
     const steps = buildSteps(ruleFor(pack, 'FALL')!, false, proc);
     const re = orderForCorroboration(steps, 'ELDER_PHONE');
@@ -645,5 +689,79 @@ describe('S5.2 T+0 ve S5.3 üstlenilmeyen P1 (LadderService)', () => {
     ]);
     expect(deliveryFor('V-NO-OPERATOR')).toMatchObject({ voiceOnly: true, urgency: 'URGENT' });
     expect(t('V-NO-OPERATOR', 'tr', { name: 'Ayşe' })).toContain("112'yi arayın");
+  });
+});
+
+describe('S5.2 2. sesli cihaz adımı ve cihaza özel numara (zincir + telefoni)', () => {
+  const WATCH2 = '0190a0b0-0000-7000-8000-00000000a003';
+  class DialLog extends FakeProvider {
+    readonly dialed: string[] = [];
+    override async call(r: DialRequest) {
+      this.dialed.push(r.to);
+      return super.call(r);
+    }
+  }
+  const setup = async (watch2SeenMinAgo: number) => {
+    await person();
+    await device(WATCH, 'WEAROS_WATCH', 1);
+    await device(WATCH2, 'WEAROS_WATCH', watch2SeenMinAgo);
+    await device(PHONE, 'ANDROID_PHONE', 1, null);
+    await h.pg.query(`UPDATE device.device SET voice_number = '+905550000077' WHERE id = $1`, [WATCH2]);
+    const fake = new DialLog({ stepMs: 1, talkMs: 1, transport: async () => undefined });
+    const tel = new TelephonyService(h.db, h.outbox, fake, new MemoryRecordingStore(), {
+      CPAAS_WEBHOOK_BASE: 'https://api.test',
+      CPAAS_AGENT_NUMBER: '+902120000000',
+      CPAAS_SOFTPHONE: 'off',
+    });
+    await tel.setContacts(PERSON, [
+      { role: 'WATCH', priority: 1, phone: '+905550000071' },
+      { role: 'ELDER', phone: '+905550000073' },
+    ]);
+    chain = new ChainService(h.db, events, proc, tel, undefined, staticRules(pack));
+    return fake;
+  };
+
+  it('iki çevrimiçi sesli saat: 1. cihaz → 2. cihaz (20 sn, kendi numarası) → telefon; numara kayıtta yok', async () => {
+    const fake = await setup(2);
+    const id = await queued('SOS');
+    const r = await chain.claim(id, OP);
+    expect(r.chain!.steps.slice(0, 4).map((s) => [s.n, s.kind, s.timeoutSec, s.autoAnswerSec])).toEqual([
+      [1, 'CALL_WATCH', 20, 10],
+      [2, 'CALL_VOICE_2', 20, 10],
+      [3, 'CALL_PHONE', 20, 10],
+      [4, 'CALL_REDIAL', 15, 10],
+    ]);
+    expect(r.chain!.steps[1]).toMatchObject({ label: 'O-STEP-VOICE-2', target: 'WATCH', contactIndex: 2 });
+    for (const n of [1, 2, 3]) {
+      await chain.call(id, n, OP);
+      await fake.settled;
+      await chain.stepResult(id, n, OP, { result: 'NO_ANSWER' });
+    }
+    // 1. saatin kendi numarası yok → rehberdeki 1. saat numarası; 2. saat kendi numarasından; telefon ELDER.
+    expect(fake.dialed).toEqual(['+905550000071', '+905550000077', '+905550000073']);
+    const calls = await h.rows<{ step_n: number; contact_id: string | null; device_id: string | null }>(
+      'SELECT step_n, contact_id, device_id FROM telephony.call WHERE event_id = $1 ORDER BY step_n',
+      [id],
+    );
+    expect(calls[1]).toMatchObject({ step_n: 2, contact_id: null, device_id: WATCH2 });
+    const audit = await h.rows<{ data: unknown }>(
+      "SELECT data FROM audit.log WHERE entity_id = $1 AND action LIKE 'telephony.%'",
+      [id],
+    );
+    expect(JSON.stringify(audit)).not.toContain('5550000077');
+    expect(audit.map((a) => (a.data as { role?: string }).role).filter(Boolean)).toContain('DEVICE');
+  });
+
+  it('2. saat 30 dk önce görüldü: 2. sesli cihaz adımı "çevrimdışı — atlandı", sıradaki telefon', async () => {
+    await setup(30);
+    const id = await queued('SOS');
+    await chain.claim(id, OP);
+    const r = await chain.stepResult(id, 1, OP, { result: 'NO_ANSWER' });
+    expect(r.chain!.steps[1]).toMatchObject({
+      kind: 'CALL_VOICE_2',
+      result: 'OFFLINE_SKIPPED',
+      reason: 'O-RES-SKIPPED_OFFLINE',
+    });
+    expect(r.chain!.current).toBe(3);
   });
 });

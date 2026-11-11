@@ -7,12 +7,15 @@ import {
   commandResultCode,
   deviceLabel,
   gapReasonCode,
+  lastPromptByDevice,
   levelCode,
+  promptPending,
   reasonCode,
   ringAllTargets,
   seenText,
   stripOrder,
   voiceText,
+  welfareReasonCode,
 } from './devices';
 import { t } from './i18n';
 
@@ -105,7 +108,46 @@ describe('T-089 cihaz şeridi (S7.1)', () => {
       ...['CHARGING', 'WATCH_OFF', 'BATTERY_DEAD', 'CONNECTION_LOST'].map((r) => `O-UI-GAP-${r}`),
       'O-TYPE-COVERAGE_GAP',
       'O-SCRIPT-COVERAGE',
+      // T-087 yerinde kontrol, T-089 soru cevabı
+      'O-TYPE-WELFARE_CHECK',
+      'O-SCRIPT-WELFARE',
+      'O-UI-SCRIPT-WELFARE',
+      'O-UI-WELFARE-REASON',
+      'O-UI-WELFARE-112',
+      ...['DEVICE_DROPPED', 'ALL_SILENT', 'NO_MOVEMENT'].map((r) => `O-UI-WELFARE-${r}`),
+      ...['ANSWERS', 'OK', 'HELP', 'NO-ANSWER', 'WAITING', 'BY'].map((x) => `O-UI-PROMPT-${x}`),
+      'O-UI-DEV-VOICE-NUMBER',
+      'O-STEP-VOICE-2',
+      'O-SKIP-NO-VOICE-2',
     ];
     expect(codes.filter((c) => !(c in catalog))).toEqual([]);
+  });
+
+  it('T-087 YERİNDE KONTROL nedeni katalog kodu; bilinmeyen / boş gösterilmez', () => {
+    expect(welfareReasonCode('DEVICE_DROPPED')).toBe('O-UI-WELFARE-DEVICE_DROPPED');
+    expect(welfareReasonCode('NO_MOVEMENT')).toBe('O-UI-WELFARE-NO_MOVEMENT');
+    expect(welfareReasonCode(null)).toBeNull();
+    expect(welfareReasonCode('X' as never)).toBeNull();
+  });
+
+  it('T-089 cihaz başına son soru; bekleyen soru (cevapsız, süresi dolmamış) ayrıntıyı yeniletir', () => {
+    const p = (deviceId: string, sentSec: number, untilSec: number, answer: 'OK' | null = null) => ({
+      deviceId,
+      sentAt: new Date(NOW + sentSec * 1000).toISOString(),
+      until: new Date(NOW + untilSec * 1000).toISOString(),
+      delivered: true,
+      answer,
+      answeredAt: answer ? new Date(NOW).toISOString() : null,
+      answeredByDeviceId: answer ? deviceId : null,
+    });
+    const last = lastPromptByDevice([p('w', -100, -40, 'OK'), p('w', -10, 50), p('p', -5, 55)]);
+    expect([...last.entries()].map(([k, v]) => [k, v.answer, v.sentAt])).toEqual([
+      ['w', null, new Date(NOW - 10_000).toISOString()],
+      ['p', null, new Date(NOW - 5_000).toISOString()],
+    ]);
+    expect(promptPending([p('w', -10, 50)], NOW)).toBe(true);
+    expect(promptPending([p('w', -10, 50, 'OK')], NOW)).toBe(false);
+    expect(promptPending([p('w', -100, -40)], NOW)).toBe(false);
+    expect(promptPending(undefined, NOW)).toBe(false);
   });
 });

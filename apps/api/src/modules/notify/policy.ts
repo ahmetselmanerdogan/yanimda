@@ -53,6 +53,8 @@ export interface Delivery {
   smsFallbackSec: number | null;
   /** Yalnız ilk yakına sesli arama (push/SMS yok) — T-087 üstlenilmeyen P1 sesli mesajı. */
   voiceOnly?: boolean;
+  /** Yalnız yaşlının kendi numarasına sesli arama (rehberde ELDER, yoksa saat numarası) — S4.7 kapsama YOK 20. dk. */
+  elderVoice?: boolean;
 }
 
 const URGENT: Delivery = { urgency: 'URGENT', parallelSmsVoice: true, smsFallbackSec: null };
@@ -63,6 +65,8 @@ const VOICE_FIRST_CONTACT: Delivery = {
   smsFallbackSec: null,
   voiceOnly: true,
 };
+/** T-087 (docs/07 S4.7): kapsama YOK (uyanık) 20. dk yaşlının numarasına otomatik sesli arama. */
+const VOICE_ELDER: Delivery = { urgency: 'URGENT', parallelSmsVoice: false, smsFallbackSec: null, elderVoice: true };
 const INFO: Delivery = { urgency: 'INFO', parallelSmsVoice: false, smsFallbackSec: 10 };
 /** Akış bilgisi: yalnız push (aile o olaydan haberdar değildi; SMS gürültü olur). */
 const FEED: Delivery = { urgency: 'INFO', parallelSmsVoice: false, smsFallbackSec: null };
@@ -72,6 +76,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-EVT-SOS': URGENT,
   'F-EVT-112': URGENT,
   'V-NO-OPERATOR': VOICE_FIRST_CONTACT,
+  'V-COVERAGE-NONE': VOICE_ELDER,
   'F-112-ON-SCENE': INFO, // 112 süreci: ekip ulaştı
   'F-112-TRANSPORT': INFO, // 112 süreci: hastaneye nakil
   'F-112-HOSPITAL': INFO, // 112 süreci: hastaneye ulaştı

@@ -25,6 +25,7 @@ import {
   type Signal,
   type SupervisorAlert,
   TOPICS,
+  type WelfareReason,
 } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -36,7 +37,7 @@ import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog } from '../../db/schema';
 import { familyNoticeFor } from '../notify/policy';
-import { type DeviceFact, isAlarmWearable } from './coverage';
+import { type DeviceFact, isAlarmWearable, onHold } from './coverage';
 import { decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
@@ -72,6 +73,8 @@ interface EventSource {
   at?: string;
   /** T-088 + T-086: kişinin şu an şarjdaki cihazları (kapsama olguları) — şarjdaki cihazın düşmesi doğrulamaz. */
   chargingDeviceIds?: string[];
+  /** T-087: YERİNDE KONTROL nedeni (denetim `event.welfare_raised`; konsol gösterir). */
+  welfareReason?: WelfareReason;
 }
 
 /** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
@@ -89,7 +92,28 @@ interface Uow {
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
 /** Cihazdan "iyiyim" ile kapanmayan olaylar (soru cihaza değil, sesli ön elemeyle kişiye sorulur). */
-const NOT_DEVICE_ANSWERABLE = new Set<EventType>(['WATCH_OFF', 'COVERAGE_GAP']);
+const NOT_DEVICE_ANSWERABLE = new Set<EventType>(['WATCH_OFF', 'COVERAGE_GAP', 'WELFARE_CHECK']);
+/**
+ * S4.10 "hastanede / seyahatte" modunda açılmayan olaylar: kapsama uyarıları (KAPSAMA BOŞLUĞU, YERİNDE KONTROL ve
+ * eski nedenleri). SOS, düşme ve hareketsizlik her zaman çalışır.
+ */
+const HOLD_SUPPRESSED = new Set<EventType>([
+  'WATCH_OFF',
+  'BATTERY_LOW',
+  'BATTERY_DEAD',
+  'CONNECTION_LOST',
+  'COVERAGE_GAP',
+  'WELFARE_CHECK',
+]);
+/** T-087 (S5.4): YERİNDE KONTROL bu (alarm olmayan) açık olaylara gelirse olayı ona yükseltir (P2). */
+const WELFARE_UPGRADABLE = new Set<EventType>([
+  'COVERAGE_GAP',
+  'WATCH_OFF',
+  'BATTERY_DEAD',
+  'CONNECTION_LOST',
+  'CALLBACK',
+  'FOLLOW_UP',
+]);
 /** Gerçek alarm türleri: alarm olmayan açık olaya gelirse olayı yükseltir (attachToOpen). */
 const ALARM_TYPES = new Set<EventType>(['SOS', 'FALL', 'INACTIVITY']);
 /** Operatör kararını vermiş, yalnız kapatılmayı bekleyen durumlar: yeni gerçek alarm bunlara eklenmez, yeni olay açar. */
@@ -102,6 +126,11 @@ const WAIT_TIMERS: TimerKind[] = [
   'watch-off-operator',
   'voice-screen-expire',
 ];
+
+/** Kapsama geri gelince sistemin KAPSAMA BOŞLUĞU'nu kapatma gerekçesi ("kişiye ulaşıldı" sayılmaz). */
+const COVERAGE_BACK = 'kapsama geri geldi';
+/** S4.10 hold açılınca kapanan kapsama olaylarının gerekçesi. */
+const HOLD_NOTE = 'hastanede / seyahatte modu';
 
 /** Operatörün elindeki durumlar (kilit, kapatma, zincir). */
 export const OPERATOR_STATES = new Set<EventState>([
@@ -495,6 +524,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const inactivityMin =
       s.kind === 'INACTIVITY' ? (await this.protection.settingsOf(s.protectedPersonId)).inactivityMin : null;
     const fact = upd.facts.devices[s.deviceId];
+    // T-089: operatörün "Soru gönder"ine cihazın cevabı (İyiyim / yardım) — olay akışından bağımsız kaydedilir.
+    if (s.kind === 'OK' || s.kind === 'CANCEL' || s.kind === 'SOS') await this.recordPromptAnswer(s);
     const d = decide(s, {
       pack: this.pack,
       night,
@@ -562,6 +593,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   /** Kapsama değerlendirmesinin olay sonuçları (commit'ten sonra). */
   private async onCoverageUpdate(u: CoverageUpdate) {
     if (u.protection) await this.onProtectionChange(u.protection, u);
+    // S4.10: hastanede / seyahatte modunda kapsama olayı üretilmez; bekleyen / üstlenilmemiş olanlar kapanır.
+    if (u.hold) return void (await this.closeHeldEvents(u.protectedPersonId));
     for (const a of u.events) {
       if (a.kind === 'gap-event')
         // Not = neden kodu (CHARGING / WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST); konsol O-UI-GAP-<neden>.
@@ -570,8 +603,82 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           sourceId: a.sourceId,
           note: a.reason,
         });
+      else if (a.kind === 'welfare-event') await this.raiseWelfare(u.protectedPersonId, a.reason, a.sourceId, a.since);
       else await this.closeCoverageGap(u.protectedPersonId);
     }
+  }
+
+  /**
+   * T-087 (S4.7, S5.4) YERİNDE KONTROL (P2). "Kimse cevap vermiyorsa": `since`'ten (boşluğun / kaçırılan aramanın
+   * başı) beri kişiye ulaşılıp "iyi" denmişse (operatör OK kapattı, sesli ön eleme "iyiyim") açılmaz. Aynı kaynak bir
+   * kez; kişinin açık olayı varsa ona eklenir (kapsama boşluğu / bekleme olayı YERİNDE KONTROL'e yükseltilir).
+   * Yeni olay açıldıysa true.
+   */
+  async raiseWelfare(protectedPersonId: string, reason: WelfareReason, sourceId: string, since: Date) {
+    const r = (await this.db.execute(sql`
+      SELECT 1 FROM event.event
+      WHERE protected_person_id = ${protectedPersonId} AND state = 'CLOSED' AND confirmed_outcome = 'OK'
+        AND closed_at >= ${since.toISOString()}::timestamptz
+        AND close_reason IS DISTINCT FROM ${COVERAGE_BACK}
+      LIMIT 1`)) as unknown as { rows: unknown[] };
+    if (r.rows.length) return false;
+    return this.create('WELFARE_CHECK', { protectedPersonId, sourceId, note: reason, welfareReason: reason });
+  }
+
+  /** S4.10: hold açılınca bekleyen / kuyrukta üstlenilmemiş kapsama olayları (saat çıkarıldı, boşluk) kapanır. */
+  private async closeHeldEvents(protectedPersonId: string) {
+    const types = sql.join(
+      [...HOLD_SUPPRESSED].map((t) => sql`${t}`),
+      sql`, `,
+    );
+    const r = (await this.db.execute(sql`
+      SELECT id FROM event.event
+      WHERE protected_person_id = ${protectedPersonId} AND type IN (${types})
+        AND state IN ('CREATED', 'DEVICE_PROMPT', 'OPERATOR_QUEUE')`)) as unknown as { rows: { id: string }[] };
+    for (const { id } of r.rows) await this.closeBySystem(id, 'SUPPRESSED', HOLD_NOTE);
+  }
+
+  /** S4.10: kişi şu an "hastanede / seyahatte" modunda mı (bitişi geçmişse değil). */
+  private async heldNow(protectedPersonId: string): Promise<boolean> {
+    return onHold(await this.protection.settingsOf(protectedPersonId), new Date());
+  }
+
+  /**
+   * T-089 (S7.1): operatörün "Soru gönder" komutuna (event.device_prompt) cihazın cevabı. OK / CANCEL → "İyiyim",
+   * SOS → yardım. Cevap sorunun penceresinde (gönderim ≤ an ≤ until; sunucu saati) ve kişinin açık olayında olmalı;
+   * önce aynı cihaza sorulan, yoksa `payload.eventId` aynı olayı gösteriyorsa olayın son sorusu. Olay akışını
+   * değiştirmez (OK olayı kapatmaz: operatör karar verir; SOS ayrıca alarm olarak işlenir). Konsol `PROMPT_ANSWERED`
+   * güncellemesiyle yeniler.
+   */
+  private async recordPromptAnswer(s: Signal) {
+    const at = new Date(s.receivedAt ?? s.occurredAt).toISOString();
+    const forEvent = typeof s.payload?.eventId === 'string' ? s.payload.eventId : '';
+    const answer = s.kind === 'SOS' ? 'HELP' : 'OK';
+    await this.withOpenEvent(s.protectedPersonId, async (u) => {
+      const r = (await u.tx.execute(sql`
+        UPDATE event.device_prompt SET answer = ${answer}, answered_at = ${at}::timestamptz, answered_by = ${s.deviceId}
+        WHERE id = (
+          SELECT id FROM event.device_prompt
+          WHERE event_id = ${u.ev.id}::uuid AND answer IS NULL
+            AND sent_at <= ${at}::timestamptz AND until >= ${at}::timestamptz
+            AND (device_id = ${s.deviceId} OR ${forEvent} = ${u.ev.id})
+          ORDER BY (device_id = ${s.deviceId}) DESC, sent_at DESC
+          LIMIT 1)
+        RETURNING device_id`)) as unknown as { rows: { device_id: string }[] };
+      const row = r.rows[0];
+      if (!row) return;
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'USER',
+        actorId: s.deviceId,
+        action: 'device.prompt_answered',
+        entityId: u.ev.id,
+        data: { answer, deviceId: row.device_id, by: s.deviceId },
+      });
+      u.publishes.push({
+        topic: TOPICS.eventUpdated,
+        payload: { eventId: u.ev.id, reason: 'PROMPT_ANSWERED', answer, deviceId: row.device_id, by: s.deviceId },
+      });
+    });
   }
 
   /** Kapsama geri geldi: operatörün henüz üstlenmediği KAPSAMA BOŞLUĞU olayı sistemce kapanır. */
@@ -581,7 +688,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       WHERE protected_person_id = ${protectedPersonId} AND type = 'COVERAGE_GAP' AND state <> 'CLOSED'`)) as unknown as {
       rows: { id: string }[];
     };
-    for (const { id } of r.rows) await this.closeBySystem(id, 'OK', 'kapsama geri geldi');
+    for (const { id } of r.rows) await this.closeBySystem(id, 'OK', COVERAGE_BACK);
   }
 
   /**
@@ -643,6 +750,17 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       this.log.warn(`Kural yok: ${type}`);
       return false;
     }
+    if (HOLD_SUPPRESSED.has(type) && (await this.heldNow(s.protectedPersonId))) {
+      // S4.10: hastanede / seyahatte modu — kapsama uyarısı açılmaz (denetimde; PII yok).
+      await this.db.insert(auditLog).values({
+        actorKind: 'SYSTEM',
+        action: 'event.suppressed',
+        entityType: 'signal',
+        entityId: s.sourceId,
+        data: { type, reason: 'ON_HOLD' },
+      });
+      return false;
+    }
     const after: Uow['after'] = [];
     let created = false;
     try {
@@ -674,6 +792,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
             data: { by: u.ev.id, alarm: type, sourceId: s.sourceId },
           });
         this.transition(u, 'CREATED', 'SYSTEM', undefined, s.note);
+        if (s.welfareReason) await this.welfareAudit(u, s.welfareReason, s.sourceId);
         if (rule.devicePrompt?.enabled) {
           // T-061 (C-09): düşme sorusunun süresi aile ayarıyla (30–90 sn) değişebilir.
           const personal =
@@ -742,8 +861,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     }
     // Alarm olmayan olay her gerçek alarma; hareketsizlik (en hafif alarm) düşme / SOS'a yükseltilir (denetim bulgu 2:
     // düşme hareketsizlik sorusunda P2 kalıp ses ön elemesine gitmesin).
+    // T-087 (S5.4): kapsama boşluğu (veya başka bekleme / geri arama olayı) S4.7 koşullarında YERİNDE KONTROL olur.
+    const welfare = type === 'WELFARE_CHECK' && WELFARE_UPGRADABLE.has(u.ev.type);
     const upgrade =
-      ALARM_TYPES.has(type) && (!ALARM_TYPES.has(u.ev.type) || (u.ev.type === 'INACTIVITY' && type !== 'INACTIVITY'));
+      welfare ||
+      (ALARM_TYPES.has(type) && (!ALARM_TYPES.has(u.ev.type) || (u.ev.type === 'INACTIVITY' && type !== 'INACTIVITY')));
     const rule = ruleFor(this.pack, type);
     // Eklenen tespitin kendi önceliği daha acilse olay ona çekilir (bulgu 7b: P4 geri aramaya pil bitti → P3).
     const to = upgrade
@@ -765,6 +887,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       u.ev.priority = to;
     }
     if (upgrade) await this.upgradeType(u, type, sourceId);
+    if (welfare && src?.welfareReason) await this.welfareAudit(u, src.welfareReason, sourceId);
     if ((type === 'SOS' || upgrade) && u.ev.state === 'DEVICE_PROMPT') {
       this.escalate(u, `${type} geldi`);
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
@@ -856,6 +979,16 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           at: incoming.at,
         },
       });
+    });
+  }
+
+  /** T-087: YERİNDE KONTROL nedeni denetime (konsol `ladder.welfareReason`). */
+  private async welfareAudit(u: Uow, reason: WelfareReason, sourceId: string) {
+    await this.repo.insertAudit(u.tx, {
+      actorKind: 'SYSTEM',
+      action: 'event.welfare_raised',
+      entityId: u.ev.id,
+      data: { reason, sourceId },
     });
   }
 

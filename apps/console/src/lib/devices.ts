@@ -1,4 +1,11 @@
-import type { CoverageLevel, CoverageReason, DeviceCategory, DeviceSummary } from '@yanimda/contracts';
+import type {
+  CoverageLevel,
+  CoverageReason,
+  DeviceCategory,
+  DevicePromptView,
+  DeviceSummary,
+  WelfareReason,
+} from '@yanimda/contracts';
 
 import { has, t } from './i18n';
 
@@ -71,6 +78,45 @@ export function gapReasonCode(transitions: { to: string; note?: string }[]): str
   const code = note ? `O-UI-GAP-${note}` : null;
   return code && /^O-UI-GAP-[A-Z_]+$/.test(code) && has(code) ? code : null;
 }
+
+/** T-087 YERİNDE KONTROL nedeni → katalog O-UI-WELFARE-<neden>; bilinmeyen gösterilmez. */
+export function welfareReasonCode(reason: WelfareReason | null | undefined): string | null {
+  const code = reason ? `O-UI-WELFARE-${reason}` : null;
+  return code && has(code) ? code : null;
+}
+
+/** Saat:dakika (operatörün yerel saati). */
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * T-089 (S7.1) operatörün "Soru gönder"ine cihazın cevabı: "İyiyim" (OK), yardım (HELP), cevap yok (NO_ANSWER: süre
+ * doldu) veya bekleniyor (kalan sn). Sunucu cevapsızlığı `until`'den işaretler; konsol kendi saatiyle de bekler.
+ * `label` sorulan cihazın adı (şerit adıyla aynı).
+ */
+export function promptLine(p: DevicePromptView, label: string, now: number): string {
+  const answer = p.answer ?? (Date.parse(p.until) <= now ? 'NO_ANSWER' : null);
+  if (answer === 'OK') return t('O-UI-PROMPT-OK', { device: label, time: hhmm(p.answeredAt ?? p.until) });
+  if (answer === 'HELP') return t('O-UI-PROMPT-HELP', { device: label, time: hhmm(p.answeredAt ?? p.until) });
+  if (answer === 'NO_ANSWER') return t('O-UI-PROMPT-NO-ANSWER', { device: label, time: hhmm(p.sentAt) });
+  return t('O-UI-PROMPT-WAITING', { device: label, sec: Math.max(0, Math.ceil((Date.parse(p.until) - now) / 1000)) });
+}
+
+/** Cihaz başına son soru (şeritte gösterilir). */
+export function lastPromptByDevice(prompts: DevicePromptView[] | undefined): Map<string, DevicePromptView> {
+  const m = new Map<string, DevicePromptView>();
+  for (const p of prompts ?? []) {
+    const prev = m.get(p.deviceId);
+    if (!prev || p.sentAt >= prev.sentAt) m.set(p.deviceId, p);
+  }
+  return m;
+}
+
+/** Bekleyen (cevapsız, süresi dolmamış) soru var mı: konsol cevabı görmek için ayrıntıyı yeniler. */
+export const promptPending = (prompts: DevicePromptView[] | undefined, now: number) =>
+  (prompts ?? []).some((p) => p.answer === null && Date.parse(p.until) > now - 2_000);
 
 /** Komut sonucunun satırı: ulaştı, cihaz desteklemiyor veya ulaştırılamadı (token yok, sağlayıcı hatası …). */
 export const commandResultCode = (r: { sent: boolean; outcome: string }) =>

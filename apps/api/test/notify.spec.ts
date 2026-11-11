@@ -2,6 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
 import type { EventState, EventType, KafkaEnvelope, Signal } from '@yanimda/contracts';
+import { t } from '@yanimda/messages';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bus } from '../src/common/bus';
@@ -249,6 +250,24 @@ describe('kanal yedekliliği', () => {
 });
 
 describe('kişinin cihazı (ELDER)', () => {
+  it('T-087 (S4.7) V-COVERAGE-NONE: yalnız yaşlının numarasına sesli arama (ELDER, yoksa saat); push / SMS yok', async () => {
+    await notify.plan(req('V-COVERAGE-NONE', 'ELDER'));
+    expect(await rows()).toEqual([]); // numarası yoksa aranmaz
+    await h.pg.exec(`
+      INSERT INTO profile.contact (id, protected_person_id, role, priority, phone_e164) VALUES
+        ('0190b000-0000-7000-8000-0000000000c5', '${PERSON}', 'WATCH', 1, '+905550000045'),
+        ('0190b000-0000-7000-8000-0000000000c6', '${PERSON}', 'ELDER', 1, '+905550000046');`);
+    await notify.plan(req('V-COVERAGE-NONE', 'ELDER', 'k2'));
+    await notify.settled();
+    expect((await rows()).map((r) => [r.code, r.channel, r.status, r.recipient_id.slice(-2)])).toEqual([
+      ['V-COVERAGE-NONE', 'VOICE', 'sent', 'c6'],
+    ]);
+    expect(cpaas.tts).toEqual([{ to: '+905550000046', text: t('V-COVERAGE-NONE') }]);
+    expect(devicePush.sent).toEqual([]);
+    expect(fcm.sent).toEqual([]);
+    expect(deliveryFor('V-COVERAGE-NONE')).toMatchObject({ urgency: 'URGENT', elderVoice: true });
+  });
+
   it('W-BAT-20 → kişinin push token’lı, kaldırılmamış cihazlarına', async () => {
     await h.pg.exec(`
       INSERT INTO device.device (id, protected_person_id, kind, push_provider, push_token) VALUES

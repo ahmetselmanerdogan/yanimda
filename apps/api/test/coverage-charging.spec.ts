@@ -298,9 +298,10 @@ describe('Kapsama YOK (S4.7) — eski 6 saatlik CONNECTION_LOST yerine', () => {
     await step(t(T14, 35));
     expect(await notices()).toEqual([]);
     await step(t(T14, 36));
-    expect(await notices()).toEqual(['P-COVERAGE-NONE/ELDER', 'W-WEAR-REMIND/ELDER']);
+    // S4.7: hatırlatma + yaşlının numarasına otomatik sesli arama (boşluk başına bir).
+    expect(await notices()).toEqual(['P-COVERAGE-NONE/ELDER', 'W-WEAR-REMIND/ELDER', 'V-COVERAGE-NONE/ELDER']);
     await step(t(T14, 61));
-    expect((await notices()).slice(2)).toEqual(['F-COVERAGE-NONE/FAMILY']);
+    expect((await notices()).slice(3)).toEqual(['F-COVERAGE-NONE/FAMILY']);
     await step(t(T14, 75));
     expect(await gapEvents()).toEqual([]);
     await step(t(T14, 76));
@@ -311,7 +312,7 @@ describe('Kapsama YOK (S4.7) — eski 6 saatlik CONNECTION_LOST yerine', () => {
     expect(gaps[0]!.sourceSignalIds[0]).toMatch(/^coverage-none:/);
     await send('watch', 'HEARTBEAT', t(T14, 80), { device: { connectivity: 'LTE', onWrist: true } });
     expect(await level()).toBe('FULL');
-    expect((await notices()).slice(3)).toEqual(['F-COVERAGE-BACK/FAMILY']);
+    expect((await notices()).slice(4)).toEqual(['F-COVERAGE-BACK/FAMILY']);
     expect(await events.get(gaps[0]!.id)).toMatchObject({ state: 'CLOSED', confirmedOutcome: 'OK' });
   });
 
@@ -331,7 +332,7 @@ describe('Kapsama YOK (S4.7) — eski 6 saatlik CONNECTION_LOST yerine', () => {
     expect(await notices()).toEqual([]);
     expect(await events.all()).toEqual([]);
     await step(new Date('2026-11-10T05:50:00Z')); // 08:50 → 20 uyanık dk
-    expect(await notices()).toEqual(['P-COVERAGE-NONE/ELDER', 'W-WEAR-REMIND/ELDER']);
+    expect(await notices()).toEqual(['P-COVERAGE-NONE/ELDER', 'W-WEAR-REMIND/ELDER', 'V-COVERAGE-NONE/ELDER']);
   });
 
   it('pili biten saat (≤%5) susarsa, telefon koruyor olsa da 120 dk sonra KAPSAMA BOŞLUĞU (pil bitti)', async () => {

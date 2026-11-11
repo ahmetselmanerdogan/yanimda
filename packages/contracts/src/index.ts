@@ -72,7 +72,16 @@ export type EventType =
   | 'TEST'
   | 'FOLLOW_UP'
   /** T-086 (S4.4, S4.7): kapsama boşluğu; nedenleri CHARGING, WATCH_OFF, BATTERY_DEAD, CONNECTION_LOST. */
-  | 'COVERAGE_GAP';
+  | 'COVERAGE_GAP'
+  /** T-087 (S4.7, S5.4): yerinde kontrol (P2); nedeni WelfareReason. */
+  | 'WELFARE_CHECK';
+
+/**
+ * WELFARE_CHECK nedeni: DEVICE_DROPPED kapsama YOK iken takılı cihaz pili yeterliyken birden sustu (2 sa);
+ * ALL_SILENT telefon dahil tüm cihazlar sessiz ve kimseye ulaşılamadı (6 sa); NO_MOVEMENT yanınızdayız araması
+ * cevapsız ve 24 sa cihaz hareketi yok.
+ */
+export type WelfareReason = 'DEVICE_DROPPED' | 'ALL_SILENT' | 'NO_MOVEMENT';
 
 /** COVERAGE_GAP olayının nedeni (eski WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST tespitleri bunun nedenidir). */
 export type CoverageGapReason = 'CHARGING' | 'WATCH_OFF' | 'BATTERY_DEAD' | 'CONNECTION_LOST';
@@ -131,6 +140,8 @@ export interface DeviceSummary {
   voiceOrder: number | null;
   /** Sesli arama sırası aile / operatör tarafından elle verildi (PATCH voiceOrder); false: hesaplanan sıra. */
   voiceOrderManual: boolean;
+  /** T-087 (S5.2): cihaza özel sesli arama numarasının son iki hanesi (operasyon PATCH voiceNumber); yoksa null. */
+  voiceNumberLast2?: string | null;
 }
 
 /** GET /protected-persons/{id}/coverage */
@@ -266,6 +277,26 @@ export interface LadderView {
   hearingSpeechImpaired: boolean;
   /** Kaynak platformun kendi SOS akışını (ör. Apple düşme → 112) çalıştırdığını bildirdi. */
   platformSosFlow: boolean;
+  /** T-087: YERİNDE KONTROL nedeni (WELFARE_CHECK değilse null). */
+  welfareReason?: WelfareReason | null;
+  /** T-089: operatörün "Soru gönder" komutları ve cihazın cevabı (eskiden yeniye). */
+  prompts?: DevicePromptView[];
+}
+
+/**
+ * T-089 (S7.1) operatörün cihaza sorusu ve cevabı. answer: OK ("İyiyim"), HELP (soru penceresinde SOS), NO_ANSWER
+ * (until geçti, cevap yok), null (bekleniyor).
+ */
+export interface DevicePromptView {
+  deviceId: string;
+  sentAt: string;
+  until: string;
+  /** Soru cihaza (veya köprü telefona) ulaştı. */
+  delivered: boolean;
+  answer: 'OK' | 'HELP' | 'NO_ANSWER' | null;
+  answeredAt: string | null;
+  /** Cevaplayan cihaz (soru telefona gidip saatten cevaplanabilir). */
+  answeredByDeviceId: string | null;
 }
 
 export interface SupervisorAlert {

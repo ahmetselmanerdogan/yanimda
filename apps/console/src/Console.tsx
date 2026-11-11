@@ -19,6 +19,7 @@ import {
   type TelephonyConfig,
 } from './lib/api';
 import type { Backend } from './lib/backend';
+import { promptPending, welfareReasonCode } from './lib/devices';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
 import { isDeviceStep } from './lib/ladder';
@@ -190,6 +191,14 @@ export function Console({
     const id = setInterval(() => void load(selected), 1500);
     return () => clearInterval(id);
   }, [callActive, selected, load]);
+
+  // T-089: operatörün sorusu cevap bekliyorken (cihaz cevabı / süre dolması) ayrıntıyı yenile.
+  const awaitingAnswer = promptPending(detail?.ladder?.prompts, now);
+  useEffect(() => {
+    if (!awaitingAnswer || !selected) return;
+    const id = setInterval(() => void load(selected), 3000);
+    return () => clearInterval(id);
+  }, [awaitingAnswer, selected, load]);
 
   useEffect(() => {
     if (!mine || !selected) return;
@@ -458,7 +467,32 @@ export function Console({
         ) : (
           <p className="muted pad">{t('O-UI-NO-SELECTION')}</p>
         )}
-        {ev && <DevicePanel key={ev.id} api={api} event={ev} mine={mine} now={now} onError={(m) => setError(m)} />}
+        {ev && (
+          <DevicePanel
+            key={ev.id}
+            api={api}
+            event={ev}
+            mine={mine}
+            now={now}
+            prompts={detail?.ladder?.prompts}
+            onSent={() => {
+              if (selected) void load(selected);
+            }}
+            onError={(m) => setError(m)}
+          />
+        )}
+        {ev?.type === 'WELFARE_CHECK' && (
+          <section className="script welfare-script" aria-labelledby="welfare-script-title" data-testid="welfare">
+            <h2 id="welfare-script-title">{t('O-UI-SCRIPT-WELFARE')}</h2>
+            {welfareReasonCode(detail?.ladder?.welfareReason) && (
+              <p className="gap-reason">
+                {t('O-UI-WELFARE-REASON', { reason: t(welfareReasonCode(detail?.ladder?.welfareReason)!) })}
+              </p>
+            )}
+            <p>{t('O-SCRIPT-WELFARE', scriptVars)}</p>
+            <p className="muted small">{t('O-UI-WELFARE-112')}</p>
+          </section>
+        )}
         {ev?.type === 'COVERAGE_GAP' && (
           <section className="script coverage-script" aria-labelledby="coverage-script-title">
             <h2 id="coverage-script-title">{t('O-UI-SCRIPT-COVERAGE')}</h2>

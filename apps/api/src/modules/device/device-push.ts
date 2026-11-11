@@ -167,7 +167,8 @@ export class DevicePush implements PushPort {
 
   /**
    * PushMessage → APNs isteği. Başka cihaza aktarılan (forDeviceId), WAKE, LOCATE, TEST: sessiz arka plan (öncelik 5,
-   * Apple kuralı). PROMPT: "İyiyim" eylemli uyarı, telefon metni (phoneTts), öncelik 10. RING: P-RING uyarısı, öncelik
+   * Apple kuralı). PROMPT: "İyiyim" eylemli uyarı, telefon metni (phoneTts), öncelik 10; özel alanlar FCM PROMPT'la
+   * aynı (kind, tts, phoneTts, windowSec, until, silent). RING: P-RING uyarısı, öncelik
    * 10. NOTICE: katalog metni.
    */
   private toApns(msg: PushMessage, token: string, sandbox: boolean): ApnsRequest | null {
@@ -202,19 +203,26 @@ export class DevicePush implements PushPort {
         return d.code ? alert(t(d.code), { type: 'NOTICE', code: d.code }, d.code) : null;
       case 'RING':
         return alert(t('P-RING'), { type: 'RING', eventId: d.eventId }, d.eventId);
-      case 'PROMPT':
+      case 'PROMPT': {
         if (!d.tts) return null;
+        // FCM PROMPT'la aynı alanlar (yalnız katalog kodları ve süreler; PII yok): uygulama metni ve süreyi buradan alır.
+        const phoneTts = d.phoneTts ?? phonePromptCode(d);
         return alert(
-          t(d.phoneTts ?? phonePromptCode(d)),
+          t(phoneTts),
           {
             type: 'PROMPT',
             eventId: d.eventId,
             ...(d.kind ? { kind: d.kind } : {}),
+            tts: d.tts,
+            phoneTts,
+            ...(d.windowSec ? { windowSec: d.windowSec } : {}),
             ...(d.until ? { until: d.until } : {}),
+            silent: d.silent ?? 'false',
           },
           d.eventId,
           IOS_PROMPT_CATEGORY,
         );
+      }
       default:
         return null;
     }

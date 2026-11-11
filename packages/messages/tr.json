@@ -449,6 +449,10 @@
     "channel": "console",
     "text": "Saati ara"
   },
+  "O-STEP-VOICE-2": {
+    "channel": "console",
+    "text": "2. sesli cihazı ara"
+  },
   "O-STEP-PHONE": {
     "channel": "console",
     "text": "Telefonu ara"
@@ -548,6 +552,10 @@
   "O-SKIP-IMPAIRED": {
     "channel": "console",
     "text": "İşitme/konuşma güçlüğü: yakınlara geçildi"
+  },
+  "O-SKIP-NO-VOICE-2": {
+    "channel": "console",
+    "text": "2. sesli cihaz yok, atlandı"
   },
   "O-SKIP-NO-KEY-HOLDER": {
     "channel": "console",
@@ -1622,6 +1630,10 @@
   "V-NO-OPERATOR": {
     "channel": "voice",
     "text": "Yanımda acil yardım servisi: {name} için acil durum uyarısı aldık. Lütfen hemen 112'yi arayın."
+  },
+  "V-COVERAGE-NONE": {
+    "channel": "voice",
+    "text": "Yanımda acil yardım servisi: şu an hiçbir cihazınızdan sinyal alamıyoruz, yardım çağıramayabilirsiniz. Lütfen saatinizi takın ve telefonunuzu açık tutun. İyi değilseniz yardım düğmesine basın veya 112'yi arayın."
   },
   "O-CALL-queued": {
     "channel": "console",
@@ -3308,6 +3320,10 @@
     "channel": "family",
     "text": "Koruma boşluğu"
   },
+  "F-UI-TYPE-WELFARE_CHECK": {
+    "channel": "family",
+    "text": "Yerinde kontrol"
+  },
   "F-UI-DEVICE-CAT-WATCH": {
     "channel": "family",
     "text": "Saat"
@@ -3421,9 +3437,17 @@
     "channel": "console",
     "text": "Kapsama boşluğu"
   },
+  "O-TYPE-WELFARE_CHECK": {
+    "channel": "console",
+    "text": "Yerinde kontrol"
+  },
   "O-SCRIPT-COVERAGE": {
     "channel": "console",
     "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Bir süredir saatinizden sinyal alamıyoruz. İyi misiniz? Saatinizi takıp telefonunuzu yanınızda tutabilir misiniz?"
+  },
+  "O-SCRIPT-WELFARE": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} için arıyorum: bir süredir hiçbir cihazından sinyal alamıyoruz ve kendisine ulaşamadık. Siz en son ne zaman görüştünüz? Yanına gidip bakabilecek biri var mı, kaç dakikada varabilir?"
   },
   "O-UI-DEVICES": {
     "channel": "console",
@@ -3476,6 +3500,30 @@
   "O-UI-SCRIPT-COVERAGE": {
     "channel": "console",
     "text": "Kapsama boşluğu araması"
+  },
+  "O-UI-SCRIPT-WELFARE": {
+    "channel": "console",
+    "text": "Yerinde kontrol araması"
+  },
+  "O-UI-WELFARE-REASON": {
+    "channel": "console",
+    "text": "Neden: {reason}"
+  },
+  "O-UI-WELFARE-DEVICE_DROPPED": {
+    "channel": "console",
+    "text": "Takılı cihaz pili yeterliyken birden sustu (2 sa, kapsama yok)"
+  },
+  "O-UI-WELFARE-ALL_SILENT": {
+    "channel": "console",
+    "text": "Telefon dahil tüm cihazlar 6 saattir sessiz, kimseye ulaşılamadı"
+  },
+  "O-UI-WELFARE-NO_MOVEMENT": {
+    "channel": "console",
+    "text": "Yanınızdayız araması cevapsız ve 24 saattir cihaz hareketi yok"
+  },
+  "O-UI-WELFARE-112": {
+    "channel": "console",
+    "text": "Ziyaret 30 dk içinde mümkün değilse 112 kararı sizindir (Ctrl+1, gerekçeyle)."
   },
   "O-UI-COVERAGE": {
     "channel": "console",
@@ -3592,6 +3640,34 @@
   "O-UI-DEV-CANCELLED": {
     "channel": "console",
     "text": "İptal etti"
+  },
+  "O-UI-PROMPT-ANSWERS": {
+    "channel": "console",
+    "text": "Cihaz sorusu cevapları"
+  },
+  "O-UI-PROMPT-OK": {
+    "channel": "console",
+    "text": "{device}: \"İyiyim\" dedi · {time}"
+  },
+  "O-UI-PROMPT-HELP": {
+    "channel": "console",
+    "text": "{device}: yardım istedi · {time}"
+  },
+  "O-UI-PROMPT-NO-ANSWER": {
+    "channel": "console",
+    "text": "{device}: cevap vermedi (soru {time})"
+  },
+  "O-UI-PROMPT-WAITING": {
+    "channel": "console",
+    "text": "{device}: cevap bekleniyor ({sec} sn)"
+  },
+  "O-UI-PROMPT-BY": {
+    "channel": "console",
+    "text": "{device} cevapladı"
+  },
+  "O-UI-DEV-VOICE-NUMBER": {
+    "channel": "console",
+    "text": "Numara …{last2}"
   },
   "O-UI-DEV-NONE": {
     "channel": "console",

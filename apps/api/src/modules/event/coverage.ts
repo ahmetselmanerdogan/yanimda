@@ -8,6 +8,7 @@ import type {
   ProtectionState,
   Signal,
   SignalSource,
+  WelfareReason,
 } from '@yanimda/contracts';
 
 import type { ChargingParams, CoverageNoneParams, CoverageParams } from './rules.loader';
@@ -164,6 +165,10 @@ export interface CoverageCtx {
   deadPct: number;
   /** An gece penceresinde mi. */
   night: boolean;
+  /** S4.10 "hastanede / seyahatte" modu açık: nedenlere ON_HOLD eklenir (seviye değişmez). */
+  hold?: boolean;
+  /** S4.7 YERİNDE KONTROL: takılı cihaz bu pil yüzdesinin üzerindeyken sustuysa "birden sustu" (varsayılan 20). */
+  droppedPct?: number;
 }
 
 const minutesSince = (iso: string | null, now: Date) =>
@@ -201,6 +206,10 @@ export interface CoverageResult {
   dead: string[];
   /** Hiçbir A sınıfı cihaz takılı değil ve en az biri bilerek çıkarılmış (şarj dışı): "saat çıkarıldı". */
   offBody: boolean;
+  /** S4.7: son bilinen durumu takılı, şarjda değil, pili droppedPct'nin üzerinde olan ama susmuş A sınıfı cihazlar. */
+  dropped: string[];
+  /** Telefon (köprü dahil) veya herhangi bir cihaz çevrimiçi. false: tüm cihazlar sessiz (S4.7 6 sa). */
+  anyOnline: boolean;
 }
 
 export function computeCoverage(f: Facts, now: Date, ctx: CoverageCtx): CoverageResult {
@@ -249,6 +258,11 @@ export function computeCoverage(f: Facts, now: Date, ctx: CoverageCtx): Coverage
     if (!phoneUsable) reasons.push('PHONE_OFFLINE');
   }
   if (level === 'NIGHT') reasons.push('NIGHT_WINDOW');
+  if (ctx.hold) reasons.push('ON_HOLD');
+  const droppedPct = ctx.droppedPct ?? 20;
+  const dropped = alarm.filter(
+    (d) => !online(d) && !d.charging && d.onBody === true && d.batteryPct !== null && d.batteryPct > droppedPct,
+  );
   return {
     level,
     rawLevel,
@@ -261,6 +275,8 @@ export function computeCoverage(f: Facts, now: Date, ctx: CoverageCtx): Coverage
     dead: dead.map((d) => d.id),
     // Son bilinen durum "çıkarıldı" (susmuş olsa da; sabah WATCH_OFF beklemesi buna göre açılır).
     offBody: !worn.length && alarm.some((d) => d.onBody === false && !d.charging && !d.chargeEndedAt),
+    dropped: dropped.map((d) => d.id),
+    anyOnline: phoneOnline(f, now, p) || devices.some(online),
   };
 }
 
@@ -368,6 +384,9 @@ export function awakeMinutes(from: Date, to: Date, w: QuietWindow): number {
 
 // ---- Şarj boşluğu (S4.4) ve "kapsama yok" (S4.7) zamanlayıcıları ----
 
+/** S4.10 "hastanede / seyahatte" modu şu an açık mı (bitişi geçmişse kapalı: davranış kendiliğinden döner). */
+export const onHold = (s: { holdUntil?: Date | null }, now: Date) => !!s.holdUntil && now < s.holdUntil;
+
 export interface LadderState {
   gapSince: Date | null;
   gapCause: 'CHARGING' | 'BATTERY_DEAD' | null;
@@ -396,6 +415,8 @@ export type LadderAction =
       vars?: Record<string, string | number>;
     }
   | { kind: 'gap-event'; reason: CoverageGapReason; sourceId: string }
+  /** T-087 YERİNDE KONTROL (P2): boşluk başına bir kaynak; `since` boşluğun başı ("kimseye ulaşılamadı" denetimi). */
+  | { kind: 'welfare-event'; reason: WelfareReason; sourceId: string; since: Date }
   | { kind: 'close-gap' };
 
 export interface LadderCtx {
@@ -406,6 +427,8 @@ export interface LadderCtx {
   plan: { start: string; end: string };
   charging: ChargingParams;
   none: CoverageNoneParams;
+  /** S4.10 "hastanede / seyahatte" modu: zamanlayıcılar sıfırlanır, hiçbir hatırlatma / olay üretilmez. */
+  hold?: boolean;
 }
 
 const has = (sent: string[], k: string) => sent.includes(k);
@@ -429,6 +452,15 @@ export function stepLadders(
   const elder = (code: string, dedupeKey: string) =>
     actions.push({ kind: 'notify', code, audience: 'ELDER', dedupeKey });
   const wasActive = !!prev.gapSince || !!prev.noneSince;
+
+  // S4.10: hastanede / seyahatte modunda kapsama uyarıları durur (SOS ve düşme olay motorunda her zaman çalışır).
+  // Zamanlayıcılar sıfırlanır: mod bitince boşluk o andan sayılır (biriken uyarılar bir anda gitmez); aileye "geri
+  // geldi" gitmez. Bekleyen / üstlenilmemiş kapsama olaylarını olay motoru kapatır (CoverageUpdate.hold).
+  if (ctx.hold) {
+    const held: LadderState = { ...emptyLadder(), intentUntil: s.intentUntil };
+    if (held.intentUntil && now >= held.intentUntil) held.intentUntil = null;
+    return { state: held, actions: [] };
+  }
 
   // Şarj boşluğu: seviye FULL'un altında ve bir A sınıfı cihaz şarjda / şarjdan çıkıp takılmadı / pili bitti.
   const cause: LadderState['gapCause'] =
@@ -528,6 +560,8 @@ export function stepLadders(
         s.noneSent.push('remind');
         elder('P-COVERAGE-NONE', `coverage-none:${personId}:${key}`);
         elder('W-WEAR-REMIND', `coverage-none:${personId}:${key}`);
+        // S4.7: yaşlının numarasına otomatik sesli arama (bildirim modülü, CPaaS; boşluk başına bir, gece asla).
+        elder('V-COVERAGE-NONE', `coverage-none:${personId}:${key}`);
       }
       if (!has(s.noneSent, 'family') && min >= ctx.none.familyMin) {
         s.noneSent.push('family');
@@ -540,6 +574,16 @@ export function stepLadders(
       }
       if (min >= ctx.none.eventMin)
         actions.push({ kind: 'gap-event', reason: noneReason(cov), sourceId: `coverage-none:${personId}:${key}` });
+      // T-087 YERİNDE KONTROL (P2): takılı cihaz pili yeterliyken birden sustu (2 sa) veya telefon dahil tüm cihazlar
+      // sessiz (6 sa). Boşluk başına tek kaynak: olay motoru aynı kaynağı ikinci kez açmaz (bir kişide tek açık olay).
+      const reason: WelfareReason | null =
+        cov.dropped.length && min >= ctx.none.welfareDroppedH * 60
+          ? 'DEVICE_DROPPED'
+          : !cov.anyOnline && min >= ctx.none.welfareSilentH * 60
+            ? 'ALL_SILENT'
+            : null;
+      if (reason)
+        actions.push({ kind: 'welfare-event', reason, sourceId: `welfare:${personId}:${key}`, since: s.noneSince });
     }
   }
 

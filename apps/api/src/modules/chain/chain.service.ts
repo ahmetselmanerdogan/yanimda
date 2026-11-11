@@ -2,17 +2,19 @@ import { BadRequestException, ConflictException, Inject, Injectable, Optional } 
 import {
   type ChainStep,
   type ChainView,
+  type DevicePromptView,
   type LadderView,
   STEP_RESULTS,
   type StepAssessment,
   type StepResult,
   TOPICS,
+  type WelfareReason,
 } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { contact } from '../../db/schema';
+import { auditLog, contact, devicePrompt } from '../../db/schema';
 import { deviceSummaries } from '../event/coverage.service';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
 import {
@@ -29,9 +31,10 @@ import { type CallView, TelephonyService } from '../telephony/telephony.service'
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
 import {
   autoSkip,
-  bestVoiceTarget,
   call112Deadline,
+  deviceForStep,
   distanceM,
+  dropMissingVoiceSteps,
   isDeviceStep,
   type LadderContext,
   orderForCorroboration,
@@ -160,17 +163,22 @@ export class ChainService {
           await this.repo.updateStep(c.tx, run.id, step);
         }
         if (c.ev.state === 'OPERATOR_ASSIGNED') c.transition('CONTACT_CHAIN');
-        // T-087: "en iyi cihaza yeniden" — doğrulayan veya sesli arama sırasında ilk çevrimiçi sesli cihaz.
-        const voice =
-          step.target === 'VOICE_DEVICE' && this.telephony?.enabled
-            ? bestVoiceTarget(await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
+        // T-087 (S5.2): sesli cihaz adımı sırası gelen cihazı kendi numarasından arar (1. / 2. sesli cihaz, telefon);
+        // "en iyi cihaza yeniden" doğrulayan veya sesli arama sırasında ilk çevrimiçi sesli cihaz. Cihazın numarası
+        // yoksa rehberdeki rol numarası (saat / telefon; rehberde tek saat numarası olduğundan 2. cihaz kendi
+        // numarası olmadan CPaaS'la aranmaz).
+        const dev =
+          isDeviceStep(step) && this.telephony?.enabled
+            ? deviceForStep(step, await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
             : undefined;
+        const voice = step.target === 'VOICE_DEVICE' && dev ? (voiceTargetOf(dev) ?? undefined) : undefined;
         const p = await this.telephony?.prepare(c.tx, {
           eventId: c.ev.id,
           personId: c.ev.protectedPersonId,
           step,
           operatorId,
           ...(voice ? { voice } : {}),
+          ...(dev ? { deviceId: dev.id } : {}),
         });
         if (p) plan = { ...p, timeoutSec: step.timeoutSec };
         return this.result(c, run);
@@ -457,14 +465,14 @@ export class ChainService {
   private async plan(c: OperatorCtx): Promise<ChainStep[]> {
     if (!c.rule) return [];
     const { autoAnswerSec } = ladderOf(this.rules.current());
-    let steps = buildSteps(c.rule, c.ev.isTest, this.proc);
+    const devices = await deviceSummaries(c.tx, this.rules.current(), c.ev.protectedPersonId, c.now);
+    // S5.2: "2. sesli cihaz" yalnız kişinin ikinci sesli giyilebilir cihazı varsa.
+    let steps = dropMissingVoiceSteps(buildSteps(c.rule, c.ev.isTest, this.proc), devices);
     if (c.rule.priority === 1 && autoAnswerSec > 0)
       steps = steps.map((s) => (isDeviceStep(s) ? { ...s, autoAnswerSec } : s));
     const by = corroboratorOf(c.ev);
     if (by) {
-      const d = (await deviceSummaries(c.tx, this.rules.current(), c.ev.protectedPersonId, c.now)).find(
-        (x) => x.id === by,
-      );
+      const d = devices.find((x) => x.id === by);
       steps = orderForCorroboration(steps, d ? voiceTargetOf(d) : null);
     }
     return steps;
@@ -483,6 +491,8 @@ export class ChainService {
       possibleEmergency: !impaired && !!run?.steps.some((s) => s.result === 'SILENT'),
       hearingSpeechImpaired: impaired,
       platformSosFlow: await platformSosFlow(q, ev.sourceSignalIds),
+      welfareReason: ev.type === 'WELFARE_CHECK' ? await welfareReasonOf(q, ev.id) : null,
+      prompts: await promptsOf(q, ev.id, new Date()),
     };
   }
 
@@ -573,6 +583,35 @@ export class ChainService {
       ...(reason ? { reason } : {}),
     };
   }
+}
+
+/** T-087: YERİNDE KONTROL nedeni (olay açılırken / yükseltilirken denetime yazılır). */
+async function welfareReasonOf(q: Db | Tx, eventId: string): Promise<WelfareReason | null> {
+  const [a] = await q
+    .select({ data: auditLog.data })
+    .from(auditLog)
+    .where(and(eq(auditLog.entityId, eventId), eq(auditLog.action, 'event.welfare_raised')))
+    .orderBy(desc(auditLog.id))
+    .limit(1);
+  return ((a?.data as { reason?: WelfareReason } | null)?.reason as WelfareReason | undefined) ?? null;
+}
+
+/** T-089: operatörün cihaz soruları ve cevapları; cevapsız ve süresi geçmiş soru NO_ANSWER. */
+async function promptsOf(q: Db | Tx, eventId: string, now: Date): Promise<DevicePromptView[]> {
+  const rows = await q
+    .select()
+    .from(devicePrompt)
+    .where(eq(devicePrompt.eventId, eventId))
+    .orderBy(asc(devicePrompt.sentAt));
+  return rows.map((r) => ({
+    deviceId: r.deviceId,
+    sentAt: r.sentAt.toISOString(),
+    until: r.until.toISOString(),
+    delivered: r.delivered,
+    answer: (r.answer as 'OK' | 'HELP' | null) ?? (r.until <= now ? 'NO_ANSWER' : null),
+    answeredAt: r.answeredAt?.toISOString() ?? null,
+    answeredByDeviceId: r.answeredBy ?? null,
+  }));
 }
 
 /** S3.3: doğrulayan cihaz (alarmı açandan sonraki ilk farklı cihaz); doğrulanmamışsa null. */

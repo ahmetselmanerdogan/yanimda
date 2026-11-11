@@ -148,7 +148,11 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
     const add = (channel: Channel, recipientKind: Row['recipientKind'], recipientId: string, extra = {}) =>
       rows.push({ ...base, id: uuidv7(), channel, recipientKind, recipientId, ...extra });
 
-    if (req.audience === 'ELDER') {
+    if (d.elderVoice) {
+      // T-087 (S4.7): yaşlının kendi numarasına sesli arama (CPaaS ttsCall); numara gönderimde okunur, satırda yok.
+      const elder = await this.elderNumber(req.protectedPersonId);
+      if (elder) add('VOICE', 'CONTACT', elder);
+    } else if (req.audience === 'ELDER') {
       for (const r of await this.elderRecipients(req.protectedPersonId, req.code)) add('DEVICE', r.kind, r.id);
     } else if (d.voiceOnly) {
       const [first] = await this.familyContacts(req.protectedPersonId);
@@ -441,6 +445,20 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Yakınlar (rehber CONTACT, öncelik sırasıyla). */
+  /** Yaşlının aranacak numarası: rehberde ELDER (telefon), yoksa WATCH (LTE saat); öncelik sırasıyla ilki. */
+  private async elderNumber(personId: string): Promise<string | null> {
+    for (const role of ['ELDER', 'WATCH']) {
+      const [c] = await this.db
+        .select({ id: contact.id })
+        .from(contact)
+        .where(and(eq(contact.protectedPersonId, personId), eq(contact.role, role)))
+        .orderBy(asc(contact.priority))
+        .limit(1);
+      if (c) return c.id;
+    }
+    return null;
+  }
+
   private async familyContacts(personId: string): Promise<string[]> {
     const rows = await this.db
       .select({ id: contact.id })
