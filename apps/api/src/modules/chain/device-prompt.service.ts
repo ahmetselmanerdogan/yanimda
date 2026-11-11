@@ -8,6 +8,7 @@ import { DB, type Db } from '../../db/client';
 import { auditLog, event } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
 import type { PromptRequest } from '../device/device.types';
+import { delivered } from '../device/push.port';
 import { deviceSummaries } from '../event/coverage.service';
 import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 
@@ -63,7 +64,7 @@ export class DevicePromptService implements OnModuleInit, OnModuleDestroy {
     ];
   }
 
-  /** Olay hâlâ cihaz sorusundaysa soruyu gönder. Gönderilen cihaz sayısı (tekrar / gereksizse 0). */
+  /** Olay hâlâ cihaz sorusundaysa soruyu gönder. Ulaşılan cihaz sayısı (tekrar / gereksizse 0). */
   async onEvent(eventId: string, now = new Date()): Promise<number> {
     const [ev] = await this.db
       .select({
@@ -94,7 +95,9 @@ export class DevicePromptService implements OnModuleInit, OnModuleDestroy {
     if (done) return 0;
     const summaries = await deviceSummaries(this.db, this.rules.current(), ev.personId, now);
     const phones = summaries.filter((d) => d.category === 'PHONE').map((d) => d.id);
-    const targets = [...new Set([...ev.sources, ...phones])];
+    // Önce telefon(lar): kendi token'ı olmayan saatin sorusu zaten o telefona gider (telefon saate iletir), saate ayrıca
+    // aktarılmaz.
+    const targets = [...new Set([...phones, ...ev.sources])];
     const req: PromptRequest = {
       eventId: ev.id,
       kind: ev.type,
@@ -104,9 +107,22 @@ export class DevicePromptService implements OnModuleInit, OnModuleDestroy {
       silent: dp.silent ?? false,
     };
     let sent = 0;
+    let viaPhone = 0;
+    const reached = new Set<string>();
+    const outcomes: Record<string, number> = {};
     for (const id of targets) {
       try {
-        if (await this.devices.promptUser(id, req)) sent++;
+        const bridge = phones.includes(id) ? null : await this.devices.relayBridgeOf(id);
+        if (bridge && reached.has(bridge)) {
+          viaPhone++; // telefonun kendi kopyası saate de iletilir
+          continue;
+        }
+        const o = await this.devices.promptUser(id, req);
+        outcomes[o] = (outcomes[o] ?? 0) + 1;
+        if (delivered(o)) {
+          sent++;
+          reached.add(id);
+        }
       } catch (e) {
         this.log.warn(`Soru gönderilemedi (olay=${ev.id}): ${safeError(e)}`);
       }
@@ -116,7 +132,7 @@ export class DevicePromptService implements OnModuleInit, OnModuleDestroy {
       action: 'device.prompt_pushed',
       entityType: 'event',
       entityId: ev.id,
-      data: { until, devices: targets.length, sent },
+      data: { until, devices: targets.length, sent, viaPhone, outcomes },
     });
     return sent;
   }

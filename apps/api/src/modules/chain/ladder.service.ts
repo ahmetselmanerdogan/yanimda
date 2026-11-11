@@ -15,6 +15,7 @@ import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog, event, supervisorAlert } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
+import { delivered } from '../device/push.port';
 import { deviceSummaries } from '../event/coverage.service';
 import { ladderOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { ringTargets } from './ladder';
@@ -90,7 +91,7 @@ export class LadderService implements OnModuleInit, OnModuleDestroy {
     let rung = 0;
     for (const d of targets) {
       try {
-        if (await this.devices.ring(d.id, { eventId: ev.id })) rung++;
+        if (delivered(await this.devices.ring(d.id, { eventId: ev.id }))) rung++;
       } catch (e) {
         this.log.warn(`Cihaz çaldırılamadı (olay=${ev.id}): ${safeError(e)}`);
       }

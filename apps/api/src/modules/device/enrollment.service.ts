@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
-import { contact, device, invite } from '../../db/schema';
+import { contact, device, invite, signal } from '../../db/schema';
 import { subscriptionProtection } from '../billing/subscription-protection';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
@@ -76,6 +76,8 @@ export interface DeviceConfig {
   inactivityThresholdMin: number | null;
   /** T-090 (S4.4): "şarj tamam" eşikleri — pil ≥ chargeDonePct ve ≥ chargeDoneMin dk şarjda (veya %100). */
   charging: { chargeDonePct: number; chargeDoneMin: number };
+  /** T-090 (S4.9): bu cihazın son TEST sinyali (aylık deneme hatırlatması); hiç yoksa null. */
+  lastTestAt: string | null;
   /** Cihazın göstereceği / seslendireceği metinler (katalog; saat W-*, telefon P-*). */
   messages: Record<string, { text: string; action?: string }>;
   /**
@@ -399,6 +401,14 @@ export class EnrollmentService {
     return c ? { displayName: c.displayName ?? null, phone: c.phone } : null;
   }
 
+  private async lastTestAt(deviceId: string): Promise<string | null> {
+    const [r] = await this.db
+      .select({ at: sql<Date | string | null>`max(${signal.time})` })
+      .from(signal)
+      .where(and(eq(signal.deviceId, deviceId), eq(signal.kind, 'TEST')));
+    return r?.at ? new Date(r.at).toISOString() : null;
+  }
+
   async config(p: DevicePrincipal, now = new Date()): Promise<{ etag: string; body: DeviceConfig }> {
     const pack = this.rules.current();
     const fall = ruleFor(pack, 'FALL');
@@ -425,6 +435,7 @@ export class EnrollmentService {
       },
       inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
       charging: { chargeDonePct: charging.chargeDonePct, chargeDoneMin: charging.chargeDoneMin },
+      lastTestAt: await this.lastTestAt(p.deviceId),
       messages,
       operator: operatorInfo(),
       familyContact: PHONE_KINDS.includes(p.kind) ? await this.firstContact(p.protectedPersonId) : null,

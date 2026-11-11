@@ -377,7 +377,7 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
       return { kind: 'sent' };
     }
     const r = await this.devicePush.deliver(msg);
-    if (r === 'sent') return { kind: 'sent' };
+    if (r === 'sent' || r === 'relayed') return { kind: 'sent' };
     if (r === 'retry') return { kind: 'retry', error: r };
     return { kind: 'failed', error: r };
   }

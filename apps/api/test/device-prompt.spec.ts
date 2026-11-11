@@ -5,6 +5,7 @@ import { bus } from '../src/common/bus';
 import { InMemoryTimers } from '../src/common/timers/memory-timers';
 import { DevicePromptService } from '../src/modules/chain/device-prompt.service';
 import { defaultRegistry, DeviceService } from '../src/modules/device/device.service';
+import { DevicePush } from '../src/modules/device/device-push';
 import { RecordingPush } from '../src/modules/device/push.port';
 import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
 import { createHarness, type Harness, sig } from './support/harness';
@@ -79,12 +80,13 @@ describe('DEVICE_PROMPT → PROMPT push (alarm cihazı + yaşlının telefonu)',
         .sort(),
     ).toEqual([WATCH, PHONE].sort());
     const m = prompted()[0]!;
-    expect(m).toMatchObject({ priority: 'normal' });
+    expect(m).toMatchObject({ priority: 'high' }); // veri mesajı, yüksek öncelik (APNs 10)
     expect(m.data).toEqual({
       type: 'PROMPT',
       eventId: e.id,
       kind: 'FALL',
       tts: 'W-FALL-1',
+      phoneTts: 'P-FALL-PROMPT',
       windowSec: expect.stringMatching(/^(59|60)$/),
       until,
       silent: 'false',
@@ -145,5 +147,60 @@ describe('DEVICE_PROMPT → PROMPT push (alarm cihazı + yaşlının telefonu)',
     } finally {
       prompts.onModuleDestroy();
     }
+  });
+});
+
+describe('token’sız saat: telefonun kendi kopyası yeter (aktarım tekrarlanmaz); teslim sonucu denetimde', () => {
+  const fcmSent: { token: string; data: Record<string, string>; priority: string }[] = [];
+  const fcm = {
+    send: async (m: { token: string; data: Record<string, string>; priority: 'normal' | 'high' }) => {
+      fcmSent.push(m);
+      return { status: 'ok' as const, id: 'm' };
+    },
+  };
+  beforeEach(() => {
+    fcmSent.length = 0;
+    prompts = new DevicePromptService(
+      h.db,
+      staticRules(pack),
+      new DeviceService(h.db, defaultRegistry(new DevicePush(h.db, null, undefined, fcm))),
+    );
+  });
+  const audit = async (id: string) =>
+    (
+      await h.rows<{ data: Record<string, unknown> }>(
+        `SELECT data FROM audit.log WHERE entity_id = $1 AND action = 'device.prompt_pushed' ORDER BY id`,
+        [id],
+      )
+    ).at(-1)!.data;
+
+  it('saatin token’ı yok: yalnız telefona bir PROMPT (telefon saate iletir)', async () => {
+    await h.pg.query(`UPDATE device.device SET push_provider = 'FCM', push_token = 'tok-phone' WHERE id = $1`, [PHONE]);
+    await deliver('FALL', WATCH);
+    const e = await ev();
+    expect(await prompts.onEvent(e.id)).toBe(1);
+    expect(fcmSent.map((m) => [m.token, m.data.type, m.data.forDeviceId, m.priority])).toEqual([
+      ['tok-phone', 'PROMPT', undefined, 'high'],
+    ]);
+    expect(await audit(e.id)).toMatchObject({ devices: 2, sent: 1, viaPhone: 1, outcomes: { sent: 1 } });
+  });
+
+  it('telefon soruyu alamadıysa (token yok) saate köprü olmadan gidemez: ulaşılan 0, sonuç denetimde', async () => {
+    await deliver('FALL', WATCH);
+    const e = await ev();
+    expect(await prompts.onEvent(e.id)).toBe(0);
+    expect(fcmSent).toHaveLength(0);
+    expect(await audit(e.id)).toMatchObject({ sent: 0, viaPhone: 0, outcomes: { 'no-token': 2 } });
+  });
+
+  it('saatin kendi token’ı varsa ikisine ayrı ayrı', async () => {
+    await h.pg.query(
+      `UPDATE device.device SET push_provider = 'FCM', push_token = CASE id WHEN $1 THEN 'tok-watch' ELSE 'tok-phone' END
+       WHERE id IN ($1, $2)`,
+      [WATCH, PHONE],
+    );
+    await deliver('FALL', WATCH);
+    expect(await prompts.onEvent((await ev()).id)).toBe(2);
+    expect(fcmSent.map((m) => m.token).sort()).toEqual(['tok-phone', 'tok-watch']);
   });
 });

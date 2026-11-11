@@ -36,6 +36,7 @@ import { AdminTokenGuard } from '../rules/admin-token.guard';
 import { DeviceService } from './device.service';
 import type { PromptRequest } from './device.types';
 import { EnrollmentService } from './enrollment.service';
+import { delivered, type PushOutcome } from './push.port';
 
 /**
  * T-085 / T-086 kapsama ve cihaz uçlarının çağıranı: kişinin kendi cihaz token'ı, operasyon (OIDC operations
@@ -261,8 +262,9 @@ export class DeviceManageController {
   /**
    * POST /v1/devices/{id}/commands — T-089 (S7.1, S8.3) operatör komutu: RING (çaldır), PROMPT (soru gönder), LOCATE
    * (konum iste) yalnız kişinin açık olayı varken (olay kimliği push'ta gider); TEST (cihaz testi) her zaman. Yalnız
-   * operasyon (OPERATOR / SUPERVISOR, OIDC ADMIN); her komut denetime yazılır. 202 { type, eventId, sent } — sent false:
-   * cihaz bu komutu desteklemiyor (ör. konum yok).
+   * operasyon (OPERATOR / SUPERVISOR, OIDC ADMIN); her komut sonucuyla denetime yazılır. 202 { type, eventId, sent,
+   * outcome } — sent: cihaza ulaştı (doğrudan veya köprü telefon üzerinden, `outcome` 'sent' / 'relayed'); false ise
+   * `outcome` nedeni verir (unsupported, no-token, unconfigured, retry …).
    */
   @Post(':id/commands')
   @HttpCode(202)
@@ -279,21 +281,22 @@ export class DeviceManageController {
     if (type !== 'TEST' && !open) throw new ConflictException('Kişinin açık olayı yok');
     if (asked !== undefined && asked !== open?.id) throw new ConflictException('Olay kişinin açık olayı değil');
     const deviceId = id.toLowerCase();
-    let sent: boolean;
-    if (type === 'RING') sent = await this.devices.ring(deviceId, { eventId: open!.id });
-    else if (type === 'PROMPT') sent = await this.devices.promptUser(deviceId, this.operatorPrompt(open!));
-    else if (type === 'LOCATE') sent = await this.devices.command(deviceId, { type, eventId: open!.id });
-    else sent = await this.devices.command(deviceId, { type });
+    let outcome: PushOutcome;
+    if (type === 'RING') outcome = await this.devices.ring(deviceId, { eventId: open!.id });
+    else if (type === 'PROMPT') outcome = await this.devices.promptUser(deviceId, this.operatorPrompt(open!));
+    else if (type === 'LOCATE') outcome = await this.devices.command(deviceId, { type, eventId: open!.id });
+    else outcome = await this.devices.command(deviceId, { type });
+    const sent = delivered(outcome);
     await this.db.insert(auditLog).values({
       actorKind: actorKindOf(a),
       actorId: subOf(a),
       action: 'device.command',
       entityType: 'device',
       entityId: deviceId,
-      data: { type, eventId: open?.id ?? null, sent },
+      data: { type, eventId: open?.id ?? null, sent, outcome },
     });
-    this.log.log(`Cihaz komutu ${type} (gönderildi=${sent})`);
-    return { type, eventId: open?.id ?? null, sent };
+    this.log.log(`Cihaz komutu ${type}: ${outcome}`);
+    return { type, eventId: open?.id ?? null, sent, outcome };
   }
 
   /** Operatörün sorusu: olay türünün cihaz sorusu (metin, süre), yoksa kural paketi `ladder.operatorPrompt`. */

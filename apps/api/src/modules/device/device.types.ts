@@ -1,5 +1,7 @@
 import type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier, Signal } from '@yanimda/contracts';
 
+import type { PushOutcome } from './push.port';
+
 export type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier } from '@yanimda/contracts';
 
 /**
@@ -53,9 +55,10 @@ export interface DeviceAdapter {
   capabilities(): DeviceCapabilities;
   /** Ham (şemaya uygun) sinyali kanonik biçime getirir. Girişi değiştirmez. Desteklenmeyen → UnsupportedSignalError. */
   normalize(raw: Signal): Signal;
-  promptUser(deviceId: string, req: PromptRequest): Promise<void>;
-  ring(deviceId: string, req: RingRequest): Promise<void>;
-  command(deviceId: string, cmd: DeviceCommand): Promise<void>;
+  /** Sonuç push teslimidir (void: sonucu bilinmeyen / ağa çıkmayan uygulama, ör. simülatör = gönderildi). */
+  promptUser(deviceId: string, req: PromptRequest): Promise<PushOutcome | void>;
+  ring(deviceId: string, req: RingRequest): Promise<PushOutcome | void>;
+  command(deviceId: string, cmd: DeviceCommand): Promise<PushOutcome | void>;
 }
 
 /** Cihaz bu sinyali gönderemez / tür bilinmiyor / simülatör kapalı → 400. */

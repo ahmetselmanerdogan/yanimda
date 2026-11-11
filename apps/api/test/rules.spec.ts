@@ -113,7 +113,7 @@ describe('RulesService', () => {
       });
       await expect(rules.reload()).rejects.toMatchObject({ status: 400 });
     }
-    expect(rules.current().ladder?.operatorPrompt).toEqual({ windowSec: 60, tts: 'W-INACT-1' });
+    expect(rules.current().ladder?.operatorPrompt).toEqual({ windowSec: 60, tts: 'W-OP-PROMPT' });
   });
 
   it('diğer API örneği yeni sürümü veritabanından alır (refresh)', async () => {

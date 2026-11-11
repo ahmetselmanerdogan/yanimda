@@ -58,7 +58,7 @@ describe('WearOsAdapter', () => {
     expect(a.normalize(raw)).toEqual(raw);
   });
 
-  it('promptUser → FCM data mesajı (normal öncelik): olay, TTS kodu, pencere', async () => {
+  it('promptUser → FCM data mesajı (yüksek öncelik, görünür bildirim yok): olay, TTS kodu, telefon metni, pencere', async () => {
     push.sent.length = 0;
     await a.promptUser('dev-w', {
       eventId: 'ev-1',
@@ -71,12 +71,13 @@ describe('WearOsAdapter', () => {
     expect(push.sent).toEqual([
       {
         deviceId: 'dev-w',
-        priority: 'normal',
+        priority: 'high',
         data: {
           type: 'PROMPT',
           eventId: 'ev-1',
           kind: 'FALL',
           tts: 'W-FALL-1',
+          phoneTts: 'P-FALL-PROMPT',
           windowSec: '60',
           until: '2026-11-11T10:01:00.000Z',
           silent: 'false',
@@ -152,9 +153,9 @@ describe('AndroidPhoneAdapter', () => {
       silent: true,
     });
     await a.ring('dev-p', { eventId: 'ev-2' });
-    expect(push.sent.map((m) => [m.data.type, m.priority])).toEqual([
-      ['PROMPT', 'normal'],
-      ['RING', 'high'],
+    expect(push.sent.map((m) => [m.data.type, m.priority, m.data.phoneTts])).toEqual([
+      ['PROMPT', 'high', 'P-INACT-1'],
+      ['RING', 'high', undefined],
     ]);
   });
 });
@@ -199,7 +200,7 @@ describe('IosPhoneAdapter', () => {
     });
     await a.ring('dev-i', { eventId: 'ev-3' });
     expect(push.sent.map((m) => [m.deviceId, m.data.type, m.priority])).toEqual([
-      ['dev-i', 'PROMPT', 'normal'],
+      ['dev-i', 'PROMPT', 'high'],
       ['dev-i', 'RING', 'high'],
     ]);
   });

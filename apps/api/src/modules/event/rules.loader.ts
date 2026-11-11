@@ -139,7 +139,7 @@ export const DEFAULT_LADDER: LadderParams = {
   unclaimedSupervisorSec: 90,
   unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
   awayFromHomeM: 200,
-  operatorPrompt: { windowSec: 60, tts: 'W-INACT-1' },
+  operatorPrompt: { windowSec: 60, tts: 'W-OP-PROMPT' },
 };
 export const DEFAULT_FUSION: FusionParams = {
   corroborateSec: 90,

@@ -10,8 +10,19 @@ export interface PushMessage {
   ttlSec: number;
 }
 
+/**
+ * Teslim sonucu. `relayed`: cihazın kendi token'ı yok (Wear OS saat), mesaj köprü telefona `forDeviceId` ile gitti.
+ * `unconfigured`: sağlayıcı yapılandırılmamış (geliştirme) — yalnız kaydedildi, cihaza ulaşmadı.
+ */
+export type PushOutcome =
+  'sent' | 'relayed' | 'no-token' | 'unconfigured' | 'unsupported' | 'invalid-token' | 'retry' | 'error';
+
+/** Cihaza gerçekten ulaştı mı (sağlayıcı kabul etti). */
+export const delivered = (o: PushOutcome | void) => o === undefined || o === 'sent' || o === 'relayed';
+
 export interface PushPort {
-  send(msg: PushMessage): Promise<void>;
+  /** Sonucu bildirmeyen uygulama (kaydeden sahte) için void = gönderildi. */
+  send(msg: PushMessage): Promise<PushOutcome | void>;
 }
 
 export const PUSH = Symbol('PUSH');
