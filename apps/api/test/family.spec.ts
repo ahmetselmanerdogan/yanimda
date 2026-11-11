@@ -242,4 +242,16 @@ describe('canlı /v1/ws/family', () => {
 
     expect(await client(idp.token({ sub: 'op-1' })).closed).toBe(4403);
   });
+
+  it('aileden çıkarılan hesap açık bağlantısında artık olay almaz (T-040)', async () => {
+    const p = await person(ALICE);
+    const a = client(idp.token({ realm: 'consumers', roles: ['FAMILY'], sub: 'fam-alice' }));
+    await until(() => a.msgs.some((m) => m.type === 'ready'));
+    // Bağlantı açıkken üyelik kalkar (sahip çıkardı / kendisi ayrıldı).
+    await h.exec.exec(`DELETE FROM profile.family_member WHERE subject = 'fam-alice'`);
+    await deliver(sig('SOS', { protectedPersonId: p }));
+    await h.worker().drain();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(a.msgs.filter((m) => m.type === 'event')).toEqual([]);
+  });
 });
