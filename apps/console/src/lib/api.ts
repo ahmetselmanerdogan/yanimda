@@ -429,7 +429,10 @@ export type DeviceCommandType = 'RING' | 'PROMPT' | 'LOCATE' | 'TEST';
 export interface DeviceCommandResult {
   type: DeviceCommandType;
   eventId: string | null;
+  /** Cihaza ulaştı (doğrudan veya köprü telefon üzerinden). */
   sent: boolean;
+  /** Teslim sonucu: sent, relayed, unsupported, no-token, unconfigured, retry … */
+  outcome: string;
 }
 
 export class ApiError extends Error {

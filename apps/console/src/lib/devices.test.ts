@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   categoryCode,
+  commandResultCode,
   deviceLabel,
   gapReasonCode,
   levelCode,
@@ -13,6 +14,7 @@ import {
   stripOrder,
   voiceText,
 } from './devices';
+import { t } from './i18n';
 
 const NOW = Date.parse('2026-11-11T10:00:00Z');
 const dev = (id: string, category: DeviceCategory, o: Partial<DeviceSummary> = {}): DeviceSummary => ({
@@ -68,6 +70,15 @@ describe('T-089 cihaz şeridi (S7.1)', () => {
     expect(voiceText({ voiceOrder: null, voiceOrderManual: false })).toBeNull();
     expect(deviceLabel({ nickname: null, category: 'PENDANT' })).toBe('Kolye');
     expect(deviceLabel({ nickname: 'Gece kolyesi', category: 'PENDANT' })).toBe('Gece kolyesi');
+  });
+
+  it('komut sonucu: ulaştı (doğrudan / köprü), desteklemiyor, ulaştırılamadı', () => {
+    const line = (sent: boolean, outcome: string) => t(commandResultCode({ sent, outcome }), { device: 'Saat' });
+    expect(line(true, 'sent')).toBe('Saat: gönderildi');
+    expect(line(true, 'relayed')).toBe('Saat: gönderildi');
+    expect(line(false, 'unsupported')).toBe('Saat bu komutu desteklemiyor');
+    expect(line(false, 'no-token')).toBe('Saat: ulaştırılamadı');
+    expect(line(false, 'unconfigured')).toBe('Saat: ulaştırılamadı');
   });
 
   it('KAPSAMA BOŞLUĞU nedeni açılış notundan (katalog kodu); serbest not gösterilmez', () => {

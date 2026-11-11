@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Api, DeviceCommandType, EventRecord } from '../lib/api';
 import {
   categoryCode,
+  commandResultCode,
   deviceLabel,
   gapReasonCode,
   levelCode,
@@ -64,7 +65,7 @@ export function DevicePanel({
       const lines: string[] = [];
       for (const d of targets) {
         const r = await api.deviceCommand(d.id, type, event.id);
-        lines.push(t(r.sent ? 'O-UI-DEV-SENT' : 'O-UI-DEV-UNSUPPORTED', { device: deviceLabel(d) }));
+        lines.push(t(commandResultCode(r), { device: deviceLabel(d) }));
       }
       setNote(lines.join(' · '));
       void load();

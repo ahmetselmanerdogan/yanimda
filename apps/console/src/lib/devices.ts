@@ -71,3 +71,7 @@ export function gapReasonCode(transitions: { to: string; note?: string }[]): str
   const code = note ? `O-UI-GAP-${note}` : null;
   return code && /^O-UI-GAP-[A-Z_]+$/.test(code) && has(code) ? code : null;
 }
+
+/** Komut sonucunun satırı: ulaştı, cihaz desteklemiyor veya ulaştırılamadı (token yok, sağlayıcı hatası …). */
+export const commandResultCode = (r: { sent: boolean; outcome: string }) =>
+  r.sent ? 'O-UI-DEV-SENT' : r.outcome === 'unsupported' ? 'O-UI-DEV-UNSUPPORTED' : 'O-UI-DEV-NOT-DELIVERED';
