@@ -271,7 +271,7 @@ describe('OutboxWorker', () => {
     const dlq = await h.rows<{ topic: string; attempts: number; last_error: string }>(
       'SELECT topic, attempts, last_error FROM event.outbox_dlq',
     );
-    expect(dlq).toEqual([{ topic: 'signal.received', attempts: 5, last_error: 'zehirli mesaj' }]);
+    expect(dlq).toEqual([{ topic: 'signal.received', attempts: 5, last_error: 'Error' }]); // mesaj değil: PII olabilir
     expect(seen).toEqual(['HEARTBEAT']);
     expect(await count('event.outbox WHERE processed_at IS NULL')).toBe(0);
   });
@@ -383,7 +383,7 @@ describe('OutboxWorker side şeridi (inceleme bulgusu 3)', () => {
     const dead = await h.rows<{ handler: string; attempts: number; last_error: string }>(
       'SELECT handler, attempts, last_error FROM event.outbox_side WHERE dead_at IS NOT NULL',
     );
-    expect(dead).toEqual([{ handler: 'bad', attempts: 5, last_error: 'zehirli' }]);
+    expect(dead).toEqual([{ handler: 'bad', attempts: 5, last_error: 'Error' }]);
   });
 
   it('yeniden teslim edilen core satırı side satırını ikinci kez yazmaz', async () => {
