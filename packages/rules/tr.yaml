@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 4
+version: 5
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -53,17 +53,24 @@ charging:
   maxGapMin: 120
   intentMin: 90
   resumeAfterWakeMin: 30
-# coverageNone (S4.7): hiçbir SOS yolu yokken (uyanık) hatırlatma 20 dk, aile 45 dk, KAPSAMA BOŞLUĞU 60 dk.
-# welfare* (YERİNDE KONTROL, P2) ulaşılamama merdiveni görevine (T-087) aittir; değerler burada tutulur.
-coverageNone: { remindMin: 20, familyMin: 45, eventMin: 60, welfareSilentH: 6, welfareDroppedH: 2 }
+# coverageNone (S4.7): hiçbir SOS yolu yokken (uyanık) 20 dk hatırlatma + yaşlının numarasına otomatik sesli arama
+# (V-COVERAGE-NONE, boşluk başına bir), aile 45 dk, KAPSAMA BOŞLUĞU 60 dk. YERİNDE KONTROL (P2, T-087):
+#  welfareDroppedH: takılı bir A sınıfı cihaz pili battery.warnPct'nin (%20) üzerindeyken birden sustu, 2 sa (uyanık)
+#  welfareSilentH: telefon dahil tüm cihazlar sessiz ve boşluk başından beri kimseye "iyi" ile ulaşılamadı, 6 sa (uyanık)
+#  welfareNoMovementH (S5.4): yanınızdayız araması iki denemede cevapsız (F-WELLNESS-MISSED) ve bu kadar saattir hiçbir
+#  cihaz hareketi yok. Hastanede / seyahatte modunda (S4.10) hiçbiri çalışmaz; SOS ve düşme her zaman çalışır.
+coverageNone:
+  { remindMin: 20, familyMin: 45, eventMin: 60, welfareSilentH: 6, welfareDroppedH: 2, welfareNoMovementH: 24 }
 rules:
   - type: SOS
     priority: 1
     devicePrompt: { enabled: false }
-    # S5.2: 1. sesli cihaz 20 → telefon 20 → en iyi cihaza yeniden 15 (kişiye ≤75 sn) → yakınlar 25 → anahtar
-    # sahibi 25 → 112 (son sınır call112DeadlineSec.SOS).
-    chain: [CALL_WATCH, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_112]
-    stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
+    # S5.2: 1. sesli cihaz 20 → 2. sesli cihaz 20 (varsa) → telefon 20 → en iyi cihaza yeniden 15 (kişiye ≤75 sn) →
+    # yakınlar 25 → anahtar sahibi 25 → 112 (son sınır call112DeadlineSec.SOS).
+    chain:
+      [CALL_WATCH, CALL_VOICE_2:2, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_112]
+    stepTimeoutSec:
+      { CALL_WATCH: 20, CALL_VOICE_2: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
     silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: FALL
@@ -72,9 +79,27 @@ rules:
     escalateWhen: { noAnswer: true }
     # S5.2 (SOS ile aynı) + komşu; doğrulanmış düşmede (T-088) doğrulayan cihaz önce aranır.
     chain:
-      [CALL_WATCH, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_NEIGHBOR, CALL_112]
+      [
+        CALL_WATCH,
+        CALL_VOICE_2:2,
+        CALL_PHONE,
+        CALL_REDIAL,
+        CALL_CONTACT:1,
+        CALL_CONTACT:2,
+        CALL_KEY_HOLDER,
+        CALL_NEIGHBOR,
+        CALL_112,
+      ]
     stepTimeoutSec:
-      { CALL_WATCH: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25, CALL_NEIGHBOR: 25 }
+      {
+        CALL_WATCH: 20,
+        CALL_VOICE_2: 20,
+        CALL_PHONE: 20,
+        CALL_REDIAL: 15,
+        CALL_CONTACT: 25,
+        CALL_KEY_HOLDER: 25,
+        CALL_NEIGHBOR: 25,
+      }
     silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: INACTIVITY
@@ -126,6 +151,14 @@ rules:
     autoVoiceScreening: *screening
     chain: [CALL_PHONE, CALL_CONTACT:1]
     operatorScript: O-SCRIPT-COVERAGE
+  # T-087 (S4.7, S5.4) YERİNDE KONTROL: kapsama YOK iken takılı cihaz birden sustu (2 sa) / tüm cihazlar sessiz (6 sa),
+  # yanınızdayız araması cevapsız + 24 sa hareket yok. Telefon → yakınlar → anahtar sahibi ziyareti; cihaz sorusu ve
+  # sesli ön eleme yok. 112 adımı yok: ziyaret 30 dk içinde mümkün değilse operatör kararıyla (Ctrl+1, gerekçeli).
+  - type: WELFARE_CHECK
+    priority: 2
+    chain: [CALL_PHONE, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER]
+    stepTimeoutSec: { CALL_PHONE: 20, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
+    operatorScript: O-SCRIPT-WELFARE
   - type: CALLBACK
     priority: 4
     chain: [CALL_PHONE]

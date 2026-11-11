@@ -2,7 +2,7 @@
 # (tr.yaml → rules[].chain, stepTimeoutSec); burada her adım türünün etiketi, operatör metni (katalog kodu) ve
 # atlanabilirliği tanımlanır. Metinler packages/messages kataloğundadır.
 country: TR
-version: 2
+version: 3
 steps:
   CALL_WATCH:
     label: O-STEP-WATCH
@@ -10,6 +10,15 @@ steps:
     target: WATCH
     required: true
     defaultTimeoutSec: 15
+  # T-087 (S5.2): 2. sesli cihaz (ör. saat + sesli kolye) — sesli arama sırasındaki ikinci çevrimiçi sesli giyilebilir,
+  # kendi numarasından (cihaz kaydındaki numara, PATCH /devices/{id} voiceNumber; rehberde tek saat numarası vardır).
+  # Kişinin ikinci sesli cihazı yoksa adım zincire hiç girmez; varsa ama çevrimdışıysa "çevrimdışı — atlandı".
+  CALL_VOICE_2:
+    label: O-STEP-VOICE-2
+    script: O-SCRIPT-ELDER
+    target: WATCH
+    required: false
+    defaultTimeoutSec: 20
   CALL_PHONE:
     label: O-STEP-PHONE
     script: O-SCRIPT-ELDER

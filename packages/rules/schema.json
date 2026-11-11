@@ -157,7 +157,8 @@
         "familyMin": { "type": "integer", "minimum": 1 },
         "eventMin": { "type": "integer", "minimum": 1 },
         "welfareSilentH": { "type": "integer", "minimum": 1 },
-        "welfareDroppedH": { "type": "integer", "minimum": 1 }
+        "welfareDroppedH": { "type": "integer", "minimum": 1 },
+        "welfareNoMovementH": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },
@@ -181,7 +182,8 @@
               "HEART_ANOMALY",
               "TEST",
               "FOLLOW_UP",
-              "COVERAGE_GAP"
+              "COVERAGE_GAP",
+              "WELFARE_CHECK"
             ]
           },
           "priority": { "type": "integer", "minimum": 1, "maximum": 4 },
@@ -254,7 +256,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(CALL_WATCH|CALL_PHONE|CALL_REDIAL|CALL_CONTACT:[1-5]|CALL_KEY_HOLDER|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
+              "pattern": "^(CALL_WATCH|CALL_VOICE_2:2|CALL_PHONE|CALL_REDIAL|CALL_CONTACT:[1-5]|CALL_KEY_HOLDER|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
             }
           },
           "stepTimeoutSec": { "type": "object", "additionalProperties": { "type": "integer" } },

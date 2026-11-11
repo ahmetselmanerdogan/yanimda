@@ -1368,8 +1368,10 @@ paths:
         üzerinde ve (vücut yetenekleri için) takılıysa sayılır.
         FULL: takılı A sınıfı cihaz(lar) SOS ve düşmeyi karşılıyor, ses en az telefondan. BASIC: takılı SOS düğmesi ve
         ses, düşme yok. PHONE_ONLY: yalnız telefondan SOS. NIGHT: gece penceresi ve FULL'un altı. NONE: hiçbir SOS yolu
-        yok. `since` bu seviyeye geçiş anı. `reasons` FULL'un altındayken nedenler (ON_HOLD ileride: hastanede /
-        seyahatte modu, S4.10).
+        yok. `since` bu seviyeye geçiş anı. `reasons` FULL'un altındayken nedenler; ON_HOLD (S4.10, T-087): kişi
+        "hastanede / seyahatte" modunda (holdMode) — bu sürede kapsama hatırlatmaları, 20. dk sesli arama, aile
+        bildirimleri (F-COVERAGE-*, F-CHARGE-GAP, F-BAT-PLAN), KAPSAMA BOŞLUĞU, YERİNDE KONTROL ve "saat çıkarıldı"
+        üretilmez, bekleyen olanlar kapanır; SOS, düşme ve hareketsizlik çalışır. Mod bitince sayım o andan başlar.
         Çağıran: kişinin kendi cihaz token'ı, aile (OWNER / MEMBER), operasyon (OPERATOR, SUPERVISOR, ADMIN) veya
         `x-admin-token`. Erişimi olmayan / bilinmeyen kişi 404.
       operationId: getCoverage
@@ -1476,7 +1478,9 @@ paths:
         `sent` gerçek teslimdir: cihazın kendi token'ı yoksa (Wear OS saat) komut köprü telefona aktarılır
         (`outcome: relayed`); hiçbir yol yoksa veya sağlayıcı reddederse `sent: false` ve nedeni `outcome`'da.
         Cihazın cevabı: TEST → `TEST` sinyali `payload.trigger: OPERATOR`; LOCATE → `LOCATION` sinyali
-        `payload {trigger: LOCATE, eventId}` (bkz. `DevicePush`). Erişimi olmayan / kaldırılmış cihaz 404.
+        `payload {trigger: LOCATE, eventId}` (bkz. `DevicePush`); PROMPT → pencere içinde `OK` / `CANCEL` ("İyiyim",
+        `payload.eventId`) veya `SOS` (yardım) — sonuç olay görünümünde `ladder.prompts` (`DevicePromptView`).
+        Erişimi olmayan / kaldırılmış cihaz 404.
       operationId: deviceCommand
       security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -2089,10 +2093,14 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /devices/{id}:
     patch:
-      summary: Cihazı düzenle — vücut konumu, takma ad, sesli arama sırası. T-085 (S1.3, S1.8)
+      summary: Cihazı düzenle — vücut konumu, takma ad, sesli arama sırası, cihaz numarası. T-085 (S1.3, S1.8), T-087 (S5.2)
       description: |
         En az bir alan; `null` alanı temizler. Aile (OWNER / MEMBER), operasyon (OPERATOR, SUPERVISOR, ADMIN) veya
         `x-admin-token`; cihaz token'ı 403, erişimi olmayan 404. Yanıt güncel cihaz kartı.
+        `voiceNumber` (T-087 S5.2): cihaza özel sesli arama numarası (LTE saat / sesli kolye hattı, E.164); yalnız
+        operasyon (aile 403). Merdivenin sesli cihaz adımları (1. / 2. sesli cihaz, telefon, en iyi cihaza yeniden) bu
+        numara varsa onu arar, yoksa rehberdeki rol numarasını. Numara yanıtta, log'da ve denetimde yer almaz
+        (`voiceNumberLast2`).
       operationId: patchDevice
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters:
@@ -2109,6 +2117,7 @@ paths:
                 bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
                 nickname: { type: [string, 'null'], minLength: 1, maxLength: 40 }
                 voiceOrder: { type: [integer, 'null'], minimum: 1, maximum: 6 }
+                voiceNumber: { type: [string, 'null'], pattern: '^\+[1-9]\d{6,14}$', description: Yalnız operasyon }
       responses:
         '200':
           description: Cihaz kartı
@@ -2915,6 +2924,10 @@ components:
         voiceOrderManual:
           type: boolean
           description: Sıra aile / operatör tarafından elle verildi (PATCH voiceOrder); false ise hesaplanan sıra
+        voiceNumberLast2:
+          type: [string, 'null']
+          pattern: '^\d{2}$'
+          description: T-087 cihaza özel sesli arama numarasının son iki hanesi (PATCH voiceNumber); yoksa null
     CoverageView:
       type: object
       required: [level, since, reasons, capabilities, devices]
@@ -3079,6 +3092,36 @@ components:
         platformSosFlow:
           type: boolean
           description: Kaynak kendi SOS akışını çalıştırdı (sinyal payload.platformSosFlow) → O-SCRIPT-APPLE-112
+        welfareReason:
+          description: |
+            T-087 (docs/07 S4.7, S5.4) YERİNDE KONTROL (WELFARE_CHECK, P2) nedeni; diğer türlerde null. DEVICE_DROPPED:
+            kapsama YOK iken takılı cihaz pili %20'nin üzerindeyken birden sustu (uyanık 2 sa); ALL_SILENT: telefon dahil
+            tüm cihazlar sessiz ve boşluk başından beri kimseye "iyi" ile ulaşılamadı (uyanık 6 sa); NO_MOVEMENT:
+            yanınızdayız araması iki denemede cevapsız ve 24 sa cihaz hareketi yok. Konsol O-UI-WELFARE-<neden>.
+            Merdiven: telefon → yakınlar → anahtar sahibi ziyareti; 112 son sınırı yok (operatör kararıyla, gerekçeli).
+          oneOf: [{ enum: [DEVICE_DROPPED, ALL_SILENT, NO_MOVEMENT] }, { type: 'null' }]
+        prompts:
+          type: array
+          description: T-089 (S7.1) operatörün "Soru gönder" komutları ve cihazın cevabı (eskiden yeniye)
+          items: { $ref: '#/components/schemas/DevicePromptView' }
+    DevicePromptView:
+      type: object
+      description: |
+        Operatörün cihaza sorusu (POST /devices/{id}/commands PROMPT) ve cevabı. Cihaz pencere içinde (gönderim ≤ an ≤
+        until, sunucu saati) `OK` / `CANCEL` gönderirse "İyiyim" (OK), `SOS` gönderirse yardım (HELP; SOS ayrıca alarm
+        olarak işlenir); önce aynı cihaza sorulan, yoksa `payload.eventId` olayı gösteriyorsa olayın son sorusu
+        cevaplanır. Cevapsız ve until geçmiş: NO_ANSWER; null: bekleniyor. Cevap olayı kapatmaz (operatör karar verir);
+        konsol `event.updated` (reason PROMPT_ANSWERED) ile yeniler.
+      required: [deviceId, sentAt, until, delivered, answer, answeredAt, answeredByDeviceId]
+      properties:
+        deviceId: { type: string }
+        sentAt: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        delivered: { type: boolean, description: Soru cihaza (veya köprü telefona) ulaştı }
+        answer: { enum: [OK, HELP, NO_ANSWER, null] }
+        answeredAt: { type: [string, 'null'], format: date-time }
+        answeredByDeviceId:
+          { type: [string, 'null'], description: Cevaplayan cihaz (telefona giden soruyu saat cevaplayabilir) }
     DispatchView:
       type: object
       properties:
