@@ -80,14 +80,15 @@ export class PartnerHealthService implements OnModuleInit, OnModuleDestroy {
       const p99 = percentile(ms, 99);
       const enough = ms.length >= p.minSamples && p99 !== null;
       const over = enough && p99! > p.latencyP99Sec * 1000;
-      const [prev] = await this.db.select().from(partnerStatus).where(eq(partnerStatus.partner, partner));
-      const degradedSince = over ? (prev?.degradedSince ?? now) : enough ? null : (prev?.degradedSince ?? null);
-      const values = { samples: ms.length, p95Ms: p95, p99Ms: p99, degradedSince, checkedAt: now };
-      await this.db.transaction(async (tx) => {
+      // Satır kilitli okunur: birden çok API örneği aynı anda tarasa da bozulma başına tek uyarı.
+      const degradedSince = await this.db.transaction(async (tx) => {
+        await tx.insert(partnerStatus).values({ partner }).onConflictDoNothing();
+        const [prev] = await tx.select().from(partnerStatus).where(eq(partnerStatus.partner, partner)).for('update');
+        const since = over ? (prev?.degradedSince ?? now) : enough ? null : (prev?.degradedSince ?? null);
         await tx
-          .insert(partnerStatus)
-          .values({ partner, ...values })
-          .onConflictDoUpdate({ target: partnerStatus.partner, set: values });
+          .update(partnerStatus)
+          .set({ samples: ms.length, p95Ms: p95, p99Ms: p99, degradedSince: since, checkedAt: now })
+          .where(eq(partnerStatus.partner, partner));
         if (over && !prev?.degradedSince) {
           // Bozulma başladı: amire bir kez (dedupeKey bozulma başı), denetimde.
           const alert: SupervisorAlert & { dedupeKey: string } = {
@@ -106,7 +107,7 @@ export class PartnerHealthService implements OnModuleInit, OnModuleDestroy {
             data: { partner, p99Ms: p99, samples: ms.length },
           });
           this.log.warn(`${partner}: gecikme p99 ${p99} ms (${ms.length} örnek) — O-OEM-LATENCY`);
-        } else if (!degradedSince && prev?.degradedSince) {
+        } else if (!since && prev?.degradedSince) {
           await tx.insert(auditLog).values({
             actorKind: 'SYSTEM',
             action: 'partner.latency_recovered',
@@ -115,6 +116,7 @@ export class PartnerHealthService implements OnModuleInit, OnModuleDestroy {
             data: { partner, p99Ms: p99, samples: ms.length },
           });
         }
+        return since;
       });
       out.push({
         partner,
