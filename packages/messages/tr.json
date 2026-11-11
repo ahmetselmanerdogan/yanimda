@@ -30,6 +30,97 @@
     "text": "Yanımda arıyor.",
     "action": "Cevapla"
   },
+  "W-CALL-PHONE": {
+    "channel": "watch",
+    "text": "Yanımda arıyor. Telefonunuzu açın."
+  },
+  "W-SOS-HOLD": {
+    "channel": "watch",
+    "text": "Yardım için 3 saniye basılı tutun.",
+    "action": "YARDIM"
+  },
+  "W-CALLBACK": {
+    "channel": "watch",
+    "text": "Operatörümüz sizi arasın mı?",
+    "action": "Beni arayın"
+  },
+  "W-CALLBACK-SENT": {
+    "channel": "watch",
+    "text": "İsteğiniz iletildi. Sizi arayacağız."
+  },
+  "W-OK-SENT": {
+    "channel": "watch",
+    "text": "Teşekkürler. İyi olduğunuzu ilettik."
+  },
+  "W-STATUS-OK": {
+    "channel": "watch",
+    "text": "Korunuyor"
+  },
+  "W-STATUS-ATTENTION": {
+    "channel": "watch",
+    "text": "Dikkat"
+  },
+  "W-STATUS-OFF": {
+    "channel": "watch",
+    "text": "Kapalı"
+  },
+  "W-STATUS-OFF-WRIST": {
+    "channel": "watch",
+    "text": "Saat bileğinizde değil."
+  },
+  "W-STATUS-NO-LINK": {
+    "channel": "watch",
+    "text": "Bağlantı yok. Sinyaller saklanıyor."
+  },
+  "W-STATUS-NOT-PAIRED": {
+    "channel": "watch",
+    "text": "Saat henüz eşleşmedi."
+  },
+  "W-PAIR": {
+    "channel": "watch",
+    "text": "Telefonunuzdaki Yanımda uygulamasını açın. Saatiniz kendiliğinden eşleşecek."
+  },
+  "W-PAIR-DONE": {
+    "channel": "watch",
+    "text": "Eşleşme tamam. Yanımda sizi koruyor."
+  },
+  "W-PERM": {
+    "channel": "watch",
+    "text": "Sizi koruyabilmemiz için izin verin.",
+    "action": "İzin ver"
+  },
+  "W-TEST-MENU": {
+    "channel": "watch",
+    "text": "Test menüsü"
+  },
+  "W-TEST-FALL": {
+    "channel": "watch",
+    "text": "Sahte düşme"
+  },
+  "W-TEST-SOS": {
+    "channel": "watch",
+    "text": "Sahte SOS"
+  },
+  "W-TEST-QUEUE": {
+    "channel": "watch",
+    "text": "Sinyal kuyruğunu göster"
+  },
+  "W-TEST-QUEUE-EMPTY": {
+    "channel": "watch",
+    "text": "Kuyruk boş"
+  },
+  "W-TEST-QUEUE-ITEM": {
+    "channel": "watch",
+    "text": "{kind} · {state} · {attempts} deneme"
+  },
+  "W-TEST-SENT": {
+    "channel": "watch",
+    "text": "gönderildi"
+  },
+  "W-TEST-PENDING": {
+    "channel": "watch",
+    "text": "bekliyor"
+  },
   "P-HOME-OK": {
     "channel": "phone",
     "text": "Korunuyorsunuz. Operatörünüz: {operator}."

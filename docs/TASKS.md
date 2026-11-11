@@ -35,14 +35,14 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-026 Playwright e2e — S3/S4/S5/S6 + eğitim modu; S5'in sahte CPaaS ayağı T-050 ile
 
 ## Epik 3 · Wear OS saat (S3) — repo: yanimda-android
-- [ ] T-030 Proje: Compose for Wear, Health Services, test modu
-- [ ] T-031 FALL_DETECTED + prompt 60 sn, titreşim, TTS (A-02, A-03)
-- [ ] T-032 SOS: 3 sn buton + fiziksel tuş 3× (A-01)
-- [ ] T-033 Hareketsizlik (A-04)
-- [ ] T-034 Off-body, pil, nabız, konum (A-05…A-08)
-- [ ] T-035 Room kuyruk + Wearable Data Layer + LTE HTTPS (A-09)
-- [ ] T-036 Tile, komplikasyon, durum rozeti (A-11, A-13)
-- [ ] T-037 Gelen arama ve otomatik cevap (A-10)
+- [ ] T-030 Proje: Compose for Wear, Health Services, test modu — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (ayrı repo: `core` + `watch`; `phone` modülü `yanimda-android`'de; test menüsü tile yerine ana ekranda, 5 sn basılı)
+- [ ] T-031 FALL_DETECTED + prompt 60 sn, titreşim, TTS (A-02, A-03) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi
+- [ ] T-032 SOS: 3 sn buton + fiziksel tuş 3× (A-01) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (SOS son konumla hemen; taze GPS ayrı LOCATION; tuş yalnız uygulama öndeyken)
+- [ ] T-033 Hareketsizlik (A-04) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (5 dk zincirli iş, 10 sn ivme örneği + adım farkı)
+- [ ] T-034 Off-body, pil, nabız, konum (A-05…A-08) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi; Battery Historian raporu açık
+- [ ] T-035 Room kuyruk + Wearable Data Layer + LTE HTTPS (A-09) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (Data Layer sözleşmesi telefonla ortak: yanimda-wear README)
+- [ ] T-036 Tile, komplikasyon, durum rozeti (A-11, A-13) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi
+- [ ] T-037 Gelen arama ve otomatik cevap (A-10) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (InCallService ROLE_DIALER ister; operatör numarası config'te yok → LTE otomatik cevap henüz tetiklenmez)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
 - [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti ve yönetimi 0028 (`members/invite`, `family/members/accept`)
