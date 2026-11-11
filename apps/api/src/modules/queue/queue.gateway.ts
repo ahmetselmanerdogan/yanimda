@@ -33,7 +33,7 @@ export const QUEUE_ENV = Symbol('QUEUE_ENV');
 export type QueueMessage =
   | { type: 'ready'; user: { sub: string; roles: Role[] } }
   | { type: 'snapshot'; items: unknown[]; total: number }
-  | { type: 'upsert'; item: unknown }
+  | { type: 'upsert'; item: unknown; alarm?: string }
   | { type: 'remove'; eventId: string }
   | { type: 'alert'; alert: SupervisorAlert }
   /** T-074: yalnız amire, bağlanınca ve SUPERVISOR_PUSH_MS (5 sn) aralıkla. */
@@ -45,7 +45,26 @@ export type QueueMessage =
   | { type: 'inbound'; queued: number; oldestQueuedSec: number | null };
 
 /** Örnekler arası yayın: değişen olay kimliği veya amir uyarısı. */
-type Fanout = { eventId: string } | { alert: SupervisorAlert };
+type Fanout = { eventId: string; alarm?: string } | { alert: SupervisorAlert };
+
+/**
+ * Denetim bulgu 9: mevcut olaya gelen yeni / yükselen alarm (operatördeki olaya NEW_ALARM, kuyruktaki olayın türü
+ * yükseldi veya SOS ile öncelik yükseldi) → konsol ses ve uyarı verir. Diğer güncellemeler sessiz.
+ */
+export function alarmOf(payload: unknown): string | undefined {
+  const p = (payload ?? {}) as {
+    reason?: string;
+    alarm?: string;
+    type?: string;
+    priority?: number;
+    previousPriority?: number;
+  };
+  if (p.reason === 'NEW_ALARM') return p.alarm;
+  if (p.reason === 'UPGRADED') return p.type;
+  if (typeof p.previousPriority === 'number' && typeof p.priority === 'number' && p.priority < p.previousPriority)
+    return p.reason;
+  return undefined;
+}
 
 interface Client {
   ws: WebSocket;
@@ -99,7 +118,10 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
     server.on('upgrade', this.onUpgrade);
     for (const topic of [TOPICS.eventCreated, TOPICS.eventTransitioned, TOPICS.eventClosed, TOPICS.eventUpdated])
       this.unsub.push(
-        bus.subscribe<{ eventId?: string; id?: string }>(topic, (e) => this.fanout({ eventId: eventIdOf(e) })),
+        bus.subscribe<{ eventId?: string; id?: string }>(topic, (e) => {
+          const alarm = topic === TOPICS.eventUpdated ? alarmOf(e.payload) : undefined;
+          return this.fanout({ eventId: eventIdOf(e), ...(alarm ? { alarm } : {}) });
+        }),
       );
     this.unsub.push(bus.subscribe<SupervisorAlert>(TOPICS.supervisorAlert, (e) => this.fanout({ alert: e.payload })));
     this.subscribeRedis();
@@ -269,7 +291,11 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
             : (c) => !!c.user?.roles.some((r) => r === 'SUPERVISOR' || r === 'ADMIN'),
         );
       const item = await this.events.queueItem(f.eventId);
-      this.broadcast(item ? { type: 'upsert', item } : { type: 'remove', eventId: f.eventId });
+      this.broadcast(
+        item
+          ? { type: 'upsert', item, ...(f.alarm ? { alarm: f.alarm } : {}) }
+          : { type: 'remove', eventId: f.eventId },
+      );
     } catch (e) {
       this.log.warn(`Kuyruk yayını başarısız: ${safeError(e)}`);
     }

@@ -97,6 +97,51 @@ describe('kapatma ve takip araması', () => {
   });
 });
 
+describe('ulaşılamayan alarm ve 112 (denetim bulgu 4)', () => {
+  const alerts = async () =>
+    (
+      await h.rows<{ envelope: { payload: { code: string; eventId: string } } }>(
+        "SELECT envelope FROM event.outbox WHERE topic = 'supervisor.alert' ORDER BY id",
+      )
+    ).map((r) => r.envelope.payload);
+  const states = async (id: string) =>
+    (
+      await h.rows<{ to: string }>('SELECT to_state AS "to" FROM event.transition WHERE event_id = $1 ORDER BY at', [
+        id,
+      ])
+    ).map((r) => r.to);
+
+  it('SOS ulaşılamadı, 112 aranmadı → kapanır ama audit + amire O-CLOSE-UNREACHABLE-NO-112', async () => {
+    const id = await claimed('pp-u1');
+    await chain.close(id, 'op-1', { outcome: 'UNREACHABLE' });
+    const [audit] = await h.rows<{ data: Record<string, unknown> }>(
+      "SELECT data FROM audit.log WHERE action = 'event.closed_without_112' AND entity_id = $1",
+      [id],
+    );
+    expect(audit!.data).toMatchObject({ type: 'SOS', outcome: 'UNREACHABLE' });
+    expect(await alerts()).toContainEqual(expect.objectContaining({ code: 'O-CLOSE-UNREACHABLE-NO-112', eventId: id }));
+    expect(await states(id)).not.toContain('DISPATCH');
+  });
+
+  it('FALL ulaşılamadı, 112 zincir dışında arandı → DISPATCH (ambulans takibi), sonuç UNREACHABLE, amir uyarısı yok', async () => {
+    const id = await claimed('pp-u2', 'FALL');
+    await chain.close(id, 'op-1', { outcome: 'UNREACHABLE', notified112: true });
+    expect(await states(id)).toEqual(expect.arrayContaining(['CONFIRMED_EMERGENCY', 'DISPATCH', 'CLOSED']));
+    const [ev] = await h.rows<{ confirmed_outcome: string }>(
+      'SELECT confirmed_outcome FROM event.event WHERE id = $1',
+      [id],
+    );
+    expect(ev!.confirmed_outcome).toBe('UNREACHABLE');
+    expect((await alerts()).filter((a) => a.eventId === id)).toEqual([]);
+  });
+
+  it('alarm olmayan olayda (CALLBACK) ulaşılamadı → uyarı yok', async () => {
+    const id = await claimed('pp-u3', 'CALLBACK_REQUEST');
+    await chain.close(id, 'op-1', { outcome: 'UNREACHABLE' });
+    expect((await alerts()).filter((a) => a.eventId === id)).toEqual([]);
+  });
+});
+
 describe('112 şablonu', () => {
   it('kişi, yaş, tip ve konum dolar; bilinmeyen alanlar "bilinmiyor"; erişim audit’e içeriksiz', async () => {
     await h.pg.exec(

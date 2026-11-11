@@ -287,8 +287,8 @@ const outboxCodes = async () =>
     )
   ).map((r) => r.envelope.payload.code);
 
-const deviceConfig = async (protectedPersonId: string, kind = 'ANDROID_PHONE') =>
-  (await enrollment.config({ deviceId: '00000000-0000-4000-8000-000000000001', protectedPersonId, kind })).body;
+const deviceConfig = async (protectedPersonId: string, kind = 'ANDROID_PHONE', now?: Date) =>
+  (await enrollment.config({ deviceId: '00000000-0000-4000-8000-000000000001', protectedPersonId, kind }, now)).body;
 
 const signupAndVerify = async (over: Record<string, unknown> = {}) => {
   const r = await billing.signup(signupBody(over), `ip-${Math.random()}`);
@@ -547,7 +547,8 @@ describe('deneme, bekleme, askı', () => {
 
     expect(await billing.sweep(plus(3, new Date(T0.getTime() + 1000)))).toBe(1);
     expect(await outboxCodes()).toEqual(['F-SUB-PAY']);
-    const pending = await deviceConfig(r.protectedPersonId);
+    // Saat sabit (T0 + 3 gün): gerçek saate bağlıyken 2026-11-11'den sonra SUSPENDED görünüyordu.
+    const pending = await deviceConfig(r.protectedPersonId, 'ANDROID_PHONE', plus(3, new Date(T0.getTime() + 1000)));
     expect(pending.subscription).toMatchObject({
       status: 'PAYMENT_PENDING',
       protectionActive: true,

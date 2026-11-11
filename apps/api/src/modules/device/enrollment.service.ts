@@ -370,13 +370,13 @@ export class EnrollmentService {
     return c ? { displayName: c.displayName ?? null, phone: c.phone } : null;
   }
 
-  async config(p: DevicePrincipal): Promise<{ etag: string; body: DeviceConfig }> {
+  async config(p: DevicePrincipal, now = new Date()): Promise<{ etag: string; body: DeviceConfig }> {
     const pack = this.rules.current();
     const fall = ruleFor(pack, 'FALL');
     const inact = ruleFor(pack, 'INACTIVITY');
     const prefix = PHONE_KINDS.includes(p.kind) ? 'P-' : 'W-';
     const settings = await this.protection.settingsOf(p.protectedPersonId);
-    const sub = await subscriptionProtection(this.db, p.protectedPersonId);
+    const sub = await subscriptionProtection(this.db, p.protectedPersonId, now);
     const messages: DeviceConfig['messages'] = {};
     for (const [code, m] of Object.entries(catalogs.tr ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
       if (code.startsWith(prefix)) messages[code] = m.action ? { text: m.text, action: m.action } : { text: m.text };

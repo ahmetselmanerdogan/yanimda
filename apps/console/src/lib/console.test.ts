@@ -45,6 +45,16 @@ describe('canlı kuyruk', () => {
     expect(s.items.find((i) => i.eventId === 'b')?.lockedBy).toBe('op');
     expect(queueReducer(s, { type: 'remove', eventId: 'b' }).items.map((i) => i.eventId)).toEqual(['a']);
   });
+  it('mevcut olaya yeni alarm veya öncelik yükselmesi de "arrived" (ses + uyarı); alarm türü taşınır', () => {
+    let s = queueReducer({ items: [] }, { type: 'snapshot', items: [a, { ...b, priority: 4, type: 'CALLBACK' }] });
+    s = queueReducer(s, { type: 'upsert', item: { ...b, priority: 1, type: 'SOS' } });
+    expect(s.arrived?.eventId).toBe('b'); // kuyruktaki P4 olay SOS'a yükseldi
+    s = queueReducer(s, { type: 'upsert', item: { ...b, state: 'CONTACT_CHAIN', lockedBy: 'op' } });
+    expect(s.arrived).toBeUndefined();
+    s = queueReducer(s, { type: 'upsert', item: { ...b, state: 'CONTACT_CHAIN', lockedBy: 'op' }, alarm: 'FALL' });
+    expect(s.arrived?.eventId).toBe('b');
+    expect(s.alarm).toBe('FALL');
+  });
   it('seçim korunur; seçili düşerse aynı sıradaki olaya geçer', () => {
     expect(keepSelection([c, b, a], [c, b, a], 'b')).toBe('b');
     expect(keepSelection([c, b, a], [c, a], 'b')).toBe('a');
