@@ -20,6 +20,8 @@ export interface PersonSettings extends SleepWindow {
   fallPromptSec: number | null;
   /** S4.10 "hastanede / seyahatte" modunun bitişi (yoksa null); bu ana kadar kapsama uyarıları durur. */
   holdUntil: Date | null;
+  /** S4.10 kişiye özel kapsama boşluğu toleransı (dk; 0 = kural paketi eşikleri). */
+  coverageToleranceMin: number;
 }
 
 /**
@@ -55,7 +57,7 @@ export class ProtectionService {
    */
   async settingsOf(protectedPersonId: string, tx: Pick<Db, 'execute'> = this.db): Promise<PersonSettings> {
     const r = (await tx.execute(sql`
-      SELECT p.timezone, p.learning_mode_until, p.hold_until,
+      SELECT p.timezone, p.learning_mode_until, p.hold_until, p.coverage_tolerance_min,
              t.sleep_start::text AS start, t.sleep_end::text AS end, t.inactivity_min, t.fall_prompt_sec
       FROM (SELECT 1) one
       LEFT JOIN profile.protected_person p ON p.id::text = ${protectedPersonId}
@@ -64,6 +66,7 @@ export class ProtectionService {
         timezone: string | null;
         learning_mode_until: Date | string | null;
         hold_until: Date | string | null;
+        coverage_tolerance_min: number | null;
         start: string | null;
         end: string | null;
         inactivity_min: number | null;
@@ -79,6 +82,7 @@ export class ProtectionService {
       learningModeUntil: row?.learning_mode_until ? new Date(row.learning_mode_until) : null,
       fallPromptSec: row?.fall_prompt_sec ?? null,
       holdUntil: row?.hold_until ? new Date(row.hold_until) : null,
+      coverageToleranceMin: row?.coverage_tolerance_min ?? 0,
     };
   }
 
