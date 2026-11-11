@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { EventRecord, QueueItem } from './api';
 import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
+import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from './ladder';
 import { canTakeOver, keepSelection, queueReducer } from './queue';
 import { clock, slaOf } from './sla';
 import { viewportOf } from './viewport';
@@ -104,6 +105,7 @@ describe('klavye (E-10)', () => {
     expect(commandFor(k('3'), 'normal')).toEqual({ kind: 'result', result: 'BUSY' });
     expect(commandFor(k('4'), 'normal')).toEqual({ kind: 'result', result: 'WRONG_NUMBER' });
     expect(commandFor(k('5'), 'normal')).toEqual({ kind: 'skip' });
+    expect(commandFor(k('6'), 'normal')).toEqual({ kind: 'result', result: 'SILENT' }); // T-087
     expect(commandFor(k('N'), 'normal')).toEqual({ kind: 'note' });
     expect(commandFor(k('c'), 'normal')).toEqual({ kind: 'close' });
     expect(commandFor(k('1', { ctrlKey: true }), 'normal')).toEqual({ kind: 'escalate' });
@@ -170,10 +172,37 @@ describe('katalog', () => {
     const codes = [
       ...types.map((x) => `O-TYPE-${x}`),
       ...states.map((x) => `O-STATE-${x}`),
-      ...['REACHED', 'NO_ANSWER', 'BUSY', 'WRONG_NUMBER', 'SKIPPED'].map((x) => `O-RES-${x}`),
+      ...(['REACHED', 'NO_ANSWER', 'BUSY', 'WRONG_NUMBER', 'SKIPPED', 'SILENT', 'OFFLINE_SKIPPED'] as const).map(
+        resultCode,
+      ),
+      ...['O-SKIP-AWAY', 'O-SKIP-IMPAIRED', 'O-SKIP-NO-KEY-HOLDER', 'O-UI-CORROBORATED', 'O-SCRIPT-APPLE-112'],
       ...['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE'].map((x) => `O-OUT-${x}`),
     ];
     expect(codes.filter((c) => !(c in catalog))).toEqual([]);
+  });
+});
+
+describe('T-087/T-088 merdiven', () => {
+  const at = '2026-11-11T10:03:00.000Z';
+  const now = Date.parse('2026-11-11T10:00:00.000Z');
+  it('112 son sınırı geri sayımı: kalan / geçti; teyitli iyi, 112 arandı ve sınırsız olayda yok', () => {
+    expect(deadline112LeftSec({ call112DeadlineAt: at }, 'OPERATOR_QUEUE', now)).toBe(180);
+    expect(deadline112LeftSec({ call112DeadlineAt: at }, 'CONTACT_CHAIN', now + 200_000)).toBe(-20);
+    expect(deadline112LeftSec({ call112DeadlineAt: at }, 'CONFIRMED_EMERGENCY', now)).toBe(180);
+    expect(deadline112LeftSec({ call112DeadlineAt: at }, 'CONFIRMED_OK', now)).toBeUndefined();
+    expect(deadline112LeftSec({ call112DeadlineAt: at }, 'DISPATCH', now)).toBeUndefined();
+    expect(deadline112LeftSec({ call112DeadlineAt: null }, 'OPERATOR_QUEUE', now)).toBeUndefined();
+    expect(deadline112LeftSec(undefined, 'OPERATOR_QUEUE', now)).toBeUndefined();
+    expect(t('O-UI-112-DEADLINE', { time: clock(180) })).toBe('112 son sınırı: 3:00');
+  });
+  it('sonuç ve sistem gerekçesi etiketleri; sessiz sonuç yalnız cihaz adımında', () => {
+    expect(t(resultCode('OFFLINE_SKIPPED'))).toBe('Çevrimdışı, atlandı');
+    expect(systemReason('O-SKIP-AWAY')).toBe('O-SKIP-AWAY');
+    expect(systemReason('saat çevrimdışı')).toBeNull(); // operatörün serbest metni
+    expect(systemReason('O-YOK-BOYLE')).toBeNull();
+    expect(isDeviceStep({ target: 'VOICE_DEVICE' })).toBe(true);
+    expect(isDeviceStep({ target: 'CONTACT' })).toBe(false);
+    expect(t('O-UI-CORROBORATED', { n: 2 })).toBe('2 cihaz doğruladı');
   });
 });
 

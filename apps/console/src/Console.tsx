@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { DispatchPanel } from './components/Dispatch';
-import { EventCard } from './components/EventCard';
+import { EventCard, type OperatorResult } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
 import { QueueList } from './components/Queue';
 import {
@@ -20,6 +20,7 @@ import {
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
+import { isDeviceStep } from './lib/ladder';
 import { canTakeOver, keepSelection, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
 import { alertSound } from './lib/sound';
@@ -283,8 +284,9 @@ export function Console({
       setMode('normal');
     }
   };
-  const result = (r: 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER') => {
-    if (!mine || !current) return;
+  const result = (r: OperatorResult | 'OFFLINE_SKIPPED') => {
+    if (!mine || !current || r === 'OFFLINE_SKIPPED') return; // çevrimdışı atlama yalnız sistemin
+    if (r === 'SILENT' && !isDeviceStep(current)) return; // T-087: yalnız sesli cihaz aramasında
     if (r === 'REACHED' && current.kind !== 'CALL_112') setMode('assess');
     else void send({ result: r });
   };
