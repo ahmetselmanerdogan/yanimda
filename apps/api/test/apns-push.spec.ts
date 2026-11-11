@@ -243,6 +243,34 @@ describe("DevicePush (cihaz token'ına göre yönlendirme)", () => {
     expect(tr.calls[0]!.body).toMatchObject({
       aps: { alert: { body: 'Operatörümüz durumunuzu soruyor. İyi misiniz?' } },
     });
+    // FCM PROMPT'la aynı özel alanlar: kind, tts, phoneTts, windowSec, until, silent (yalnız kod ve süre).
+    expect(
+      await send({
+        type: 'PROMPT',
+        eventId: 'ev4',
+        kind: 'INACTIVITY',
+        tts: 'W-INACT-1',
+        windowSec: '120',
+        until: '2026-11-11T10:02:00.000Z',
+        silent: 'true',
+      }),
+    ).toBe('sent');
+    const { aps: _aps, ...custom } = tr.calls.at(-1)!.body as Record<string, unknown>;
+    expect(custom).toEqual({
+      type: 'PROMPT',
+      eventId: 'ev4',
+      kind: 'INACTIVITY',
+      tts: 'W-INACT-1',
+      phoneTts: 'P-INACT-1',
+      windowSec: '120',
+      until: '2026-11-11T10:02:00.000Z',
+      silent: 'true',
+    });
+    expect(tr.calls[0]!.body as Record<string, unknown>).toMatchObject({
+      phoneTts: 'P-OP-PROMPT',
+      windowSec: '60',
+      silent: 'false',
+    });
     expect(tr.calls[1]!.body).toMatchObject({
       aps: { alert: { body: 'Yanımda sizi arıyor. Lütfen telefona bakın.' }, sound: 'default' },
       type: 'RING',
