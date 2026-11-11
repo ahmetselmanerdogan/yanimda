@@ -498,7 +498,8 @@ paths:
         T-087 (docs/07 S5): SILENT = otomatik cevaplı cihaz araması sessiz kaldı (yalnız sesli cihaz adımında; aksi 400)
         → "cevap yok" değil olası acil durum (event.updated reason POSSIBLE_EMERGENCY; işitme/konuşma güçlüğünde
         yalnız ulaşılamadı). OFFLINE_SKIPPED yalnız sistemce yazılır (400). Her sonuçtan sonra (ve üstlenmede) sıradaki
-        adım uygulanamıyorsa sistem atlar: çevrimdışı cihaz (son 15 dk görülmedi → OFFLINE_SKIPPED,
+        adım uygulanamıyorsa sistem atlar: çevrimdışı cihaz (adımın sesli cihazlarından hiçbiri kapsama kuralına göre
+        çevrimiçi değil — A sınıfı 15 dk, B 30 dk, köprülüde köprü de; GET /devices `online` → OFFLINE_SKIPPED,
         reason O-RES-SKIPPED_OFFLINE), işitme/konuşma güçlüğünde ilk cihaz denemesinden sonraki cihaz adımları
         (O-SKIP-IMPAIRED), evden 200 m'den uzakta komşu/anahtar sahibi (O-SKIP-AWAY), anahtar sahibi yok
         (O-SKIP-NO-KEY-HOLDER). Sistem 112'yi, komşuyu, anahtar sahibini aramaz; P1'i kapatmaz.
@@ -2923,7 +2924,7 @@ components:
         calledAt: { type: string, format: date-time }
         result:
           enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED, SILENT, OFFLINE_SKIPPED]
-          description: SILENT otomatik cevap + ses yok (olası acil); OFFLINE_SKIPPED sistem atladı (cihaz 15 dk görülmedi)
+          description: SILENT otomatik cevap + ses yok (olası acil); OFFLINE_SKIPPED sistem atladı (sesli cihaz çevrimdışı)
         assessment: { enum: [OK, EMERGENCY] }
         note: { type: string }
         reason: { type: string }
