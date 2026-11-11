@@ -17,9 +17,12 @@ export type QueueAction =
   | { type: 'upsert'; item: QueueItem; alarm?: string }
   | { type: 'remove'; eventId: string };
 
-/** Öncelik → yaş → kimlik (sunucuyla aynı sıra). */
+/** Öncelik → kuyruğun başı (T-092 P2 değer kombinasyonu) → yaş → kimlik (sunucuyla aynı sıra). */
 export const order = (a: QueueItem, b: QueueItem) =>
-  a.priority - b.priority || a.createdAt.localeCompare(b.createdAt) || a.eventId.localeCompare(b.eventId);
+  a.priority - b.priority ||
+  Number(!!b.headOfQueue) - Number(!!a.headOfQueue) ||
+  a.createdAt.localeCompare(b.createdAt) ||
+  a.eventId.localeCompare(b.eventId);
 
 export function queueReducer(s: QueueState, a: QueueAction): QueueState {
   switch (a.type) {

@@ -23,6 +23,7 @@ const CATEGORY_ORDER: DeviceCategory[] = [
   'RING',
   'EARBUD',
   'EARRING',
+  'SENSOR', // T-092: BLE ölçüm cihazı (telefon köprüsü)
   'CLOUD',
 ];
 

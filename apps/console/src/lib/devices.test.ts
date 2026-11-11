@@ -91,7 +91,17 @@ describe('T-089 cihaz şeridi (S7.1)', () => {
   });
 
   it('dinamik kodlar katalogda: kategori, seviye, neden, boşluk nedeni', () => {
-    const cats: DeviceCategory[] = ['WATCH', 'PHONE', 'PENDANT', 'RING', 'EARBUD', 'EARRING', 'HOME_UNIT', 'CLOUD'];
+    const cats: DeviceCategory[] = [
+      'WATCH',
+      'PHONE',
+      'PENDANT',
+      'RING',
+      'EARBUD',
+      'EARRING',
+      'HOME_UNIT',
+      'CLOUD',
+      'SENSOR',
+    ];
     const levels: CoverageLevel[] = ['FULL', 'BASIC', 'PHONE_ONLY', 'NIGHT', 'NONE'];
     const reasons: CoverageReason[] = [
       'WATCH_CHARGING',
