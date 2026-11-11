@@ -201,6 +201,25 @@ paths:
       parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365 } }]
       responses:
         '200': { description: Analiz }
+  /admin/coverage-metrics:
+    get:
+      summary: Kapsama ve cihaz ölçüleri (yönetim). T-085 (docs/07 S7.3)
+      description: |
+        Yalnız toplamlar (kişi kimliği / adı yok). Kişi-gün başına uyanık zaman kapsama yüzdesi (ortalama, ortanca,
+        %80 altı payı, dağılım); cihaz modeli ve uygulama sürümü başına yanlış alarm oranı (olayı açan ilk cihaz;
+        SOS / düşme / hareketsizlik); cihaz sınıfı ve adaptör başına sinyal gecikmesi p50 / p95 (occurredAt →
+        receivedAt); şarj uyumu (CHARGE_END → yeniden takma; ilk hatırlatmadan önce takılanların payı); 100 kişi-gün
+        başına olay türü (test hariç); model başına pil sağlığı (cihaz-gün düşüş toplamı ortancası). SUPERVISOR veya
+        ADMIN.
+      operationId: adminCoverageMetrics
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }]
+      responses:
+        '200':
+          description: Ölçüler
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminCoverageMetrics' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /admin/audit:
     get:
       summary: Denetim kaydı (append-only), işlem öneki / kişi / kayıt süzgeci
@@ -1384,6 +1403,29 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/coverage/history:
+    get:
+      summary: Kapsama zaman çizelgesi ve uyanık zaman yüzdesi. T-085 (docs/07 S7.3, S7.4)
+      description: |
+        Son `days` (1–30, varsayılan 7) yerel günün kapsama dilimleri (`segments`: seviye ve "hastanede / seyahatte"
+        bayrağı; ilk kayıttan önceki süre dilim değildir) ve gün başına uyanık (gece penceresi dışı) dakika dağılımı
+        (`daily`): korunan (FULL / BASIC), yalnız telefon (PHONE_ONLY), YOK (NONE), hold ve bilinmeyen dakikalar.
+        Yüzdeler (0–100, bir ondalık) korunan + yalnız telefon + YOK toplamına göredir; hold ve bilinmeyen girmez;
+        ölçülemeyen günde null. `from` kişinin yerel gece yarısı. Aile uygulamasının "son 7 günün kapsama zaman
+        çizelgesi" bu uçtan çizilir. Yetki `/coverage` ile aynı.
+      operationId: getCoverageHistory
+      security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/PersonId' }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 30, default: 7 } }
+      responses:
+        '200':
+          description: Zaman çizelgesi
+          content: { application/json: { schema: { $ref: '#/components/schemas/CoverageHistory' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/devices:
     get:
       summary: Kişinin etkin cihazları (kart). T-085 (S1, S7.4)
@@ -1533,6 +1575,26 @@ paths:
         '200':
           description: Özet
           content: { application/json: { schema: { $ref: '#/components/schemas/SupervisorCoverage' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/coverage/board:
+    get:
+      summary: Amir kapsama panosu listeleri. T-089 (docs/07 S7.2)
+      description: |
+        `noneAwake`: uyanıkken kapsama YOK ≥ coverageNone.remindMin (20 dk), en uzun önce. `chronic`: son 7 günde
+        uyanık zamanın chronicGap.protectedPct'sinden (%80) azı korunanlar ve S4.10 kronik boşluk işaretliler
+        (`chronicSince`). `offlineBridges`: yaşlının telefonu çevrimdışı, üzerinden bağlanan (BLE) cihazlar var.
+        `unreachable`: P1/P2 merdivenlerinde (test hariç) adım türü başına deneme / ulaşılan / ulaşılamayan /
+        çevrimdışı atlanan, `stalledHere` kimseye ulaşılamayan merdivenin son denenen adımı (7 ve 30 gün).
+        `unclaimedP1`: 90 sn üstlenilmeyen P1 (O-P1-UNCLAIMED, 7 gün). `dispatch112`: hareketsizlik / yerinde kontrol
+        olaylarında 112 bildirimi (7 gün). Hastanede / seyahatte modundakiler listelerde yok. Kişi yalnız görünen
+        adıyla; sağlık verisi yok. SUPERVISOR veya ADMIN.
+      operationId: supervisorCoverageBoard
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Pano
+          content: { application/json: { schema: { $ref: '#/components/schemas/SupervisorCoverageBoard' } } }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
@@ -2697,6 +2759,13 @@ components:
               properties:
                 kind: { enum: [HOSPITAL, TRAVEL] }
                 until: { type: string, format: date-time }
+        coverageToleranceMin:
+          type: integer
+          minimum: 0
+          maximum: 240
+          description: |
+            S4.10 kronik boşluk planı: kişiye özel tolerans (dk), KAPSAMA BOŞLUĞU olay eşiğine (şarj 120 dk, kapsama YOK
+            60 dk) eklenir. Değişince kronik boşluk dönemi biter, sayım yeniden başlar. Sahip (OWNER) veya yönetici.
     PersonView:
       type: object
       required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
@@ -2737,6 +2806,7 @@ components:
               properties:
                 kind: { enum: [HOSPITAL, TRAVEL] }
                 until: { type: string, format: date-time }
+        coverageToleranceMin: { type: integer, description: S4.10 kişiye özel kapsama boşluğu toleransı (dk) }
         medical:
           type: object
           description: Yalnız var/yok ve rıza zamanı; içerik geri okunmaz.
@@ -2813,6 +2883,19 @@ components:
           properties: { lat: { type: number }, lng: { type: number } }
         doorAccessNote: { type: [string, 'null'] }
         medical: { oneOf: [{ $ref: '#/components/schemas/Medical' }, { type: 'null' }] }
+        sameAddress:
+          type: array
+          description: |
+            T-089 (docs/07 S7.7) aynı adreste (sunucuda normalleştirilmiş adres, aynı şehir) etkin başka korunan kişi;
+            eş ilk ulaşılacak kişi olabilir. Yalnız kimlik, görünen ad ve açık olayı — onun sağlık verisi, kapı notu,
+            numarası verilmez.
+          items:
+            type: object
+            required: [protectedPersonId, displayName, openEventId]
+            properties:
+              protectedPersonId: { type: string, format: uuid }
+              displayName: { type: string }
+              openEventId: { type: [string, 'null'], format: uuid }
     ContactView:
       type: object
       required: [id, role, priority, displayName, phoneLast2]
@@ -2928,6 +3011,9 @@ components:
           type: [string, 'null']
           pattern: '^\d{2}$'
           description: T-087 cihaza özel sesli arama numarasının son iki hanesi (PATCH voiceNumber); yoksa null
+        bridged:
+          type: boolean
+          description: T-089 (S7.1, S4.8) son sinyali yaşlının telefonu üzerinden (BLE köprüsü) geldi — "telefon üzerinden"
     CoverageView:
       type: object
       required: [level, since, reasons, capabilities, devices]
@@ -2937,13 +3023,35 @@ components:
         reasons: { type: array, items: { $ref: '#/components/schemas/CoverageReason' } }
         capabilities: { $ref: '#/components/schemas/CoverageCapabilities' }
         devices: { type: array, items: { $ref: '#/components/schemas/DeviceSummary' } }
+        chronicGap:
+          description: |
+            S4.10 kronik boşluk: 7 günde 5 kapsama boşluğundan sonra her boşlukta KAPSAMA BOŞLUĞU (P3) açılmaz; aileye
+            bir kez F-COVERAGE-CHRONIC, operasyona bir FOLLOW_UP (plan). Tolerans değişince veya boşluklar eşiğin
+            altına inince biter. Yoksa null.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [since]
+              properties: { since: { type: string, format: date-time } }
+        toleranceMin:
+          type: integer
+          minimum: 0
+          maximum: 240
+          description: S4.10 kişiye özel tolerans (dk), KAPSAMA BOŞLUĞU olay eşiğine (şarj 120, YOK 60) eklenir
     ChargingPlan:
       type: object
       required: [window, source, nightChargeAllowed]
+      description: |
+        T-086 (S4.3): varsayılan 19:00–21:00; 14 günlük CHARGE_START / CHARGE_END geçmişinden (en az 7 geçerli gün)
+        günde bir öğrenilir (LEARNED: başlangıç / bitiş ortancası, 15 dk'ya yuvarlanır); aile verdiyse (FAMILY)
+        dokunulmaz; gece penceresine taşan pencere öğrenilmez. Öğrenilen pencere "planlı şarj" sınıflaması, aile
+        bildirim süresi (plan dışında 60 dk) ve 18:00 kontrolünde kullanılır.
       properties:
         window: { type: string, pattern: '^\d{2}:\d{2}-\d{2}:\d{2}$', example: '19:00-21:00' }
         source: { enum: [DEFAULT, LEARNED, FAMILY] }
         nightChargeAllowed: { type: boolean }
+        learnedDays: { type: [integer, 'null'], description: Yalnız LEARNED — dayandığı geçerli gün sayısı }
+        learnedAt: { type: [string, 'null'], format: date-time, description: Yalnız LEARNED — öğrenildiği an }
     ChargingPlanInput:
       type: object
       additionalProperties: false
@@ -2969,6 +3077,171 @@ components:
         plannedCharging: { type: integer }
         total: { type: integer }
         at: { type: string, format: date-time }
+    CoverageDay:
+      type: object
+      description: Kişinin yerel günü başına uyanık dakika dağılımı (T-085, S7.3)
+      required:
+        [date, awakeMin, protectedMin, phoneOnlyMin, noneMin, holdMin, unknownMin, protectedPct, phoneOnlyPct, nonePct]
+      properties:
+        date: { type: string, format: date }
+        awakeMin: { type: integer }
+        protectedMin: { type: integer, description: FULL / BASIC }
+        phoneOnlyMin: { type: integer }
+        noneMin: { type: integer }
+        holdMin: { type: integer, description: Hastanede / seyahatte modu (yüzdeye girmez) }
+        unknownMin: { type: integer, description: Geçmişi bilinmeyen uyanık dakika (yüzdeye girmez) }
+        protectedPct: { type: [number, 'null'] }
+        phoneOnlyPct: { type: [number, 'null'] }
+        nonePct: { type: [number, 'null'] }
+    CoverageHistory:
+      type: object
+      required: [protectedPersonId, days, from, to, timezone, sleepWindow, segments, daily, summary]
+      properties:
+        protectedPersonId: { type: string }
+        days: { type: integer }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        timezone: { type: string }
+        sleepWindow:
+          type: object
+          properties: { start: { type: string }, end: { type: string } }
+        segments:
+          type: array
+          items:
+            type: object
+            required: [from, to, level, hold]
+            properties:
+              from: { type: string, format: date-time }
+              to: { type: string, format: date-time }
+              level: { $ref: '#/components/schemas/CoverageLevel' }
+              hold: { type: boolean }
+        daily: { type: array, items: { $ref: '#/components/schemas/CoverageDay' } }
+        summary: { description: Günlerin toplamı (CoverageDay alanları, date hariç), type: object }
+    LadderStepStat:
+      type: object
+      required: [step, attempted, reached, unreached, offlineSkipped, unreachableRate, stalledHere]
+      properties:
+        step: { type: string, example: 'CALL_CONTACT:1' }
+        attempted: { type: integer }
+        reached: { type: integer }
+        unreached: { type: integer, description: NO_ANSWER / BUSY / WRONG_NUMBER / SILENT }
+        offlineSkipped: { type: integer }
+        unreachableRate: { type: [number, 'null'], description: (ulaşılamayan + çevrimdışı) / deneme }
+        stalledHere: { type: integer }
+    SupervisorCoverageBoard:
+      type: object
+      required: [at, noneAwake, chronic, offlineBridges, unreachable, unclaimedP1, dispatch112]
+      properties:
+        at: { type: string, format: date-time }
+        noneAwake:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              since: { type: string, format: date-time }
+              awakeMin: { type: integer }
+              reasons: { type: array, items: { $ref: '#/components/schemas/CoverageReason' } }
+        chronic:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              protectedPct: { type: [number, 'null'] }
+              chronicSince: { type: [string, 'null'], format: date-time }
+              toleranceMin: { type: integer }
+        offlineBridges:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              phoneSeenAt: { type: [string, 'null'], format: date-time }
+              bridgedDevices: { type: integer }
+        unreachable:
+          type: object
+          properties:
+            days7: { type: array, items: { $ref: '#/components/schemas/LadderStepStat' } }
+            days30: { type: array, items: { $ref: '#/components/schemas/LadderStepStat' } }
+        unclaimedP1:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string }
+              eventType: { type: string }
+              at: { type: string, format: date-time }
+              acked: { type: boolean }
+        dispatch112:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string }
+              eventType: { enum: [INACTIVITY, WELFARE_CHECK] }
+              notifiedAt: { type: string, format: date-time }
+              status: { type: string }
+              name: { type: [string, 'null'] }
+    AdminCoverageMetrics:
+      type: object
+      description: T-085 (S7.3) yalnız toplamlar; kişisel veri yok
+      required: [days, from, to, coverage, falseAlarms, latency, charging, eventsPer100PersonDays, battery]
+      properties:
+        days: { type: integer }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        coverage:
+          type: object
+          properties:
+            personDays: { type: integer }
+            avgProtectedPct: { type: [number, 'null'] }
+            medianProtectedPct: { type: [number, 'null'] }
+            belowTargetShare: { type: [number, 'null'], description: Korunan payı %80 altı kişi-gün oranı (0–1) }
+            buckets:
+              type: array
+              items: { type: object, properties: { label: { type: string }, n: { type: integer } } }
+        falseAlarms:
+          type: array
+          items:
+            type: object
+            properties:
+              model: { type: string }
+              appVersion: { type: string }
+              events: { type: integer }
+              falseAlarms: { type: integer }
+              rate: { type: number }
+        latency:
+          type: array
+          items:
+            type: object
+            properties:
+              tier: { type: string }
+              adapter: { type: string }
+              signals: { type: integer }
+              p50Sec: { type: [number, 'null'] }
+              p95Sec: { type: [number, 'null'] }
+        charging:
+          type: object
+          properties:
+            sessions: { type: integer }
+            worn: { type: integer }
+            medianToWearMin: { type: [number, 'null'] }
+            p90ToWearMin: { type: [number, 'null'] }
+            beforeReminderShare: { type: [number, 'null'] }
+        eventsPer100PersonDays: { type: object, additionalProperties: { type: number } }
+        battery:
+          type: array
+          items:
+            type: object
+            properties:
+              model: { type: string }
+              devices: { type: integer }
+              deviceDays: { type: integer }
+              medianDailyDrainPct: { type: [number, 'null'] }
     RejectedSignal:
       type: object
       description: D-01 sinyal başına ret. PII ve serbest metin yok; `reason` sabit koddur.
