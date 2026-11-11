@@ -915,6 +915,9 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
     patch:
       summary: Kişiyi güncelle (verilen alanlar). Adres değişirse yeniden konumlanır; doorAccessNote null siler. T-040
+      description: |
+        Ad, adres, kapı notu ve diğer alanlar olay anında 112'ye okunur: aile tarafında yalnız hesap sahibi (OWNER)
+        değiştirir, MEMBER 403 (`code: F-MEMBER-OWNER-ONLY`); yönetici her kişiyi. Erişimi olmayan aile 404.
       operationId: updateProtectedPerson
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
@@ -925,6 +928,7 @@ paths:
         '200':
           { description: Kişi, content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } } }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/medical:
     put:
@@ -932,6 +936,7 @@ paths:
       description: |
         Tek şifreli kayıt olarak saklanır (AES-256-GCM, FIELD_ENC_KEYS). İçerik aileye de geri okunmaz (yalnız
         var/yok ve rıza zamanı); olay anında olayı yürüten operatöre çözülür. audit.log'a içerik yazılmaz.
+        Yalnız hesap sahibi (OWNER) veya yönetici; MEMBER 403 (`code: F-MEMBER-OWNER-ONLY`).
       operationId: setMedical
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
@@ -963,14 +968,16 @@ paths:
                   consentAt: { type: string, format: date-time }
                   updatedAt: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
     delete:
-      summary: Rıza geri alındı — tıbbi özeti sil. C-03, T-040
+      summary: Rıza geri alındı — tıbbi özeti sil (yalnız OWNER veya yönetici; MEMBER 403). C-03, T-040
       operationId: deleteMedical
       security: [{ userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       responses:
         '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/test-sos:
     post:

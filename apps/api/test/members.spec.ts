@@ -113,7 +113,7 @@ describe('daveti kabul (FAMILY)', () => {
       ['fam-bob'],
     );
     expect(fm).toEqual({ role: 'MEMBER', relation: 'Oğlu' });
-    expect(await outcome(profile.setContacts(BOB, p.id, []))).toBe(403);
+    expect(await outcome(profile.setContacts(BOB, p.id, []))).toBe('403 F-MEMBER-OWNER-ONLY');
     const [inv2] = await h.rows<{ used_at: Date | null; used_by: string }>(
       'SELECT used_at, used_by FROM profile.member_invite',
     );

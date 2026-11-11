@@ -195,8 +195,9 @@ export class ProfileService {
     };
   }
 
+  /** Kişi bilgisi (ad, adres, kapı notu, konum paylaşımı …) 112'ye okunur: yalnız OWNER (veya yönetici); MEMBER 403. */
   async update(actor: Actor, id: string, body: unknown, now = new Date()): Promise<PersonView> {
-    await this.access(actor, id);
+    await this.authorizeOwner(actor, id);
     const b = obj(body);
     const patch = await this.patchOf(b, now);
     if (b.displayName !== undefined) {
@@ -217,8 +218,9 @@ export class ProfileService {
 
   // ---- tıbbi özet (C-03) ----
 
+  /** Tıbbi özet 112'ye okunur: yalnız OWNER (veya yönetici); MEMBER 403 F-MEMBER-OWNER-ONLY. */
   async setMedical(actor: Actor, id: string, body: unknown, now = new Date()) {
-    await this.access(actor, id);
+    await this.authorizeOwner(actor, id);
     const b = obj(body);
     const consentAt = typeof b.consentAt === 'string' ? new Date(b.consentAt) : null;
     if (!consentAt || Number.isNaN(consentAt.getTime()) || consentAt.getTime() > now.getTime() + CONSENT_SKEW_MS)
@@ -248,9 +250,9 @@ export class ProfileService {
     return { present: true, consentAt: consentAt.toISOString(), updatedAt: now.toISOString() };
   }
 
-  /** Rızanın geri alınması: tıbbi özet silinir (KVKK). */
+  /** Rızanın geri alınması: tıbbi özet silinir (KVKK). Yalnız OWNER (veya yönetici). */
   async deleteMedical(actor: Actor, id: string) {
-    await this.access(actor, id);
+    await this.authorizeOwner(actor, id);
     await this.db.transaction(async (tx) => {
       await tx.delete(medicalSummary).where(eq(medicalSummary.protectedPersonId, id));
       await this.audit(tx, actor, 'health.medical_deleted', id, {});
@@ -421,7 +423,7 @@ export class ProfileService {
   async authorizeOwner(actor: Actor, id: string): Promise<void> {
     const { role } = await this.access(actor, id);
     if (actor.kind === 'FAMILY' && role !== 'OWNER')
-      throw new ForbiddenException('Bu ayarı yalnız hesap sahibi değiştirir');
+      throw new ForbiddenException({ message: t('F-MEMBER-OWNER-ONLY', 'tr'), code: 'F-MEMBER-OWNER-ONLY' });
   }
 
   /** Erişim: ADMIN her kişiyi; FAMILY yalnız üyesi olduğu kişiyi. Diğer her durum 404. */

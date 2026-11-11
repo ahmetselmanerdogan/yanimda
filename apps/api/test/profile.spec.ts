@@ -285,6 +285,42 @@ describe('rehber (C-03, zincir numaraları)', () => {
     expect(await status(profile.setContacts(ALICE, p.id, body))).toBe('ok');
   });
 
+  it("112'ye okunan kişi bilgisi ve tıbbi özet yalnız sahip (veya yönetici) değiştirir; MEMBER 403 katalog kodlu", async () => {
+    const p = await create();
+    await profile.setMedical(ALICE, p.id, MED);
+    await h.pg.query(
+      "INSERT INTO profile.family_member (id, protected_person_id, subject, role) VALUES (gen_random_uuid(), $1, 'fam-member', 'MEMBER')",
+      [p.id],
+    );
+    const member: Actor = { kind: 'FAMILY', id: 'fam-member' };
+    const forbidden = async (pr: Promise<unknown>) =>
+      pr.then(
+        () => 'ok',
+        (e: { status?: number; response?: { code?: string } }) => `${e.status} ${e.response?.code ?? ''}`.trim(),
+      );
+    const attempts = [
+      () => profile.update(member, p.id, { displayName: 'Başka Ad' }),
+      () => profile.update(member, p.id, { address: { line: 'Sahte Sk. 1', city: 'İzmir' } }),
+      () => profile.update(member, p.id, { doorAccessNote: 'anahtar paspasın altında' }),
+      () => profile.update(member, p.id, { locationSharing: false }),
+      () => profile.setMedical(member, p.id, { ...MED, allergies: [] }),
+      () => profile.deleteMedical(member, p.id),
+      () => profile.setContacts(member, p.id, []),
+    ];
+    for (const a of attempts) expect(await forbidden(a())).toBe('403 F-MEMBER-OWNER-ONLY');
+    // Hiçbir şey değişmedi; MEMBER okumaya devam eder.
+    const v = await profile.get(member, p.id);
+    expect(v).toMatchObject({ displayName: p.displayName, myRole: 'MEMBER', medical: { present: true } });
+    expect(v.doorAccessNote).toBe(p.doorAccessNote);
+    // Sahip ve yönetici değiştirebilir.
+    expect((await profile.update(ALICE, p.id, { displayName: 'Yeni Ad' })).displayName).toBe('Yeni Ad');
+    expect((await profile.update(ADMIN, p.id, { birthYear: 1950 })).birthYear).toBe(1950);
+    await profile.deleteMedical(ADMIN, p.id);
+    expect(await forbidden(profile.setMedical(ALICE, p.id, MED))).toBe('ok');
+    // Erişimi olmayan aile hesabı 404 (kişinin varlığı sızmaz).
+    expect(await status(profile.update(BOB, p.id, { displayName: 'x' }))).toBe(404);
+  });
+
   it.each([
     ['6 yakın', Array.from({ length: 6 }, (_, i) => ({ role: 'CONTACT', phone: `+90555000003${i}` }))],
     [
