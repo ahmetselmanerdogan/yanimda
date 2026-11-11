@@ -13,7 +13,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
 import { contact } from '../../db/schema';
-import { DeviceService } from '../device/device.service';
+import { deviceSummaries } from '../event/coverage.service';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
 import {
   call112DeadlineSecOf,
@@ -35,6 +35,7 @@ import {
   isDeviceStep,
   type LadderContext,
   orderForCorroboration,
+  voiceTargetOf,
 } from './ladder';
 import { buildSteps, loadProcedures, type ProcedurePack, stepOf } from './procedures';
 
@@ -97,7 +98,6 @@ export class ChainService {
   private readonly repo: ChainRepository;
   private readonly proc: ProcedurePack;
   private readonly rules: RulesProvider;
-  private readonly devices: DeviceService;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -106,12 +106,10 @@ export class ChainService {
     @Optional() @Inject(TelephonyService) private readonly telephony?: TelephonyService,
     @Optional() @Inject(ProfileService) private readonly profile?: ProfileService,
     @Optional() @Inject(RULES) rules?: RulesProvider,
-    @Optional() @Inject(DeviceService) devices?: DeviceService,
   ) {
     this.repo = new ChainRepository(db);
     this.proc = proc ?? loadProcedures();
     this.rules = rules ?? staticRules(loadRulePack());
-    this.devices = devices ?? new DeviceService(db);
   }
 
   async get(id: string): Promise<EventWithChain> {
@@ -162,7 +160,7 @@ export class ChainService {
           await this.repo.updateStep(c.tx, run.id, step);
         }
         if (c.ev.state === 'OPERATOR_ASSIGNED') c.transition('CONTACT_CHAIN');
-        // T-087: "en iyi cihaza yeniden" — doğrulayan veya en son görülen çevrimiçi sesli cihaz.
+        // T-087: "en iyi cihaza yeniden" — doğrulayan veya sesli arama sırasında ilk çevrimiçi sesli cihaz.
         const voice =
           step.target === 'VOICE_DEVICE' && this.telephony?.enabled
             ? bestVoiceTarget(await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
@@ -404,13 +402,13 @@ export class ChainService {
   }
 
   private async ladderContext(q: Db | Tx, ev: EventRecord, now: Date): Promise<LadderContext> {
-    const params = ladderOf(this.rules.current());
+    const pack = this.rules.current();
+    const params = ladderOf(pack);
     const facts = await this.personFacts(q, ev.protectedPersonId);
     const loc = ev.location;
     return {
       now,
-      params,
-      devices: await this.devices.ladderDevices(ev.protectedPersonId, q),
+      devices: await deviceSummaries(q, pack, ev.protectedPersonId, now),
       impaired: facts.impaired,
       awayFromHome: !!(loc && facts.home && distanceM(loc, facts.home) > params.awayFromHomeM),
       hasKeyHolder: !!pickKeyHolder(facts.keyHolders, now, facts.timezone),
@@ -464,8 +462,10 @@ export class ChainService {
       steps = steps.map((s) => (isDeviceStep(s) ? { ...s, autoAnswerSec } : s));
     const by = corroboratorOf(c.ev);
     if (by) {
-      const d = (await this.devices.ladderDevices(c.ev.protectedPersonId, c.tx)).find((x) => x.id === by);
-      steps = orderForCorroboration(steps, d?.voice);
+      const d = (await deviceSummaries(c.tx, this.rules.current(), c.ev.protectedPersonId, c.now)).find(
+        (x) => x.id === by,
+      );
+      steps = orderForCorroboration(steps, d ? voiceTargetOf(d) : null);
     }
     return steps;
   }

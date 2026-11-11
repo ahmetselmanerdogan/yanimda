@@ -56,8 +56,6 @@ export interface OfficialNumbers {
 }
 /** docs/07 S5 (T-087) ulaşılamama merdiveni. */
 export interface LadderParams {
-  /** Aramadan önce: cihaz son bu kadar dakikada görülmediyse adım OFFLINE_SKIPPED. */
-  offlineSkipMin: number;
   /** P1 sesli cihaz otomatik cevap süresi (sn); yanınızdayız aramasında asla. */
   autoAnswerSec: number;
   /** Kuyrukta üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED). */
@@ -135,7 +133,6 @@ export const falseAlarmOf = (pack: RulePack): FalseAlarmParams => pack.falseAlar
 export const DEFAULT_NUMBERS: OfficialNumbers = { emergency: '112', social: '183', health: '182' };
 export const numbersOf = (pack: RulePack): OfficialNumbers => pack.numbers ?? DEFAULT_NUMBERS;
 export const DEFAULT_LADDER: LadderParams = {
-  offlineSkipMin: 15,
   autoAnswerSec: 10,
   unclaimedSupervisorSec: 90,
   unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },

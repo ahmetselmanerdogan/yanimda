@@ -1,4 +1,4 @@
-import type { ChainStep, KafkaEnvelope, Signal } from '@yanimda/contracts';
+import type { ChainStep, DeviceSummary, KafkaEnvelope, Signal } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -11,6 +11,8 @@ import {
   distanceM,
   type LadderContext,
   orderForCorroboration,
+  ringTargets,
+  voiceTargetOf,
 } from '../src/modules/chain/ladder';
 import { LadderService } from '../src/modules/chain/ladder.service';
 import { buildSteps, loadProcedures } from '../src/modules/chain/procedures';
@@ -46,6 +48,20 @@ const OP = 'op-1';
 const PERSON = '0190a0b0-0000-7000-8000-000000000001';
 const WATCH = '0190a0b0-0000-7000-8000-00000000a001';
 const PHONE = '0190a0b0-0000-7000-8000-00000000a002';
+/**
+ * Olayı açan cihaz: ev ünitesi (S3.5 SOS açabilir; sesli ama rehber rolü yok → merdivende aranmaz). Saat veya telefon
+ * olsaydı sinyali onu kapsama olgularında "şimdi görüldü" yapardı; çevrimdışı atlama testleri saat/telefonun kayıttaki
+ * son görülmesine bakar.
+ */
+const HOME_UNIT = '0190a0b0-0000-7000-8000-00000000a00f';
+const WATCH_SRC = { kind: 'WEAROS_WATCH', role: 'WATCH' };
+const HOME_SRC = {
+  kind: 'SIMULATOR',
+  role: 'WATCH',
+  category: 'HOME_UNIT',
+  tier: 'A',
+  caps: { sos: true, fall: false, voice: true, location: false },
+};
 
 let h: Harness;
 let events: EventService;
@@ -60,7 +76,7 @@ beforeEach(async () => {
   events = h.events(new InMemoryTimers());
   push = new RecordingPush();
   devices = new DeviceService(h.db, defaultRegistry(push));
-  chain = new ChainService(h.db, events, proc, undefined, undefined, staticRules(pack), devices);
+  chain = new ChainService(h.db, events, proc, undefined, undefined, staticRules(pack));
 });
 afterAll(async () => {
   await h.close();
@@ -84,14 +100,22 @@ async function person(o: { impaired?: boolean; home?: { lat: number; lng: number
     [PERSON, !!o.impaired, o.home?.lat ?? null, o.home?.lng ?? null],
   );
 }
-async function device(id: string, kind: string, lastSeenMinAgo: number | null, onWrist: boolean | null = true) {
+/** Kayıtlı cihaz; son durum (görülme, takılı, şarj) sinyal alımında kayda yazılanlardır (T-085). */
+async function device(
+  id: string,
+  kind: string,
+  lastSeenMinAgo: number | null,
+  onWrist: boolean | null = true,
+  charging = false,
+) {
   await h.pg.query(
-    `INSERT INTO device.device (id, protected_person_id, kind, last_seen_at, on_wrist) VALUES ($1, $2, $3, $4, $5)`,
-    [id, PERSON, kind, lastSeenMinAgo === null ? null : minAgo(lastSeenMinAgo), onWrist],
+    `INSERT INTO device.device (id, protected_person_id, kind, last_seen_at, on_wrist, charging)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, PERSON, kind, lastSeenMinAgo === null ? null : minAgo(lastSeenMinAgo), onWrist, charging],
   );
 }
 async function queued(kind = 'SOS', extra: Record<string, unknown> = {}) {
-  await deliver(sig(kind, { protectedPersonId: PERSON, deviceId: WATCH, ...extra }));
+  await deliver(sig(kind, { protectedPersonId: PERSON, deviceId: HOME_UNIT, source: HOME_SRC, ...extra }));
   const [row] = await h.rows<{ id: string; state: string }>(
     'SELECT id, state FROM event.event WHERE protected_person_id = $1',
     [PERSON],
@@ -191,8 +215,9 @@ describe('S5.2 / S5.4 süre tablosu (kural paketi)', () => {
   });
 
   it('merdiven ve birleştirme parametreleri (S5.1, S5.3, S5.5, S3.3)', () => {
+    // S5.1 çevrimdışı atlama kapsamanın çevrimiçi kuralıdır (A 15 dk, B 30 dk) — ayrı merdiven eşiği yok.
+    expect(pack.coverage!.onlineMin).toEqual({ A: 15, B: 30 });
     expect(ladderOf(pack)).toEqual({
-      offlineSkipMin: 15,
       autoAnswerSec: 10,
       unclaimedSupervisorSec: 90,
       unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
@@ -269,9 +294,16 @@ describe('S5.1 çevrimdışı cihaz atlanır', () => {
     expect(r.chain!.current).toBe(1);
     await h.reset();
     events = h.events(new InMemoryTimers());
-    chain = new ChainService(h.db, events, proc, undefined, undefined, staticRules(pack), devices);
+    chain = new ChainService(h.db, events, proc, undefined, undefined, staticRules(pack));
     await person();
     await device(WATCH, 'WEAROS_WATCH', 14);
+    expect((await chain.claim(await queued('SOS'), OP)).chain!.current).toBe(1);
+  });
+
+  it('cihaz durumu kapsama olgularından: kayıtta 30 dk önce görülen saatten yeni sinyal geldiyse atlanmaz', async () => {
+    await person();
+    await device(WATCH, 'WEAROS_WATCH', 30);
+    await deliver(sig('HEARTBEAT', { protectedPersonId: PERSON, deviceId: WATCH, source: WATCH_SRC }));
     expect((await chain.claim(await queued('SOS'), OP)).chain!.current).toBe(1);
   });
 
@@ -436,7 +468,6 @@ describe('S5.5 evden uzak / S5.6 anahtar sahibi', () => {
 describe('saf kurallar', () => {
   const ctx = (o: Partial<LadderContext> = {}): LadderContext => ({
     now: new Date(),
-    params: ladderOf(pack),
     devices: [],
     impaired: false,
     awayFromHome: false,
@@ -452,17 +483,27 @@ describe('saf kurallar', () => {
     required: true,
     ...extra,
   });
-  const dev = (id: string, voice: 'WATCH' | 'ELDER_PHONE', minAgo: number) => ({
+  // Cihaz kartı (T-085 kapsama olguları); çevrimiçi kuralı kapsamanınki, burada hazır verilir.
+  const dev = (id: string, category: DeviceSummary['category'], o: Partial<DeviceSummary> = {}): DeviceSummary => ({
     id,
-    kind: voice === 'WATCH' ? 'WEAROS_WATCH' : 'ANDROID_PHONE',
-    tier: voice === 'WATCH' ? ('A' as const) : null,
-    voice,
-    lastSeenAt: new Date(Date.now() - minAgo * 60_000),
-    onWrist: true,
+    kind: category === 'PHONE' ? 'ANDROID_PHONE' : 'WEAROS_WATCH',
+    category,
+    tier: category === 'RING' ? 'C' : 'A',
+    bodyLocation: null,
+    nickname: null,
+    online: true,
+    lastSeenAt: new Date().toISOString(),
+    batteryPct: 80,
+    charging: false,
+    chargingSince: null,
+    onBody: category === 'PHONE' ? null : true,
+    estimatedHoursLeft: null,
+    voiceOrder: category === 'RING' ? null : category === 'PHONE' ? 3 : 1,
+    ...o,
   });
 
   it('aranmaya başlanmış adım atlanmaz; 112 ve yakın adımları cihaz durumuna bakmaz', () => {
-    const offline = ctx({ devices: [dev('w', 'WATCH', 60)] });
+    const offline = ctx({ devices: [dev('w', 'WATCH', { online: false })] });
     expect(autoSkip(step('WATCH', { calledAt: new Date().toISOString() }), [], offline)).toBeNull();
     expect(autoSkip(step('EMERGENCY'), [], offline)).toBeNull();
     expect(autoSkip(step('CONTACT'), [], offline)).toBeNull();
@@ -472,11 +513,37 @@ describe('saf kurallar', () => {
     });
   });
 
-  it('en iyi sesli cihaz: doğrulayan çevrimiçiyse o, değilse en son görülen', () => {
-    const c = ctx({ devices: [dev('w', 'WATCH', 5), dev('p', 'ELDER_PHONE', 1)] });
-    expect(bestVoiceTarget(c)).toBe('ELDER_PHONE');
-    expect(bestVoiceTarget(c, 'w')).toBe('WATCH');
-    expect(bestVoiceTarget(ctx({ devices: [dev('w', 'WATCH', 30)] }))).toBeUndefined();
+  it('en iyi sesli cihaz: doğrulayan çevrimiçiyse o, değilse sesli arama sırası (S1.8); şarjdaki en sonda', () => {
+    const c = ctx({ devices: [dev('w', 'WATCH'), dev('p', 'PHONE')] });
+    expect(bestVoiceTarget(c)).toBe('WATCH');
+    expect(bestVoiceTarget(c, 'p')).toBe('ELDER_PHONE');
+    const charging = ctx({ devices: [dev('w', 'WATCH', { charging: true, onBody: false }), dev('p', 'PHONE')] });
+    expect(bestVoiceTarget(charging)).toBe('ELDER_PHONE');
+    expect(bestVoiceTarget(ctx({ devices: [dev('w', 'WATCH', { online: false })] }))).toBeUndefined();
+  });
+
+  it('sesli hedef kapsama olgusundan: sesli giyilebilir → saat adımı, telefon → telefon; yüzük ve ev ünitesi aranmaz', () => {
+    expect(voiceTargetOf(dev('w', 'WATCH'))).toBe('WATCH');
+    expect(voiceTargetOf(dev('k', 'PENDANT'))).toBe('WATCH');
+    expect(voiceTargetOf(dev('p', 'PHONE'))).toBe('ELDER_PHONE');
+    expect(voiceTargetOf(dev('r', 'RING'))).toBeNull();
+    expect(voiceTargetOf(dev('h', 'HOME_UNIT'))).toBeNull();
+    // Yüzüğün kaydı saat adımını "çevrimdışı" yapmaz; yalnız sesli cihazlar sayılır.
+    expect(autoSkip(step('WATCH'), [], ctx({ devices: [dev('r', 'RING', { online: false })] }))).toBeNull();
+  });
+
+  it('T+0 çaldırma: çevrimiçi, şarjda olmayan, çıkarılmamış A sınıfı giyilebilir + çevrimiçi telefon', () => {
+    const list = [
+      dev('worn', 'WATCH'),
+      dev('unknown', 'PENDANT', { onBody: null }),
+      dev('off', 'WATCH', { onBody: false }),
+      dev('charging', 'WATCH', { charging: true, onBody: false }),
+      dev('offline', 'WATCH', { online: false }),
+      dev('ring', 'RING'),
+      dev('phone', 'PHONE'),
+      dev('home', 'HOME_UNIT'),
+    ];
+    expect(ringTargets(list).map((d) => d.id)).toEqual(['worn', 'unknown', 'phone']);
   });
 
   it('doğrulayan cihaz telefonsa telefon adımı öne alınır', () => {
@@ -496,18 +563,29 @@ describe('S5.2 T+0 ve S5.3 üstlenilmeyen P1 (LadderService)', () => {
     ladder = new LadderService(h.db, h.outbox, staticRules(pack), devices);
   });
 
-  it('P1 kuyruğa ilk düşünce çevrimiçi takılı saat ve telefon çaldırılır (çevrimdışı/çıkarılmış değil); bir kez', async () => {
+  it('P1 kuyruğa ilk düşünce çevrimiçi takılı saat ve telefon çaldırılır (çevrimdışı/çıkarılmış/şarjda değil); bir kez', async () => {
     await person();
     await device(WATCH, 'WEAROS_WATCH', 1, true);
     await device(PHONE, 'ANDROID_PHONE', 2, null);
     await device('0190a0b0-0000-7000-8000-00000000a003', 'WEAROS_WATCH', 1, false); // çıkarılmış
     await device('0190a0b0-0000-7000-8000-00000000a004', 'WEAROS_WATCH', 40, true); // çevrimdışı
+    await device('0190a0b0-0000-7000-8000-00000000a005', 'WEAROS_WATCH', 1, false, true); // şarjda (T-086)
     const id = await queued('SOS');
     expect(await ladder.onTransition({ eventId: id, from: 'ESCALATED', to: 'OPERATOR_QUEUE' })).toBe(2);
     expect(push.sent.map((m) => m.deviceId).sort()).toEqual([WATCH, PHONE].sort());
     expect(await ladder.onTransition({ eventId: id, from: 'ESCALATED', to: 'OPERATOR_QUEUE' })).toBe(0);
     // kilit düşmesiyle kuyruğa dönüş yeni T+0 değildir
     expect(await ladder.onTransition({ eventId: id, from: 'CONTACT_CHAIN', to: 'OPERATOR_QUEUE' })).toBe(0);
+  });
+
+  it('şarja takılan saat (CHARGE_START → kapsama olgusu) T+0 çaldırılmaz; telefon çaldırılır', async () => {
+    await person();
+    await device(WATCH, 'WEAROS_WATCH', 1, true);
+    await device(PHONE, 'ANDROID_PHONE', 1, null);
+    await deliver(sig('CHARGE_START', { protectedPersonId: PERSON, deviceId: WATCH, source: WATCH_SRC }));
+    const id = await queued('SOS');
+    expect(await ladder.onTransition({ eventId: id, from: 'ESCALATED', to: 'OPERATOR_QUEUE' })).toBe(1);
+    expect(push.sent.map((m) => m.deviceId)).toEqual([PHONE]);
   });
 
   it('P1 olmayan veya test olayında çaldırma yok', async () => {

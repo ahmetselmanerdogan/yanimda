@@ -4,7 +4,7 @@ import { and, arrayContains, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { validate as isUuid } from 'uuid';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, device, event, transition } from '../../db/schema';
+import { auditLog, event, transition } from '../../db/schema';
 
 export type ActorKind = 'SYSTEM' | 'USER' | 'OPERATOR';
 
@@ -313,16 +313,6 @@ export class EventRepository {
       entityId: a.entityId,
       data: a.data ?? null,
     });
-  }
-
-  /**
-   * T-088 (S3.6): cihaz takılı mı (son bilinen durum). Bilinmiyorsa null. Yalnız iptalin hangi cihazdan kabul
-   * edileceği için okunur (salt okuma; cihaz modülü T-085'te kategoriyle birlikte servis olarak sunar).
-   */
-  async deviceWorn(q: Q, deviceId: string): Promise<boolean | null> {
-    if (!isUuid(deviceId)) return null;
-    const [r] = await q.select({ onWrist: device.onWrist }).from(device).where(eq(device.id, deviceId));
-    return r?.onWrist ?? null;
   }
 
   /** Operatör kilidi `now`'dan önce dolmuş olaylar (T-021). */

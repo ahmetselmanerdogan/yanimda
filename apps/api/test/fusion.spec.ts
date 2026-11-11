@@ -6,7 +6,14 @@ import { InMemoryTimers } from '../src/common/timers/memory-timers';
 import { ChainService } from '../src/modules/chain/chain.service';
 import { loadProcedures } from '../src/modules/chain/procedures';
 import type { EventService } from '../src/modules/event/event.service';
-import { answerAllowed, betterLocation, corroborates, IM_OK_SCREEN } from '../src/modules/event/fusion';
+import {
+  answerAllowed,
+  betterLocation,
+  corroborates,
+  corroborationPair,
+  IM_OK_SCREEN,
+  wornAlarm,
+} from '../src/modules/event/fusion';
 import { loadRulePack, type RulePack, staticRules } from '../src/modules/event/rules.loader';
 import { createHarness, type Harness, sig } from './support/harness';
 
@@ -140,6 +147,39 @@ describe('S3.3 doğrulama: iki farklı cihaz 90 sn içinde düşme', () => {
     expect(r.chain!.steps.slice(0, 2).map((s) => s.kind)).toEqual(['CALL_PHONE', 'CALL_WATCH']);
   });
 
+  it('şarjdaki cihazın düşmesi doğrulamaz (S3.4): şarj bilgili sinyal yok sayılır, son bilinen şarj sayılmaz', async () => {
+    // Sinyal "şarjda" taşıyor: T-086 yok sayar, olaya kaynak bile olmaz.
+    await deliver('FALL', W1);
+    await deliver('FALL', W2, { device: { charging: true } });
+    expect(await ev()).toMatchObject({ source_device_ids: [W1], corroborated_at: null });
+
+    // Sinyal şarj bilgisi taşımıyor ama W2 son bilinen durumda şarjda: kaynak olur, doğrulamaz.
+    await h.reset();
+    events = h.events(timers);
+    await deliver('CHARGE_START', W2);
+    await deliver('FALL', W1);
+    await deliver('FALL', W2);
+    const e = await ev();
+    expect(e).toMatchObject({ source_device_ids: [W1, W2], corroborated_at: null });
+    expect(await audits(e.id, 'event.corroborated')).toEqual([]);
+
+    // Olayı açan cihaz şarjdaydı: ikinci cihaz tek başına doğrulamaz.
+    await h.reset();
+    events = h.events(timers);
+    await deliver('CHARGE_START', W1);
+    await deliver('FALL', W1);
+    await deliver('FALL', W2);
+    expect((await ev()).corroborated_at).toBeNull();
+  });
+
+  it('saf: şarjdaki cihaz doğrulama çifti sayılmaz', () => {
+    expect(corroborationPair([W1, W2], W2, new Set())).toBe(true);
+    expect(corroborationPair([W1, W2], W2, new Set([W2]))).toBe(false);
+    expect(corroborationPair([W1, W2], W2, new Set([W1]))).toBe(false);
+    expect(corroborationPair([W1, W2, PHONE], PHONE, new Set([W1]))).toBe(true);
+    expect(wornAlarm({ category: 'WATCH', tier: 'A', onBody: true, charging: false })).toBe(true);
+  });
+
   it('saf: pencere sınırı', () => {
     const t0 = '2026-11-11T10:00:00.000Z';
     expect(corroborates(t0, '2026-11-11T10:01:30.000Z', 90)).toBe(true);
@@ -162,18 +202,25 @@ describe('S3.6 "İyiyim" kimden ve ne zaman kabul edilir', () => {
     expect(after.cancelled_by_device_id).toBe(PHONE);
   });
 
-  it('başka saat: takılı değilse reddedilir, takılıysa (son bilinen durum) kabul', async () => {
-    await h.pg.query(`INSERT INTO profile.protected_person (id, display_name) VALUES ($1, 'Ali')`, [PERSON]);
-    await h.pg.query(
-      `INSERT INTO device.device (id, protected_person_id, kind, last_seen_at, on_wrist) VALUES ($1, $2, 'WEAROS_WATCH', now(), true)`,
-      [W2, PERSON],
-    );
+  it('başka saat: takılı değilse reddedilir, takılıysa (kapsama olgusu, son bilinen durum) kabul', async () => {
+    await deliver('ON_BODY', W2); // W2 takılı (son bilinen durum)
     await deliver('FALL', W1);
     const e = await ev();
-    await deliver('CANCEL', W2, { device: { onWrist: false } });
+    await deliver('CANCEL', W2, { device: { onWrist: false } }); // sinyalin kendi bilgisi: çıkarılmış
     expect((await ev()).state).toBe('DEVICE_PROMPT');
-    await deliver('OK', W2);
+    await deliver('ON_BODY', W2);
+    await deliver('OK', W2); // takılı bilgisi yok → son bilinen: takılı
     expect((await ev()).state).toBe('CLOSED');
+    expect(await ignored(e.id)).toEqual(['DEVICE_NOT_ALLOWED']);
+  });
+
+  it('şarjdaki saat (T-086 kapsama olgusu) başka cihazın alarmını iptal edemez', async () => {
+    await deliver('ON_BODY', W2);
+    await deliver('CHARGE_START', W2);
+    await deliver('FALL', W1);
+    const e = await ev();
+    await deliver('CANCEL', W2);
+    expect((await ev()).state).toBe('DEVICE_PROMPT');
     expect(await ignored(e.id)).toEqual(['DEVICE_NOT_ALLOWED']);
   });
 
@@ -188,14 +235,27 @@ describe('S3.6 "İyiyim" kimden ve ne zaman kabul edilir', () => {
     expect((await ev()).state).toBe('CLOSED');
   });
 
-  it('saf kurallar: B/C sınıfı ve rolsüz kaynak reddedilir; kaynak listesi yoksa (eski olay) kabul', () => {
+  it('saf kurallar: B/C sınıfı, şarjdaki ve takılı bilgisi bilinmeyen cihaz reddedilir; kaynak listesi yoksa kabul', () => {
     const src = [W1];
+    const fact = (o: Partial<Parameters<typeof wornAlarm>[0]> = {}) => ({
+      category: 'WATCH' as const,
+      tier: 'A' as const,
+      onBody: true as boolean | null,
+      charging: false,
+      ...o,
+    });
     expect(answerAllowed(src, { deviceId: W1 })).toBe(true);
     expect(answerAllowed(src, { deviceId: W2 })).toBe(false);
-    expect(answerAllowed(src, { deviceId: W2, role: 'WATCH', onWrist: true })).toBe(true);
-    expect(answerAllowed(src, { deviceId: W2, role: 'WATCH', worn: true })).toBe(true);
-    expect(answerAllowed(src, { deviceId: W2, role: 'WATCH', onWrist: false, worn: true })).toBe(false);
-    expect(answerAllowed(src, { deviceId: PHONE, role: 'PHONE' })).toBe(false);
+    expect(answerAllowed(src, { deviceId: W2, device: fact() })).toBe(true);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ category: 'PENDANT' }) })).toBe(true);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ onBody: false }) })).toBe(false);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ onBody: null }) })).toBe(false);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ charging: true }) })).toBe(false);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ category: 'EARBUD', tier: 'B' }) })).toBe(false);
+    expect(answerAllowed(src, { deviceId: W2, device: fact({ category: 'RING', tier: 'C' }) })).toBe(false);
+    const phone = fact({ category: 'PHONE', onBody: null });
+    expect(answerAllowed(src, { deviceId: PHONE, device: phone })).toBe(false);
+    expect(answerAllowed(src, { deviceId: PHONE, device: phone, screen: 'IM_OK' })).toBe(true);
     expect(answerAllowed(src, { deviceId: PHONE, role: 'PHONE', screen: 'IM_OK' })).toBe(true);
     expect(answerAllowed([], { deviceId: W2 })).toBe(true);
   });

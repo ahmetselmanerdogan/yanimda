@@ -15,15 +15,17 @@ import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog, event, supervisorAlert } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
-import { isOnline } from '../device/device-class';
+import { deviceSummaries } from '../event/coverage.service';
 import { ladderOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
+import { ringTargets } from './ladder';
 
 type Rows<T> = { rows: T[] };
 
 /**
  * T-087 (docs/07 S5.2, S5.3) merdivenin sistem adımları — operatör beklenmeden:
- *  - T+0 (P1 kuyruğa ilk düştüğünde): çevrimiçi, takılı A sınıfı cihazlar ve yaşlının telefonu çaldırılır (yüksek
- *    öncelikli push; telefona kritik bildirim). Aile bildirimi (F-EVT + SMS) notify modülünde zaten bu geçişte.
+ *  - T+0 (P1 kuyruğa ilk düştüğünde): çevrimiçi, şarjda olmayan, çıkarılmamış A sınıfı giyilebilirler ve yaşlının
+ *    telefonu çaldırılır (yüksek öncelikli push; telefona kritik bildirim). Cihaz durumu T-085 kapsama olgularından.
+ *    Aile bildirimi (F-EVT + SMS) notify modülünde zaten bu geçişte.
  *  - 90 sn üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED; amir web push + konsol).
  *  - 180 sn üstlenilmeyen P1 → 1. yakına sesli mesaj (V-NO-OPERATOR) — yalnız kural paketi bayrağı açıksa
  *    (sahip kararı, varsayılan kapalı).
@@ -84,10 +86,7 @@ export class LadderService implements OnModuleInit, OnModuleDestroy {
       .where(and(eq(auditLog.entityId, ev.id), eq(auditLog.action, 'ladder.ring_all')))
       .limit(1);
     if (done) return 0; // tekrar teslim
-    const { offlineSkipMin } = ladderOf(this.rules.current());
-    const targets = (await this.devices.ladderDevices(ev.personId)).filter(
-      (d) => isOnline(d, now, offlineSkipMin) && ((d.tier === 'A' && d.onWrist !== false) || d.voice === 'ELDER_PHONE'),
-    );
+    const targets = ringTargets(await deviceSummaries(this.db, this.rules.current(), ev.personId, now));
     let rung = 0;
     for (const d of targets) {
       try {

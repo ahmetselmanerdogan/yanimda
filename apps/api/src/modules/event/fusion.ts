@@ -1,8 +1,11 @@
 import type { DeviceRole, Signal } from '@yanimda/contracts';
 
+import { type DeviceFact, isAlarmWearable } from './coverage';
+
 /**
  * T-088 (docs/07 S3.3–S3.7) sinyal birleştirme kuralları — saf fonksiyonlar, olay motoru cihaz modeli bilmez:
- * yalnız sunucunun doldurduğu cihaz rolünü (`signal.source.role`) ve kural paketindeki süreleri kullanır.
+ * cihazın kategori / sınıf / takılı / şarj bilgisi T-085 kapsama olgularından (sinyalin `source` alanı: adaptör +
+ * katalog), süreler kural paketinden.
  */
 
 /** Olay konumu + ölçüm anı (birleştirme için). */
@@ -15,26 +18,39 @@ export function corroborates(eventCreatedAt: string, at: string, windowSec: numb
 }
 
 /**
- * S3.6 "İyiyim" kimden kabul edilir: alarmı açan (veya ona eklenen) cihazdan; takılı A sınıfı cihazdan (bugün saat
- * rolü — T-085 kategori sütunu gelince oradan); telefonda yalnız özel "İyiyim" ekranından (`payload.screen = IM_OK`).
- * Aile uygulaması sinyal gönderemez (yalnız cihaz token'ı); B/C sınıfı cihazlar sinyal yolundan zaten gelmez.
- * Kaynak cihaz listesi olmayan eski olaylarda (0031 öncesi) her cihaz kabul edilir.
+ * S3.3 + S3.4: doğrulama iki farklı, şarjda olmayan cihazın düşmesini ister. Şarjdaki cihazın düşmesi (şarjından
+ * düşen saat en sık yanlış düşmedir) doğrulama sayılmaz; sinyal kendi "şarjda" bilgisini taşıyorsa zaten yok sayılır
+ * (T-086), burada son bilinen şarj durumu da hesaba katılır — olay açılır ama soru süresi kısalmaz.
+ */
+export function corroborationPair(sourceDeviceIds: string[], by: string, charging: ReadonlySet<string>): boolean {
+  return !charging.has(by) && sourceDeviceIds.some((d) => d !== by && !charging.has(d));
+}
+
+/** Takılı, şarjda olmayan A sınıfı giyilebilir (kapsama olgusu; takılı bilgisi bilinmiyorsa takılı sayılmaz). */
+export const wornAlarm = (d: Pick<DeviceFact, 'category' | 'tier' | 'onBody' | 'charging'>) =>
+  isAlarmWearable(d) && d.onBody === true && !d.charging;
+
+/**
+ * S3.6 "İyiyim" kimden kabul edilir: alarmı açan (veya ona eklenen) cihazdan; takılı A sınıfı giyilebilirden (saat,
+ * kolye — kapsama olgusu, sinyal uygulandıktan sonra: sinyaldeki takılı bilgisi, yoksa son bilinen); telefonda yalnız
+ * özel "İyiyim" ekranından (`payload.screen = IM_OK`). Aile uygulaması sinyal gönderemez (yalnız cihaz token'ı);
+ * B/C sınıfı cihaz ve şarjdaki saat iptal edemez. Kaynak cihaz listesi olmayan eski olaylarda (0031 öncesi) her cihaz
+ * kabul edilir.
  */
 export type AnswerSource = {
   deviceId: string;
+  /** Sinyali gönderen cihazın kapsama olgusu (yoksa yalnız rol bilinir). */
+  device?: Pick<DeviceFact, 'category' | 'tier' | 'onBody' | 'charging'>;
   role?: DeviceRole;
-  /** Sinyaldeki takılı bilgisi; yoksa cihazın son bilinen durumu (worn). */
-  onWrist?: boolean;
-  worn?: boolean | null;
   screen?: unknown;
 };
 export const IM_OK_SCREEN = 'IM_OK';
 
 export function answerAllowed(sourceDeviceIds: string[], a: AnswerSource): boolean {
   if (!sourceDeviceIds.length || sourceDeviceIds.includes(a.deviceId)) return true;
-  if (a.role === 'WATCH') return a.onWrist ?? a.worn === true;
-  if (a.role === 'PHONE') return a.screen === IM_OK_SCREEN;
-  return false;
+  if (a.device && wornAlarm(a.device)) return true;
+  const phone = a.device ? a.device.category === 'PHONE' : a.role === 'PHONE';
+  return phone && a.screen === IM_OK_SCREEN;
 }
 
 /**
