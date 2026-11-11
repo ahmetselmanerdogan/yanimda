@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 5
+version: 7
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -61,6 +61,23 @@ charging:
 #  cihaz hareketi yok. Hastanede / seyahatte modunda (S4.10) hiçbiri çalışmaz; SOS ve düşme her zaman çalışır.
 coverageNone:
   { remindMin: 20, familyMin: 45, eventMin: 60, welfareSilentH: 6, welfareDroppedH: 2, welfareNoMovementH: 24 }
+# T-085 OEM ortakları (docs/07 S2.7): ortak başına son latencyWindowMin dakikanın gecikmesi (üretici olay anı → bizim
+# alım anımız). En az minSamples örnekle p99 latencyP99Sec'i aşarsa amire O-OEM-LATENCY (bozulma başına bir) ve o
+# ortağın cihazları kapsamada "zayıf" (PARTNER_LATENCY); p99 eşiğin altına inince bozulma kapanır.
+partner: { latencyP99Sec: 60, latencyWindowMin: 60, minSamples: 20 }
+# T-085 / T-086 uzun ömürlü pilli kolye (S4.9): katalogdaki pil ömrü longLifeBatteryH ve üstü olan cihazda yaşlıya pil
+# bildirimi gitmez (W-BAT-*); haftalık pil raporu %workOrderPct'nin altında veya tahmini bitime workOrderDaysBeforeEnd
+# gün kaldıysa operasyon iş emri (replaceWithinDays gün içinde yerinde değişim) + aileye F-PENDANT-BATTERY. Pil
+# replacedPct ve üstüne çıkınca açık iş emri kapanır. testReminderDays gündür düğme testi yoksa aylık test hatırlatması
+# (P-PENDANT-TEST). Üreticinin "N gündür takılmadı" bildirimi notWornMinDays ve üstündeyse KAPSAMA BOŞLUĞU P3 (NOT_WORN).
+pendant:
+  longLifeBatteryH: 2000
+  workOrderPct: 20
+  workOrderDaysBeforeEnd: 30
+  replaceWithinDays: 14
+  replacedPct: 80
+  testReminderDays: 30
+  notWornMinDays: 3
 rules:
   - type: SOS
     priority: 1
