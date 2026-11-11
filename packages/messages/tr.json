@@ -3708,5 +3708,122 @@
   "O-UI-SUP-COVERAGE-TOTAL": {
     "channel": "console",
     "text": "Toplam {n} kişi"
+  },
+  "O-TYPE-SPO2_LOW": {
+    "channel": "console",
+    "text": "Alışılmadık oksijen okuması"
+  },
+  "O-SCRIPT-VITALS": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Cihazınız alışılmadık bir okuma gösterdi, sizi kontrol etmek için arıyorum. Nasılsınız? Başınız dönüyor mu, nefes almakta zorlanıyor musunuz, göğsünüzde ağrı var mı?"
+  },
+  "O-UI-VITALS": {
+    "channel": "console",
+    "text": "Değerler (son 2 saat)"
+  },
+  "O-UI-VITALS-HR": {
+    "channel": "console",
+    "text": "Nabız"
+  },
+  "O-UI-VITALS-SPO2": {
+    "channel": "console",
+    "text": "Oksijen"
+  },
+  "O-UI-VITALS-BASELINE": {
+    "channel": "console",
+    "text": "Kişisel taban: {value}"
+  },
+  "O-UI-VITALS-NO-BASELINE": {
+    "channel": "console",
+    "text": "Kişisel taban henüz yok (genel eşikler)"
+  },
+  "O-UI-VITALS-NO-DATA": {
+    "channel": "console",
+    "text": "Son 2 saatte okuma yok"
+  },
+  "O-UI-VITALS-QUALITY-Q1": {
+    "channel": "console",
+    "text": "Kalite: iki cihaz uyuşuyor"
+  },
+  "O-UI-VITALS-QUALITY-Q2": {
+    "channel": "console",
+    "text": "Kalite: bilek optik"
+  },
+  "O-UI-VITALS-QUALITY-Q3": {
+    "channel": "console",
+    "text": "Kalite: yalnız eğilim (yüzük / kulak)"
+  },
+  "O-UI-VITALS-HIGHLIGHT": {
+    "channel": "console",
+    "text": "Düşme sırasında alışılmadık nabız okuması"
+  },
+  "O-UI-VITALS-NOTE": {
+    "channel": "console",
+    "text": "Cihaz okumasıdır, bir değerlendirme değildir. Yalnız olay açıkken görünür; dışa aktarılmaz."
+  },
+  "O-UI-VITALS-CHART": {
+    "channel": "console",
+    "text": "{kind}: son 2 saat, 5 dakikalık ortancalar; en düşük {min}, en yüksek {max}"
+  },
+  "O-UI-VITAL-RULE-LOW_HR_STILL": {
+    "channel": "console",
+    "text": "Düşük nabız ve hiç hareket yok"
+  },
+  "O-UI-VITAL-RULE-LOW_HR": {
+    "channel": "console",
+    "text": "Uzun süre düşük nabız"
+  },
+  "O-UI-VITAL-RULE-HIGH_HR": {
+    "channel": "console",
+    "text": "Dinlenirken uzun süre yüksek nabız"
+  },
+  "O-UI-VITAL-RULE-HR_BASELINE_DEVIATION": {
+    "channel": "console",
+    "text": "Nabız kişisel tabandan uzak"
+  },
+  "O-UI-VITAL-RULE-SPO2_LOW": {
+    "channel": "console",
+    "text": "Düşük oksijen okuması"
+  },
+  "O-UI-VITAL-RULE-SPO2_LOW_HR": {
+    "channel": "console",
+    "text": "Düşük oksijen okuması ve yüksek nabız"
+  },
+  "O-UI-VITAL-RULE-FALL_HR_HIGHLIGHT": {
+    "channel": "console",
+    "text": "Düşme sırasında alışılmadık nabız"
+  },
+  "O-VITAL-UNCLAIMED": {
+    "channel": "console",
+    "text": "Değer olayı ({type}) 15 dakikadır üstlenilmedi. Amir: üstlenin ya da bir operatöre verin.",
+    "action": "Üstlen"
+  },
+  "O-UI-DEV-CAT-SENSOR": {
+    "channel": "console",
+    "text": "Ölçüm cihazı"
+  },
+  "F-UI-TYPE-SPO2_LOW": {
+    "channel": "family",
+    "text": "Oksijen okuması uyarısı"
+  },
+  "F-VITAL-TREND": {
+    "channel": "family",
+    "text": "{name}'ın dinlenme nabzı bir süredir kendi alışılmış değerinden uzak. Merak ederseniz kendisini arayabilirsiniz."
+  },
+  "F-VITAL-RESULT": {
+    "channel": "family",
+    "text": "{name} için alışılmadık bir cihaz okuması nedeniyle kontrol araması yapıldı. Operatörümüz sonucu not etti; ayrıntı için uygulamaya bakın."
+  },
+  "F-VITAL-WELLNESS-NOTE": {
+    "channel": "family",
+    "text": "Sağlık eğilimleri bilgi amaçlıdır: cihaz okumalarına dayanır ve bir sağlık değerlendirmesinin yerini tutmaz. Acil bir durumda 112'yi arayın."
+  },
+  "F-UI-VITAL-TRENDS": {
+    "channel": "family",
+    "text": "Haftalık sağlık eğilimleri"
+  },
+  "F-UI-VITAL-SKIN-TEMP": {
+    "channel": "family",
+    "text": "Cilt sıcaklığı iki gece üst üste alışılmışın üzerindeydi"
   }
 }
