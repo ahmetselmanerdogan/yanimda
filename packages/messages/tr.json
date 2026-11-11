@@ -3450,5 +3450,165 @@
   "O-UI-GAP-CONNECTION_LOST": {
     "channel": "console",
     "text": "Cihazlardan sinyal yok"
+  },
+  "O-UI-GAP-REASON": {
+    "channel": "console",
+    "text": "Boşluk nedeni: {reason}"
+  },
+  "O-UI-SCRIPT-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama boşluğu araması"
+  },
+  "O-UI-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama"
+  },
+  "O-UI-COVERAGE-REASON-WATCH_CHARGING": {
+    "channel": "console",
+    "text": "Saat şarjda"
+  },
+  "O-UI-COVERAGE-REASON-NO_ALARM_DEVICE_WORN": {
+    "channel": "console",
+    "text": "Alarm cihazı takılı değil"
+  },
+  "O-UI-COVERAGE-REASON-ALARM_DEVICE_OFFLINE": {
+    "channel": "console",
+    "text": "Alarm cihazı bağlı değil"
+  },
+  "O-UI-COVERAGE-REASON-PHONE_OFFLINE": {
+    "channel": "console",
+    "text": "Telefon bağlı değil"
+  },
+  "O-UI-COVERAGE-REASON-NIGHT_WINDOW": {
+    "channel": "console",
+    "text": "Uyku saatleri"
+  },
+  "O-UI-COVERAGE-REASON-ON_HOLD": {
+    "channel": "console",
+    "text": "Hastanede / seyahatte"
+  },
+  "O-UI-DEV-CAT-WATCH": {
+    "channel": "console",
+    "text": "Saat"
+  },
+  "O-UI-DEV-CAT-PHONE": {
+    "channel": "console",
+    "text": "Telefon"
+  },
+  "O-UI-DEV-CAT-PENDANT": {
+    "channel": "console",
+    "text": "Kolye"
+  },
+  "O-UI-DEV-CAT-RING": {
+    "channel": "console",
+    "text": "Yüzük"
+  },
+  "O-UI-DEV-CAT-EARBUD": {
+    "channel": "console",
+    "text": "Kulaklık"
+  },
+  "O-UI-DEV-CAT-EARRING": {
+    "channel": "console",
+    "text": "Küpe"
+  },
+  "O-UI-DEV-CAT-HOME_UNIT": {
+    "channel": "console",
+    "text": "Ev ünitesi"
+  },
+  "O-UI-DEV-CAT-CLOUD": {
+    "channel": "console",
+    "text": "Bulut kaynağı"
+  },
+  "O-UI-DEV-BATTERY": {
+    "channel": "console",
+    "text": "Pil %{pct}"
+  },
+  "O-UI-DEV-CHARGING": {
+    "channel": "console",
+    "text": "Şarjda"
+  },
+  "O-UI-DEV-WORN": {
+    "channel": "console",
+    "text": "Takılı"
+  },
+  "O-UI-DEV-NOT-WORN": {
+    "channel": "console",
+    "text": "Takılı değil"
+  },
+  "O-UI-DEV-ONLINE": {
+    "channel": "console",
+    "text": "Bağlı"
+  },
+  "O-UI-DEV-OFFLINE": {
+    "channel": "console",
+    "text": "Bağlı değil"
+  },
+  "O-UI-DEV-SEEN-NOW": {
+    "channel": "console",
+    "text": "az önce görüldü"
+  },
+  "O-UI-DEV-SEEN-MIN": {
+    "channel": "console",
+    "text": "{n} dk önce görüldü"
+  },
+  "O-UI-DEV-SEEN-HOUR": {
+    "channel": "console",
+    "text": "{n} sa önce görüldü"
+  },
+  "O-UI-DEV-SEEN-NEVER": {
+    "channel": "console",
+    "text": "Hiç görülmedi"
+  },
+  "O-UI-DEV-VOICE": {
+    "channel": "console",
+    "text": "Sesli arama {n}"
+  },
+  "O-UI-DEV-VOICE-MANUAL": {
+    "channel": "console",
+    "text": "Sesli arama {n} (elle)"
+  },
+  "O-UI-DEV-SOURCE": {
+    "channel": "console",
+    "text": "Olayı açtı"
+  },
+  "O-UI-DEV-CANCELLED": {
+    "channel": "console",
+    "text": "İptal etti"
+  },
+  "O-UI-DEV-NONE": {
+    "channel": "console",
+    "text": "Kayıtlı cihaz yok"
+  },
+  "O-UI-DEV-RING-ALL": {
+    "channel": "console",
+    "text": "Tümünü çaldır"
+  },
+  "O-UI-DEV-RING": {
+    "channel": "console",
+    "text": "Bu cihazı çaldır"
+  },
+  "O-UI-DEV-PROMPT": {
+    "channel": "console",
+    "text": "Soru gönder"
+  },
+  "O-UI-DEV-LOCATE": {
+    "channel": "console",
+    "text": "Konum iste"
+  },
+  "O-UI-DEV-SENT": {
+    "channel": "console",
+    "text": "{device}: gönderildi"
+  },
+  "O-UI-DEV-UNSUPPORTED": {
+    "channel": "console",
+    "text": "{device} bu komutu desteklemiyor"
+  },
+  "O-UI-SUP-COVERAGE": {
+    "channel": "console",
+    "text": "Filo kapsaması"
+  },
+  "O-UI-SUP-COVERAGE-TOTAL": {
+    "channel": "console",
+    "text": "Toplam {n} kişi"
   }
 }

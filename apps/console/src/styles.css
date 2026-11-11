@@ -1178,3 +1178,86 @@ button.link {
   color: #8ab4ff;
   text-decoration: underline;
 }
+
+/* T-089 (S7.1) cihaz şeridi ve kapsama rozeti; (S7.2) amir filo kapsaması */
+.devices {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.devices-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.devices-head h2 {
+  margin: 0;
+}
+.devices-head .ring-all {
+  margin-left: auto;
+}
+.coverage-badge {
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+}
+.coverage-badge.c-FULL {
+  border-color: var(--safe);
+}
+.coverage-badge.c-BASIC,
+.coverage-badge.c-PHONE_ONLY,
+.coverage-badge.c-NIGHT {
+  border-color: var(--attention);
+  color: var(--attention);
+}
+.coverage-badge.c-NONE {
+  background: var(--help);
+  border-color: var(--help);
+  color: #fff;
+}
+.gap-reason {
+  margin: 8px 0 0;
+  font-weight: 600;
+}
+.device-strip {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.device-strip .device {
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.device-strip .device.offline {
+  opacity: 0.75;
+}
+.device-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+.badge-voice,
+.badge-source {
+  border-radius: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--brand);
+}
+.device-actions {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.sup-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
