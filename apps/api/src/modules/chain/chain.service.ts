@@ -7,12 +7,13 @@ import {
   type StepAssessment,
   type StepResult,
   TOPICS,
+  type WelfareReason,
 } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { contact } from '../../db/schema';
+import { auditLog, contact } from '../../db/schema';
 import { deviceSummaries } from '../event/coverage.service';
 import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
 import {
@@ -483,6 +484,7 @@ export class ChainService {
       possibleEmergency: !impaired && !!run?.steps.some((s) => s.result === 'SILENT'),
       hearingSpeechImpaired: impaired,
       platformSosFlow: await platformSosFlow(q, ev.sourceSignalIds),
+      welfareReason: ev.type === 'WELFARE_CHECK' ? await welfareReasonOf(q, ev.id) : null,
     };
   }
 
@@ -573,6 +575,17 @@ export class ChainService {
       ...(reason ? { reason } : {}),
     };
   }
+}
+
+/** T-087: YERİNDE KONTROL nedeni (olay açılırken / yükseltilirken denetime yazılır). */
+async function welfareReasonOf(q: Db | Tx, eventId: string): Promise<WelfareReason | null> {
+  const [a] = await q
+    .select({ data: auditLog.data })
+    .from(auditLog)
+    .where(and(eq(auditLog.entityId, eventId), eq(auditLog.action, 'event.welfare_raised')))
+    .orderBy(desc(auditLog.id))
+    .limit(1);
+  return ((a?.data as { reason?: WelfareReason } | null)?.reason as WelfareReason | undefined) ?? null;
 }
 
 /** S3.3: doğrulayan cihaz (alarmı açandan sonraki ilk farklı cihaz); doğrulanmamışsa null. */

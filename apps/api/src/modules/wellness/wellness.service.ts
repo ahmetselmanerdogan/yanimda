@@ -19,6 +19,7 @@ import { auditLog, checkCall, checkPlan, event, protectedPerson } from '../../db
 import { subscriptionProtection } from '../billing/subscription-protection';
 import { EventService } from '../event/event.service';
 import { DEFAULT_TIMEZONE } from '../event/night';
+import { coverageNoneOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import type { Actor } from '../profile/contacts';
 import { ProfileService } from '../profile/profile.service';
 import { type Frequency, nextDue } from './schedule';
@@ -31,6 +32,8 @@ import { type Frequency, nextDue } from './schedule';
  *    bildirimi ve/veya operatör kuyruğunda P4 geri arama (CALLBACK, kaynak `wellness:<id>`); pencere dolunca
  *    KAÇIRILDI + amire O-WELLNESS-MISSED.
  *  - Sonuç: geri arama olayı kapanınca (yan şerit) iyi → DONE_OK, acil → DONE_HELP, ulaşılamadı → MISSED (+ uyarı).
+ *  - T-087 (docs/07 S5.4): iki denemede ulaşılamayan (aileye F-WELLNESS-MISSED giden) aramadan sonra kural paketinin
+ *    `coverageNone.welfareNoMovementH` (24 sa) süresince hiçbir cihaz hareketi yoksa YERİNDE KONTROL (P2).
  *  - Uyum: kişi ve merkez bazında planlanan / yapılan / kaçırılan (yönetim paneli).
  * Log'a yalnız kimlik; not ve ad yazılmaz.
  */
@@ -91,13 +94,17 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Wellness');
   private timer?: NodeJS.Timeout;
   private unsub?: () => void;
+  private readonly rules: RulesProvider;
 
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(OutboxBus) private readonly outbox: OutboxBus,
     @Inject(EventService) private readonly events: EventService,
     @Optional() @Inject(ProfileService) private readonly profile?: ProfileService,
-  ) {}
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+  ) {
+    this.rules = rules ?? staticRules(loadRulePack());
+  }
 
   onModuleInit() {
     this.subscribe();
@@ -215,7 +222,40 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
             .catch((e) => this.log.warn(`Geri arama kapatılamadı: ${safeError(e)}`));
       }
     }
+    n += await this.welfareSweep(now);
     if (n) this.outbox.notifyCommitted();
+    return n;
+  }
+
+  /**
+   * T-087 (S5.4): son `welfareNoMovementH` saatte iki denemede ulaşılamayan (MISSED / UNREACHABLE) arama ve aynı sürede
+   * hiçbir cihaz hareketi (adım, takma/çıkarma, şarj, düğme, düşme, cevap) yoksa YERİNDE KONTROL. Kaynak
+   * `welfare-wellness:<dönem>`: dönem başına bir; açılan olay sayısı. Hastanede / seyahatte modunda olay motoru açmaz.
+   */
+  async welfareSweep(now = new Date()): Promise<number> {
+    const hours = coverageNoneOf(this.rules.current()).welfareNoMovementH;
+    const from = new Date(now.getTime() - hours * 3_600_000).toISOString();
+    const rows = (
+      (await this.db.execute(sql`
+        SELECT k.id::text AS id, k.protected_person_id::text AS person, k.completed_at
+        FROM event.check_call k
+        WHERE k.status = 'MISSED' AND k.outcome = 'UNREACHABLE' AND k.completed_at > ${from}::timestamptz
+          AND k.completed_at <= ${now.toISOString()}::timestamptz
+          AND NOT EXISTS (
+            SELECT 1 FROM signal.signal s
+            WHERE s.protected_person_id = k.protected_person_id::text AND s.time > ${from}::timestamptz
+              AND (s.kind IN ('ON_BODY', 'OFF_BODY', 'CHARGE_START', 'CHARGE_END', 'SOS', 'FALL', 'OK', 'CANCEL',
+                              'CALLBACK_REQUEST', 'TEST')
+                   OR (s.kind = 'STEPS' AND s.value > 0)))`)) as unknown as Rows<{
+        id: string;
+        person: string;
+        completed_at: Date | string;
+      }>
+    ).rows;
+    let n = 0;
+    for (const r of rows)
+      if (await this.events.raiseWelfare(r.person, 'NO_MOVEMENT', `welfare-wellness:${r.id}`, new Date(r.completed_at)))
+        n++;
     return n;
   }
 

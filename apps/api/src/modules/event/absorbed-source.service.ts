@@ -13,6 +13,9 @@ import { auditLog, event } from '../../db/schema';
 const SWEEP_SOURCES: [prefix: string, type: EventType][] = [
   ['coverage-gap:', 'COVERAGE_GAP'],
   ['coverage-none:', 'COVERAGE_GAP'],
+  // T-087 YERİNDE KONTROL: kapsama zamanlayıcısı (welfare:) ve kaçırılan yanınızdayız araması (welfare-wellness:).
+  ['welfare:', 'WELFARE_CHECK'],
+  ['welfare-wellness:', 'WELFARE_CHECK'],
   ['battery-dead:', 'BATTERY_DEAD'],
   ['connection-lost:', 'CONNECTION_LOST'],
 ];

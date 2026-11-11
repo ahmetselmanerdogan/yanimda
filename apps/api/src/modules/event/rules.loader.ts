@@ -102,13 +102,18 @@ export interface ChargingParams {
   /** Gece penceresi bittikten sonra zamanlayıcıların yeniden işlemeye başladığı süre (uyanış + 30 dk). */
   resumeAfterWakeMin?: number;
 }
-/** T-086 (S4.7): hiçbir SOS yolu yokken (uyanık) dk. welfare* T-087 (ulaşılamama merdiveni) içindir. */
+/**
+ * T-086 (S4.7): hiçbir SOS yolu yokken (uyanık) dk — remindMin'de hatırlatma + yaşlıya otomatik sesli arama.
+ * T-087 YERİNDE KONTROL (P2) saatleri: welfareDroppedH takılı cihaz birden sustu, welfareSilentH tüm cihazlar sessiz
+ * (ikisi de uyanık süre), welfareNoMovementH yanınızdayız araması cevapsız + hareket yok (S5.4).
+ */
 export interface CoverageNoneParams {
   remindMin: number;
   familyMin: number;
   eventMin: number;
-  welfareSilentH?: number;
-  welfareDroppedH?: number;
+  welfareSilentH: number;
+  welfareDroppedH: number;
+  welfareNoMovementH: number;
 }
 export interface RulePack {
   country: string;
@@ -123,7 +128,7 @@ export interface RulePack {
   coverage?: CoverageParams;
   battery?: BatteryParams;
   charging?: ChargingParams;
-  coverageNone?: CoverageNoneParams;
+  coverageNone?: Partial<CoverageNoneParams> & Pick<CoverageNoneParams, 'remindMin' | 'familyMin' | 'eventMin'>;
   rules: Rule[];
 }
 
@@ -173,11 +178,21 @@ export const DEFAULT_CHARGING: ChargingParams = {
   intentMin: 90,
   resumeAfterWakeMin: 30,
 };
-export const DEFAULT_COVERAGE_NONE: CoverageNoneParams = { remindMin: 20, familyMin: 45, eventMin: 60 };
+export const DEFAULT_COVERAGE_NONE: CoverageNoneParams = {
+  remindMin: 20,
+  familyMin: 45,
+  eventMin: 60,
+  welfareSilentH: 6,
+  welfareDroppedH: 2,
+  welfareNoMovementH: 24,
+};
 export const coverageOf = (pack: RulePack): CoverageParams => pack.coverage ?? DEFAULT_COVERAGE;
 export const batteryOf = (pack: RulePack): BatteryParams => pack.battery ?? DEFAULT_BATTERY;
 export const chargingOf = (pack: RulePack): ChargingParams => pack.charging ?? DEFAULT_CHARGING;
-export const coverageNoneOf = (pack: RulePack): CoverageNoneParams => pack.coverageNone ?? DEFAULT_COVERAGE_NONE;
+export const coverageNoneOf = (pack: RulePack): CoverageNoneParams => ({
+  ...DEFAULT_COVERAGE_NONE,
+  ...pack.coverageNone,
+});
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {

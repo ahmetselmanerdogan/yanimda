@@ -18,6 +18,8 @@ export interface PersonSettings extends SleepWindow {
   learningModeUntil: Date | null;
   /** T-061: düşme sorusu cevap süresi (sn); null → kural paketi. */
   fallPromptSec: number | null;
+  /** S4.10 "hastanede / seyahatte" modunun bitişi (yoksa null); bu ana kadar kapsama uyarıları durur. */
+  holdUntil: Date | null;
 }
 
 /**
@@ -48,12 +50,12 @@ export class ProtectionService {
   }
 
   /**
-   * Kişiye özel ayarlar: gece penceresi, hareketsizlik eşiği (T-070; yoksa null = kural varsayılanı) ve öğrenme
-   * modu bitişi (profile.protected_person.learning_mode_until). Açık transaction içinden çağrılırken `tx` verilmeli.
+   * Kişiye özel ayarlar: gece penceresi, hareketsizlik eşiği (T-070; yoksa null = kural varsayılanı), öğrenme
+   * modu bitişi (profile.protected_person.learning_mode_until) ve "hastanede / seyahatte" modu bitişi (hold_until). Açık transaction içinden çağrılırken `tx` verilmeli.
    */
   async settingsOf(protectedPersonId: string, tx: Pick<Db, 'execute'> = this.db): Promise<PersonSettings> {
     const r = (await tx.execute(sql`
-      SELECT p.timezone, p.learning_mode_until,
+      SELECT p.timezone, p.learning_mode_until, p.hold_until,
              t.sleep_start::text AS start, t.sleep_end::text AS end, t.inactivity_min, t.fall_prompt_sec
       FROM (SELECT 1) one
       LEFT JOIN profile.protected_person p ON p.id::text = ${protectedPersonId}
@@ -61,6 +63,7 @@ export class ProtectionService {
       rows: {
         timezone: string | null;
         learning_mode_until: Date | string | null;
+        hold_until: Date | string | null;
         start: string | null;
         end: string | null;
         inactivity_min: number | null;
@@ -75,6 +78,7 @@ export class ProtectionService {
       inactivityMin: row?.inactivity_min ?? null,
       learningModeUntil: row?.learning_mode_until ? new Date(row.learning_mode_until) : null,
       fallPromptSec: row?.fall_prompt_sec ?? null,
+      holdUntil: row?.hold_until ? new Date(row.hold_until) : null,
     };
   }
 
