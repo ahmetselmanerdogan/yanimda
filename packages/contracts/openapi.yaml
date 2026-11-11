@@ -40,6 +40,10 @@ paths:
         ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı; iptal edilmiş/kayıtsız/başka
         kişiye geçmiş saatin sinyali `DEVICE_NOT_BRIDGED`). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
+        T-092: telefon token'ı `POST /devices/bridged` ile bu telefona bağlanmış etkin BLE cihazların sinyallerini de
+        cihazın kimliğiyle iletir; yalnız model profilindeki türler (diğerleri `UNSUPPORTED_SIGNAL`). SPO2 (value %)
+        ve SKIN_TEMP_DEVIATION (value °C) yeni türlerdir; değer kuralları bayrakla kapalıyken (varsayılan) HEART_RATE,
+        STEPS, SPO2 ve SKIN_TEMP_DEVIATION yalnız kaydedilir.
       responses:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '202':
@@ -2398,6 +2402,237 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '502': { $ref: '#/components/responses/Problem' }
 
+  # ---- T-092 BLE köprülü cihazlar (docs/07 S2.1 B sınıfı, S4.8, S7.5) — yalnız sunucu sözleşmesi ----
+  /devices/bridged:
+    post:
+      summary: Yaşlının telefonu BLE cihazı kaydeder (nabız ölçer, oksimetre, termometre, BLE kolye). T-092
+      operationId: registerBridgedDevice
+      security: [{ deviceToken: [] }]
+      description: |
+        Yalnız yaşlının telefonu (ANDROID_PHONE / IOS_PHONE cihaz token'ı); saat veya başka cihaz 403. Cihaz token'ın
+        kişisine ve köprü telefona (`bridgeDeviceId` = telefonun kimliği) bağlanır; `connection_path = PHONE_BRIDGE`.
+
+        **Adres:** ham BLE MAC adresi asla gönderilmez (gönderilirse 400). İstemci adresi büyük harf, iki nokta ayraçlı
+        biçime getirir ("C0:FF:EE:00:00:0A") ve SHA-256 özetini 64 haneli küçük harf hex olarak `addressHash`'e yazar.
+        Sunucu bunu da saklamaz: HMAC-SHA256(sunucu anahtarı, "<telefonId>:<addressHash>") tutar (aynı cihaz başka
+        telefonda başka değer).
+
+        **İdempotent:** (telefon, addressHash) başına tek etkin kayıt. Aynı istek yeniden → 200 ve aynı `deviceId`
+        (verilirse `name` güncellenir). Aynı adres başka modelle → 409. Kaldırılmış (DELETE) adres yeniden kaydedilirse
+        yeni `deviceId` alır. Kişi başına cihaz sınırları geçerlidir (S1.7: en çok 6 etkin cihaz, en çok 3 A sınıfı
+        giyilebilir) → 409 `code: F-DEVICE-LIMIT` (aileye bildirim).
+
+        **Model profilleri** (yanıttaki `signals`; telefon yalnız bunları iletebilir, diğerleri `UNSUPPORTED_SIGNAL`):
+        - `BLE_HR` (0x180D nabız ölçer; SENSOR, B): HEART_RATE, BATTERY, ON_BODY, OFF_BODY, HEARTBEAT
+        - `BLE_PULSE_OX` (0x1822 nabız oksimetre; SENSOR, B): SPO2, HEART_RATE, BATTERY, ON_BODY, OFF_BODY, HEARTBEAT
+        - `BLE_THERMO` (cilt sıcaklığı; SENSOR, B): SKIN_TEMP_DEVIATION, BATTERY, ON_BODY, OFF_BODY, HEARTBEAT
+        - `BLE_PENDANT` (BLE kolye; PENDANT, A): SOS, CANCEL, OK, TEST, BATTERY, ON_BODY, OFF_BODY, HEARTBEAT
+
+        B sınıfı cihazlar olay açmaz (değerleri bayrakla kapalı değer kurallarına girer, S6). BLE kolye A sınıfı SOS
+        açar ama düşme ve ses yeteneği yoktur; yalnız köprü telefon çevrimiçiyken korumaya sayılır (S4.8).
+
+        **Sinyal iletimi:** telefon mevcut `POST /signals` ucunu KENDİ token'ıyla, köprülü cihazın `deviceId`'si ve
+        kişinin `protectedPersonId`'si ile çağırır (saat köprüsüyle aynı yol). Sunucu her sinyali köprülü sayar
+        (`device.connectivity = BLE`); telefon 15 dk sessiz kalınca tüm köprülü cihazların kapsaması düşer. Kurallar:
+        - `device.onWrist`: sensör teması / takılı bilgisi (BLE HR "sensor contact" biti, oksimetrede parmak var).
+          Değer kuralları yalnız takılı ve ≥ 5 dk takılı cihazda çalışır; göndermeyen cihazın değeri hiç uyarı üretmez.
+        - `device.batteryPct`: cihazın pili (Battery Service 0x180F), `device.charging` biliniyorsa.
+        - `vital.quality` (Q1–Q3; sunucu modelin katalog kalitesinden iyisini kabul etmez) ve `vital.context`
+          (RESTING / ACTIVE / SLEEP) isteğe bağlı.
+        - `idempotencyKey`: cihaz kimliği + ölçüm anı gibi kararlı bir anahtar (telefon yeniden gönderirse tekrar
+          sayılır).
+        - Başka telefona bağlı, kaldırılmış veya başka kişinin köprülü cihazı → `DEVICE_NOT_BRIDGED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BridgedDeviceRegister' }
+            examples:
+              nabizOlcer:
+                summary: Göğüs bandı (BLE HR)
+                value:
+                  model: BLE_HR
+                  addressHash: 8f2e6c2b6a7f1f0f3d0c3b9a4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d
+                  name: Göğüs bandı
+              kolye:
+                summary: BLE kolye
+                value:
+                  { model: BLE_PENDANT, addressHash: 1b2c3d4e5f60718293a4b5c6d7e8f9011a2b3c4d5e6f708192a3b4c5d6e7f809 }
+      responses:
+        '201':
+          description: Yeni kayıt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BridgedDevice' }
+              examples:
+                yeni:
+                  value:
+                    deviceId: 0190c000-0000-7000-8000-00000000b1e1
+                    model: BLE_HR
+                    category: SENSOR
+                    tier: B
+                    signals: [HEART_RATE, BATTERY, ON_BODY, OFF_BODY, HEARTBEAT]
+                    bridgeDeviceId: 0190c000-0000-7000-8000-00000000f0f1
+                    nickname: Göğüs bandı
+                    createdAt: '2026-11-12T09:00:00Z'
+        '200':
+          description: Aynı telefon + adres zaten kayıtlı (aynı deviceId)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BridgedDevice' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Bu telefona bağlı etkin BLE cihazlar (telefon kendi listesini eşitler). T-092
+      operationId: listBridgedDevices
+      security: [{ deviceToken: [] }]
+      responses:
+        '200':
+          description: Etkin köprülü cihazlar (eskiden yeniye)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/BridgedDevice' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /devices/bridged/{deviceId}:
+    delete:
+      summary: Köprüyü kaldırır (eşleşme silindi / cihaz kayıp). T-092
+      operationId: unbridgeDevice
+      security: [{ deviceToken: [] }]
+      description: |
+        Yalnız bu telefona bağlı köprülü cihaz (başka telefonun / kişinin cihazı 404). Cihaz iptal edilir ve emekli
+        sayılır, kapsamadan hemen çıkar; sonraki sinyalleri `DEVICE_NOT_BRIDGED`. Zaten kaldırılmışsa yine 204.
+        Telefon kaldırılınca (`DELETE /devices/{telefonId}`) ona bağlı tüm köprülü cihazlar da kaldırılır.
+      parameters: [{ name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Kaldırıldı }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  # ---- T-092 değer kuralları (docs/07 S6) — BAYRAKLA KAPALI; kapalıyken bu uçlar 404 ----
+  /events/{id}/vitals:
+    get:
+      summary: Açık olayda değer grafiği (son 2 sa, 5 dk ortancalar, taban, kalite). T-092, S6.8
+      operationId: getEventVitals
+      security: [{ operatorToken: [] }]
+      description: |
+        Yalnız OPERATOR / SUPERVISOR ve yalnız olay açıkken (kapalı olay 403). Değer olayı (HEART_ANOMALY, SPO2_LOW)
+        veya değer kuralı / düşme vurgusu eklenmiş olay (ör. ulaşılamayınca hareketsizliğe yükseltilmiş olay, düşme +
+        alışılmadık nabız); diğer olaylar ve özellik kapalıyken 404. Dakika düzeyinde ham veri yok, dışa aktarma yok;
+        her erişim denetime yazılır (`vitals.viewed`, değer yazılmaz).
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Değer görünümü
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventVitals' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/trends/weekly:
+    get:
+      summary: Aile — haftalık sağlık eğilimleri ve "iyi" olmayan değer sonuçları. T-092, S6.8, S7.4
+      operationId: getWeeklyTrends
+      security: [{ userToken: [] }, { adminToken: [] }]
+      description: |
+        Aile üyesi (OWNER / MEMBER) kendi kişisi; başka ailenin kişisi 404. Günlük özetlerden haftalık ortanca (ham
+        veri yok), cilt sıcaklığı sapması gece sayısı, "iyi" olmayan (EMERGENCY / UNREACHABLE) değer olayları.
+        `noteCode` (F-VITAL-WELLNESS-NOTE) sağlık-amaçlı uyarı notudur; uygulama her zaman gösterir. Özellik kapalıyken
+        404.
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+        - { name: weeks, in: query, schema: { type: integer, minimum: 1, maximum: 13, default: 4 } }
+      responses:
+        '200':
+          description: Haftalık eğilimler (eskiden yeniye)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WeeklyTrends' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/vital-settings:
+    get:
+      summary: Kişiye özel değer ayarları (eşikler, KOAH profili, eğilim susturma). T-092, S6.7
+      operationId: getVitalSettings
+      security: [{ userToken: [] }, { adminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      responses:
+        '200':
+          description: Ayarlar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VitalSettings' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Kişiye özel eşik (aile onayı + doktor notu işareti) veya eğilim susturma — hesap sahibi. T-092, S6.7
+      operationId: setVitalSettings
+      security: [{ userToken: [] }, { adminToken: [] }]
+      description: |
+        `lowHr` / `highHr` / `spo2Low` / `copd: true` yalnız `familyConsent: true` ve `doctorNote: true` ile (yüklenmiş
+        doktor notunun işareti; belge içeriği tutulmaz, isteğe bağlı `doctorNoteRef` belge referansı). Eksikse 400.
+        null → genel eşiğe döner. `trendsMuted` aileye P4 eğilim bildirimini susturur (P3 olaylar susturulamaz).
+        MEMBER 403 (F-MEMBER-OWNER-ONLY). Değişiklik denetime yazılır (değerler ve referans yazılmaz).
+      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                lowHr: { type: [integer, 'null'], minimum: 25, maximum: 80 }
+                highHr: { type: [integer, 'null'], minimum: 90, maximum: 220 }
+                spo2Low: { type: [integer, 'null'], minimum: 70, maximum: 96 }
+                copd: { type: boolean }
+                trendsMuted: { type: boolean }
+                familyConsent: { type: boolean }
+                doctorNote: { type: boolean }
+                doctorNoteRef: { type: [string, 'null'], maxLength: 200 }
+            example: { lowHr: 36, familyConsent: true, doctorNote: true, doctorNoteRef: 'belge-2026-11-01' }
+      responses:
+        '200':
+          description: Güncel ayarlar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VitalSettings' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /supervisor/vital-reviews:
+    get:
+      summary: Amirin eşik incelemesi kuyruğu (haftalık kontrol sınırı, değerlerde yanlış alarm). T-092, S6.7
+      operationId: listVitalReviews
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: open, in: query, schema: { type: string, enum: ['1', '0'], default: '1' } }]
+      responses:
+        '200':
+          description: İncelemeler (değer içermez)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/VitalReview' } }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/vital-reviews/{id}/resolve:
+    post:
+      summary: Eşik incelemesini kapatır (denetimde). T-092
+      operationId: resolveVitalReview
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 500 } } }
+      responses:
+        '200':
+          description: Kapatılan inceleme
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VitalReview' }
+        '404': { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     deviceToken: { type: http, scheme: bearer }
@@ -2849,7 +3084,7 @@ components:
         fall: { type: boolean }
         voice: { type: boolean }
         location: { type: boolean }
-    DeviceCategory: { enum: [WATCH, PHONE, PENDANT, RING, EARBUD, EARRING, HOME_UNIT, CLOUD] }
+    DeviceCategory: { enum: [WATCH, PHONE, PENDANT, RING, EARBUD, EARRING, HOME_UNIT, CLOUD, SENSOR] }
     BodyLocation: { enum: [WRIST_LEFT, WRIST_RIGHT, NECK, CHEST, FINGER, EAR, POCKET, HOME] }
     DevicePush:
       type: object
@@ -3149,6 +3384,134 @@ components:
               actorId: { type: [string, 'null'] }
               source: { enum: [OPERATOR, EMS, FAMILY, SYSTEM] }
               note: { type: [string, 'null'] }
+    # ---- T-092 değer kuralları ve BLE köprülü cihazlar ----
+    BridgedDeviceModel: { enum: [BLE_HR, BLE_PULSE_OX, BLE_THERMO, BLE_PENDANT] }
+    BridgedDeviceRegister:
+      type: object
+      required: [model, addressHash]
+      additionalProperties: false
+      properties:
+        model: { $ref: '#/components/schemas/BridgedDeviceModel' }
+        addressHash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 (küçük harf hex) — büyük harf, iki nokta ayraçlı MAC'in özeti. Ham MAC 400.
+        name: { type: [string, 'null'], minLength: 1, maxLength: 40, description: Takma ad (aile / operatör görür) }
+    BridgedDevice:
+      type: object
+      required: [deviceId, model, category, tier, signals, bridgeDeviceId, nickname, createdAt]
+      properties:
+        deviceId: { type: string, format: uuid, description: Sinyallerde kullanılacak cihaz kimliği }
+        model: { $ref: '#/components/schemas/BridgedDeviceModel' }
+        category: { $ref: '#/components/schemas/DeviceCategory' }
+        tier: { enum: [A, B, C] }
+        signals:
+          type: array
+          description: Telefonun bu cihaz için iletebileceği sinyal türleri (model profili)
+          items: { type: string }
+        bridgeDeviceId: { type: string, format: uuid, description: Köprü telefon }
+        nickname: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    VitalRule:
+      enum: [LOW_HR_STILL, LOW_HR, HIGH_HR, HR_BASELINE_DEVIATION, SPO2_LOW, SPO2_LOW_HR, FALL_HR_HIGHLIGHT]
+    EventVitals:
+      type: object
+      required: [eventId, windowMin, bucketMin, series, baseline, quality, alerts, highlight, noteCode]
+      properties:
+        eventId: { type: string, format: uuid }
+        windowMin: { type: integer, description: Pencere (dk; kural paketi vitals.view.windowMin, 120) }
+        bucketMin: { type: integer, description: Ortanca dilimi (dk; 5) }
+        series:
+          type: array
+          items:
+            type: object
+            required: [kind, points]
+            properties:
+              kind: { enum: [HR, SPO2] }
+              points:
+                type: array
+                items:
+                  type: object
+                  required: [at, value, n]
+                  properties:
+                    at: { type: string, format: date-time, description: Dilimin başı }
+                    value: { type: number, description: Dilimdeki örneklerin ortancası }
+                    n: { type: integer }
+        baseline:
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                HR:
+                  type: object
+                  properties: { SLEEP: { type: number }, REST: { type: number }, ACTIVE: { type: number } }
+        quality: { oneOf: [{ enum: [Q1, Q2, Q3] }, { type: 'null' }] }
+        alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              rule: { $ref: '#/components/schemas/VitalRule' }
+              value: { type: number }
+              at: { type: string, format: date-time }
+        highlight: { type: boolean, description: Düşme sırasında alışılmadık nabız (P1 kalır) }
+        noteCode: { type: string, description: Konsolun gösterdiği uyarı notu (katalog kodu) }
+    WeeklyTrends:
+      type: object
+      required: [protectedPersonId, noteCode, weeks, outcomes]
+      properties:
+        protectedPersonId: { type: string, format: uuid }
+        noteCode: { type: string, example: F-VITAL-WELLNESS-NOTE }
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              weekStart: { type: string, format: date, description: Pazartesi (kişinin yerel günü) }
+              restingHr: { type: [number, 'null'] }
+              sleepHr: { type: [number, 'null'] }
+              spo2: { type: [number, 'null'] }
+              skinTempNightsAbove: { type: integer }
+              skinTempTwoNights: { type: boolean }
+              validDays: { type: integer }
+        outcomes:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string, format: uuid }
+              type: { type: string }
+              outcome: { enum: [EMERGENCY, UNREACHABLE] }
+              at: { type: string, format: date-time }
+    VitalSettings:
+      type: object
+      properties:
+        enabled: { type: boolean, description: Değer kuralları açık mı (bayrak) }
+        lowHr: { type: [integer, 'null'] }
+        highHr: { type: [integer, 'null'] }
+        spo2Low: { type: [integer, 'null'] }
+        copd: { type: boolean }
+        trendsMuted: { type: boolean }
+        familyConsentAt: { type: [string, 'null'], format: date-time }
+        doctorNote: { type: boolean }
+        learningUntil: { type: [string, 'null'], format: date-time, description: İlk örnekten sonra 14 gün }
+        defaults:
+          type: object
+          properties:
+            lowHr: { type: integer }
+            highHr: { type: integer }
+            spo2Low: { type: integer }
+            spo2LowCopd: { type: integer }
+    VitalReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        protectedPersonId: { type: string }
+        rule: { $ref: '#/components/schemas/VitalRule' }
+        reason: { enum: [WEEKLY_LIMIT, FALSE_ALARMS] }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        resolvedBy: { type: [string, 'null'] }
     QueueItem:
       type: object
       required: [eventId, type, priority, state, createdAt, lockedBy, isTest, person]
@@ -3162,6 +3525,7 @@ components:
         lockedBy: { type: [string, 'null'], description: Üstlenen operatör (token sub) }
         lockUntil: { type: [string, 'null'], format: date-time }
         isTest: { type: boolean }
+        headOfQueue: { type: boolean, description: 'T-092: aynı öncelikte önce (P2 değer kombinasyonu)' }
         person:
           oneOf:
             - type: 'null'

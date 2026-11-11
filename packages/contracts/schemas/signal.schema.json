@@ -26,7 +26,9 @@
         "CALLBACK_REQUEST",
         "TEST",
         "CHARGE_START",
-        "CHARGE_END"
+        "CHARGE_END",
+        "SPO2",
+        "SKIN_TEMP_DEVIATION"
       ]
     },
     "occurredAt": { "type": "string", "format": "date-time" },
@@ -54,6 +56,15 @@
           "description": "T-086: cihaz şu an şarjda mı. FALL sinyali charging=true taşıyorsa yok sayılır (S3.4)."
         }
       }
+    },
+    "vital": {
+      "type": "object",
+      "description": "T-092 (docs/07 S1.4, S6.3, S6.6): değer ölçümünün kalite sınıfı ve bağlamı (HEART_RATE, SPO2). quality: Q1 doğrulanmış, Q2 bilek optik, Q3 yüzük/kulak/küpe (sağlık-amaçlı) — sunucu modelin katalog kalitesinden iyisini kabul etmez, tek cihaz en çok Q2 sayılır. context: cihaz biliyorsa ölçüm bağlamı; yoksa sunucu uyku penceresi ve adımdan türetir. SPO2.value %, SKIN_TEMP_DEVIATION.value °C (cihazın gece tabanına göre sapma).",
+      "properties": {
+        "quality": { "enum": ["Q1", "Q2", "Q3"] },
+        "context": { "enum": ["RESTING", "ACTIVE", "SLEEP"] }
+      },
+      "additionalProperties": false
     },
     "payload": {
       "type": "object",
