@@ -51,6 +51,10 @@ for (const f of yamls.filter((f) => !f.startsWith('procedures.'))) {
   const noOperator = doc.ladder?.unclaimedVoiceContact?.phrase;
   if (noOperator && catalog[noOperator]?.channel !== 'voice')
     fail(`${f}: ladder.unclaimedVoiceContact → ${noOperator} mesaj kataloğunda voice kanalında yok`);
+  // T-089: operatörün "Soru gönder" metni saat kanalında olmalı (cihaz katalogdan okur).
+  const opPrompt = doc.ladder?.operatorPrompt?.tts;
+  if (opPrompt && catalog[opPrompt]?.channel !== 'watch')
+    fail(`${f}: ladder.operatorPrompt → ${opPrompt} mesaj kataloğunda watch kanalında yok`);
   console.log(`${f}: ok (${doc.rules.length} kural)`);
 }
 process.exit(failed ? 1 : 0);
