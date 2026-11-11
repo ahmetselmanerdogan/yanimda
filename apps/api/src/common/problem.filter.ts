@@ -18,7 +18,9 @@ export function isTransient(e: unknown): boolean {
   const err = e as { code?: string; message?: string; cause?: { code?: string; message?: string } };
   const code = err?.cause?.code ?? err?.code;
   if (code && TRANSIENT.test(code)) return true;
-  return /Connection terminated|connection timeout/i.test(err?.cause?.message ?? err?.message ?? '');
+  return /Connection terminated|connection timeout|Query read timeout|timeout exceeded when trying to connect/i.test(
+    err?.cause?.message ?? err?.message ?? '',
+  );
 }
 
 /** RFC 7807 problem+json hata biçimi (03-teknik-mimari.md "API sözleşmeleri"). PII içermez. */
