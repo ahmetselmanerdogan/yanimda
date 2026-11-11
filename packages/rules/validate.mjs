@@ -55,6 +55,10 @@ for (const f of yamls.filter((f) => !f.startsWith('procedures.'))) {
   const opPrompt = doc.ladder?.operatorPrompt?.tts;
   if (opPrompt && catalog[opPrompt]?.channel !== 'watch')
     fail(`${f}: ladder.operatorPrompt → ${opPrompt} mesaj kataloğunda watch kanalında yok`);
+  // T-092: değer eğilimi bildirimi aile kanalında bir katalog kodu olmalı; değer kuralları varsayılan kapalı kalır.
+  const trend = doc.vitals?.trendCode;
+  if (trend && catalog[trend]?.channel !== 'family')
+    fail(`${f}: vitals.trendCode → ${trend} mesaj kataloğunda family kanalında yok`);
   console.log(`${f}: ok (${doc.rules.length} kural)`);
 }
 process.exit(failed ? 1 : 0);

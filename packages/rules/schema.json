@@ -162,6 +162,90 @@
       },
       "additionalProperties": false
     },
+    "vitals": {
+      "description": "T-092 (docs/07 S6, S8.4) değer kuralları; bayrakla kapalı (enabled: false), mevzuat görüşü bekler",
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "learnDays": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "minValidDays": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "baselineDays": { "type": "integer", "minimum": 7, "maximum": 60 },
+        "validDaySamples": { "type": "integer", "minimum": 1 },
+        "sustainedMin": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "comboMin": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "cooldownH": { "type": "integer", "minimum": 0, "maximum": 168 },
+        "worsenPct": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "maxChecksPerWeek": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "claimSlaMin": { "type": "integer", "minimum": 1, "maximum": 240 },
+        "unreachableMin": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "agreeMin": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "preconditions": {
+          "type": "object",
+          "properties": {
+            "wornMin": { "type": "integer", "minimum": 0 },
+            "batteryPct": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "stillSteps": { "type": "integer", "minimum": 1 },
+            "stillMin": { "type": "integer", "minimum": 1 },
+            "minSamples": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "maxGapMin": { "type": "integer", "minimum": 1, "maximum": 30 },
+            "hrMin": { "type": "integer", "minimum": 1 },
+            "hrMax": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "hr": {
+          "type": "object",
+          "properties": {
+            "low": { "type": "integer", "minimum": 20, "maximum": 80 },
+            "belowSleepBaseline": { "type": "integer", "minimum": 0, "maximum": 40 },
+            "highResting": { "type": "integer", "minimum": 90, "maximum": 220 },
+            "deviationPct": { "type": "integer", "minimum": 5, "maximum": 100 },
+            "deviationMin": { "type": "integer", "minimum": 1, "maximum": 240 },
+            "agreePct": { "type": "integer", "minimum": 1, "maximum": 50 }
+          },
+          "additionalProperties": false
+        },
+        "spo2": {
+          "type": "object",
+          "properties": {
+            "low": { "type": "integer", "minimum": 70, "maximum": 96 },
+            "lowCopd": { "type": "integer", "minimum": 70, "maximum": 96 },
+            "apartMin": { "type": "integer", "minimum": 1, "maximum": 60 },
+            "comboHr": { "type": "integer", "minimum": 80, "maximum": 220 },
+            "agreePts": { "type": "integer", "minimum": 1, "maximum": 10 }
+          },
+          "additionalProperties": false
+        },
+        "skinTemp": {
+          "type": "object",
+          "properties": {
+            "deltaC": { "type": "number", "minimum": 0.1, "maximum": 5 },
+            "nights": { "type": "integer", "minimum": 1, "maximum": 7 }
+          },
+          "additionalProperties": false
+        },
+        "retention": {
+          "type": "object",
+          "required": ["rawDays", "summaryMonths"],
+          "properties": {
+            "rawDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+            "summaryMonths": { "type": "integer", "minimum": 1, "maximum": 36 }
+          },
+          "additionalProperties": false
+        },
+        "view": {
+          "type": "object",
+          "properties": {
+            "windowMin": { "type": "integer", "minimum": 10, "maximum": 240 },
+            "bucketMin": { "type": "integer", "minimum": 1, "maximum": 30 }
+          },
+          "additionalProperties": false
+        },
+        "trendCode": { "type": "string", "pattern": "^F-[A-Z0-9-]+$" }
+      },
+      "additionalProperties": false
+    },
     "rules": {
       "type": "array",
       "items": {
@@ -183,7 +267,8 @@
               "TEST",
               "FOLLOW_UP",
               "COVERAGE_GAP",
-              "WELFARE_CHECK"
+              "WELFARE_CHECK",
+              "SPO2_LOW"
             ]
           },
           "priority": { "type": "integer", "minimum": 1, "maximum": 4 },
