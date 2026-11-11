@@ -160,6 +160,28 @@ describe('gelen SOS araması: yönlendirme', () => {
     expect(target(next)).toBe('op_a');
   });
 
+  it('asılı giden arama (eski queued / en uzun süreyi aşan in-progress) operatörü meşgul göstermez', async () => {
+    const now = new Date();
+    await operator('op-a', 'AVAILABLE', ago(600, now));
+    const ev = await openEvent();
+    const insert = (status: string, updatedSecAgo: number, createdSecAgo: number) =>
+      h.rows(
+        `INSERT INTO telephony.call (id, event_id, step_n, operator_id, provider, status, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, 1, 'op-a', 'fake', $2,
+                 now() - make_interval(secs => $4), now() - make_interval(secs => $3))`,
+        [ev, status, updatedSecAgo, createdSecAgo],
+      );
+    // Taze queued: meşgul → kuyruk.
+    await insert('queued', 10, 10);
+    expect(await ring(STRANGER)).toContain('<Enqueue');
+    await h.rows('DELETE FROM telephony.call');
+    await h.rows('DELETE FROM telephony.inbound_call');
+    // 10 dk önce queued kalmış (arama öncesi çökme) ve 3 saatlik in-progress (webhook gelmedi): meşgul değil.
+    await insert('queued', 600, 600);
+    await insert('in-progress', 3000, 3 * 3600);
+    expect(target(await ring(STRANGER))).toBe('op_a');
+  });
+
   it('SIP trunk biçimindeki arayan (ulusal biçim, sip: URI) da eşleşir', async () => {
     await operator('op-x', 'AVAILABLE', ago(60));
     const ev = await openEvent('op-x');

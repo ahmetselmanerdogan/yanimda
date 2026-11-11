@@ -2580,7 +2580,12 @@ components:
         conference: { type: boolean, description: Görüşme konferansa taşındı (T-051) }
         held: { type: boolean, description: Aranan beklemede (T-051) }
         parties: { type: integer, description: Konferansa eklenen yakın sayısı (T-051) }
-        error: { type: [string, 'null'] }
+        error:
+          type: [string, 'null']
+          description: |
+            Başarısızlık nedeni (numara yok). `stale`: arama asılı kaldı (queued/ringing CALL_SETUP_STALE_SEC,
+            in-progress CALL_MAX_DURATION_SEC aşıldı; webhook gelmedi veya arama başlatılamadı) — sistem kapattı,
+            öneri yok, "Ara" yeniden arar.
         createdAt: { type: string, format: date-time }
     ChainView:
       type: object
