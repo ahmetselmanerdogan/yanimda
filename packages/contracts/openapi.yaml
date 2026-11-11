@@ -559,6 +559,8 @@ paths:
                     Acil teyitli ama zincirde 112 adımı ulaşılmamışsa: 112 zincir dışında (masa hattı vb.) arandı mı.
                     true → DISPATCH ve 112 süreci açılır; false / yok → doğrudan CLOSED, audit event.closed_without_112,
                     amire O-CLOSE-NO-112 (sahte 112 süreci ve aileye "ambulans yolda" gitmez).
+                    Gerçek SOS / FALL UNREACHABLE ile kapanırken de sorulur: true → CONFIRMED_EMERGENCY → DISPATCH
+                    (sonuç UNREACHABLE kalır); false → CLOSED + audit + amire O-CLOSE-UNREACHABLE-NO-112.
       responses:
         '204': { description: Closed }
         '400': { $ref: '#/components/responses/Problem' }
@@ -1232,7 +1234,8 @@ paths:
     get:
       summary: Kalıcı amir uyarıları (open=1 → görülmemişler), en yeni önce
       description: |
-        Her supervisor.alert (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL / OPEN / ESCALATE, O-CLOSE-NO-112, O-QUEUE-UNCLAIMED,
+        Her supervisor.alert (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL / OPEN / ESCALATE, O-CLOSE-NO-112,
+        O-CLOSE-UNREACHABLE-NO-112, O-QUEUE-UNCLAIMED,
         O-WELLNESS-MISSED) çekirdek şeritten kaydedilir; tekrar teslim tekilleştirilir. O-QUEUE-UNCLAIMED: kuyrukta
         önceliğin üstlenme hedefi (P1 10 sn, P2 30 sn, P3 120 sn, P4 600 sn) aşılınca kuyruğa her girişte bir kez.
         WS `alert` yalnız SUPERVISOR/ADMIN'e (O-QUEUE-UNCLAIMED herkese).

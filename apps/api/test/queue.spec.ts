@@ -193,6 +193,22 @@ describe('WebSocket /v1/ws/queue', () => {
     expect(await c.next((m) => m.type === 'remove')).toEqual({ type: 'remove', eventId: id });
   });
 
+  it('operatördeki olaya yeni alarm → upsert `alarm` alanıyla (konsol ses + uyarı; denetim bulgu 9)', async () => {
+    await deliver(sig('SOS', { protectedPersonId: 'pp-na' }));
+    const worker = h.worker();
+    await worker.drain();
+    const id = await idOf('pp-na');
+    await chain.claim(id, 'op-1');
+    await worker.drain();
+    const c = client(idp.token({ sub: 'op-1' }));
+    await c.next((m) => m.type === 'snapshot');
+    await deliver(sig('SOS', { protectedPersonId: 'pp-na' }));
+    await worker.drain();
+    expect(await c.next((m) => m.type === 'upsert' && (m as { alarm?: string }).alarm === 'SOS')).toMatchObject({
+      item: { eventId: id },
+    });
+  });
+
   it('amir uyarısı (kilit doldu) yayınlanır', async () => {
     await deliver(sig('SOS', { protectedPersonId: 'pp-l' }));
     const id = await idOf('pp-l');
