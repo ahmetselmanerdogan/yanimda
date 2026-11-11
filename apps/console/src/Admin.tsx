@@ -10,8 +10,8 @@ import { t } from './lib/i18n';
  * (kim kimi aradı, cevap, süre, ses kaydı — dinleme gerekçeli ve denetimli), 112 süreçleri, düzenli aramalar,
  * denetim kaydı. Masaüstünde tablo, telefonda kart.
  */
-type Tab = 'overview' | 'calls' | 'dispatch' | 'wellness' | 'audit';
-const TABS: Tab[] = ['overview', 'calls', 'dispatch', 'wellness', 'audit'];
+type Tab = 'overview' | 'events' | 'calls' | 'dispatch' | 'wellness' | 'audit';
+const TABS: Tab[] = ['overview', 'events', 'calls', 'dispatch', 'wellness', 'audit'];
 const PERIODS = [1, 7, 30, 90];
 
 const dt = (iso: string) =>
@@ -34,6 +34,8 @@ export function AdminBoard({
   const [tab, setTab] = useState<Tab>('overview');
   const [days, setDays] = useState(7);
   const [error, setError] = useState<string | null>(null);
+  // Vaka dosyası: herhangi bir sekmeden olay kimliğiyle açılır.
+  const [caseId, setCaseId] = useState<string | null>(null);
 
   return (
     <div className="admin">
@@ -77,8 +79,10 @@ export function AdminBoard({
         </p>
       )}
       <main className="admin-main">
+        {caseId && <CaseFile api={api} eventId={caseId} onClose={() => setCaseId(null)} onError={setError} />}
         {tab === 'overview' && <Overview api={api} days={days} onError={setError} />}
-        {tab === 'calls' && <Calls api={api} days={days} onError={setError} />}
+        {tab === 'events' && <Events api={api} days={days} onError={setError} onOpen={setCaseId} />}
+        {tab === 'calls' && <Calls api={api} days={days} onError={setError} onOpen={setCaseId} />}
         {tab === 'dispatch' && <Dispatches api={api} onError={setError} />}
         {tab === 'wellness' && <Wellness api={api} days={days} onError={setError} />}
         {tab === 'audit' && <Audit api={api} days={days} onError={setError} />}
@@ -236,7 +240,7 @@ function Overview({ api, days, onError }: Part) {
   );
 }
 
-function Calls({ api, days, onError }: Part) {
+function Calls({ api, days, onError, onOpen }: Part & { onOpen(id: string): void }) {
   const [only, setOnly] = useState<'all' | 'answered' | 'missed'>('all');
   const [rows] = useLoad<AdminCall[]>(
     () => api.adminCalls(days, only === 'all' ? undefined : only === 'answered'),
@@ -296,10 +300,17 @@ function Calls({ api, days, onError }: Part) {
                 <td data-label={t('O-UI-ADM-COL-DIRECTION')}>
                   {t(`O-UI-ADM-DIR-${c.direction}`)}
                   {c.eventType ? ` · ${t(`O-TYPE-${c.eventType}`)}` : ''}
+                  {c.eventId && (
+                    <button type="button" className="link" onClick={() => onOpen(c.eventId!)}>
+                      {t('O-UI-ADM-OPEN-CASE')}
+                    </button>
+                  )}
                 </td>
                 <td data-label={t('O-UI-ADM-COL-PERSON')}>{c.person ?? '–'}</td>
                 <td data-label={t('O-UI-ADM-COL-PARTY')}>{partyLabel(c.party)}</td>
-                <td data-label={t('O-UI-ADM-COL-OPERATOR')}>{c.operatorId ?? '–'}</td>
+                <td data-label={t('O-UI-ADM-COL-OPERATOR')}>
+                  {('operatorName' in c && c.operatorName) || c.operatorId || '–'}
+                </td>
                 <td data-label={t('O-UI-ADM-COL-ANSWER')} className={c.answered ? '' : 'late'}>
                   {c.answered ? t('O-UI-ADM-ANSWERED') : t('O-UI-ADM-NOT-ANSWERED')}
                   {c.result ? ` · ${c.result}` : ''}
@@ -430,6 +441,165 @@ function Audit({ api, days, onError }: Part) {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+type CaseFileView = Awaited<ReturnType<Api['adminCase']>>;
+type EventRow = Awaited<ReturnType<Api['adminEvents']>>[number];
+
+function Events({ api, days, onError, onOpen }: Part & { onOpen(id: string): void }) {
+  const [q, setQ] = useState('');
+  const [rows] = useLoad<EventRow[]>(() => api.adminEvents(days, q || undefined), onError, [api, days, q]);
+  return (
+    <section className="sup-panel wide" aria-labelledby="adm-events">
+      <h2 id="adm-events">{t('O-UI-ADM-TAB-EVENTS')}</h2>
+      <label className="row">
+        <span className="muted small">{t('O-UI-ADM-SEARCH')}</span>
+        <input value={q} onChange={(e) => setQ(e.target.value.trim())} />
+      </label>
+      <div className="table-wrap">
+        <table className="data">
+          <thead>
+            <tr>
+              <th>{t('O-UI-ADM-COL-TIME')}</th>
+              <th>{t('O-UI-ADM-COL-PERSON')}</th>
+              <th>{t('O-UI-ADM-COL-TYPE')}</th>
+              <th>{t('O-UI-ADM-COL-STATUS')}</th>
+              <th>{t('O-UI-ADM-COL-112')}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {(rows ?? []).map((e) => (
+              <tr key={e.id}>
+                <td data-label={t('O-UI-ADM-COL-TIME')}>{dt(e.createdAt)}</td>
+                <td data-label={t('O-UI-ADM-COL-PERSON')}>{e.person ?? '–'}</td>
+                <td data-label={t('O-UI-ADM-COL-TYPE')}>
+                  P{e.priority} {t(`O-TYPE-${e.type}`)}
+                  {e.isTest ? ` · ${t('O-UI-TEST')}` : ''}
+                </td>
+                <td data-label={t('O-UI-ADM-COL-STATUS')}>
+                  {t(`O-STATE-${e.state}`)}
+                  {e.outcome ? ` · ${t(`O-OUT-${e.outcome}`)}` : ''}
+                </td>
+                <td data-label={t('O-UI-ADM-COL-112')}>{e.dispatch ? t(`O-DISPATCH-STAGE-${e.dispatch}`) : '–'}</td>
+                <td>
+                  <button type="button" onClick={() => onOpen(e.id)}>
+                    {t('O-UI-ADM-OPEN-CASE')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows && rows.length === 0 && <p className="muted">{t('O-UI-ADM-EMPTY')}</p>}
+    </section>
+  );
+}
+
+/** Vaka dosyası: olayın tüm izi (kim, ne zaman, kime, sonuç, 112, bildirim teslimi, uyarılar, denetim). */
+function CaseFile({
+  api,
+  eventId,
+  onClose,
+  onError,
+}: {
+  api: Api;
+  eventId: string;
+  onClose(): void;
+  onError(e: string | null): void;
+}) {
+  const [c] = useLoad<CaseFileView>(() => api.adminCase(eventId), onError, [api, eventId]);
+  if (!c) return null;
+  const ev = c.event;
+  return (
+    <section className="sup-panel wide case" aria-labelledby="case-title" data-testid="case-file">
+      <header className="row">
+        <h2 id="case-title">
+          {t('O-UI-ADM-CASE')} · P{ev.priority} {t(`O-TYPE-${ev.type}`)} · {ev.person ?? '–'}
+        </h2>
+        <span className="spacer" />
+        <button type="button" onClick={onClose}>
+          {t('O-UI-CANCEL')}
+        </button>
+      </header>
+      <p className="muted small">
+        {dt(ev.createdAt!)} · {t(`O-STATE-${ev.state}`)}
+        {ev.outcome ? ` · ${t(`O-OUT-${ev.outcome}`)}` : ''} · {t('O-UI-ADM-SIGNALS', { n: ev.signals })}
+      </p>
+      <h3>{t('O-UI-ADM-CASE-TIMELINE')}</h3>
+      <ol className="case-list">
+        {c.transitions.map((x, i) => (
+          <li key={i}>
+            <time>{dt(x.at!)}</time> {t(`O-STATE-${x.to}`)} · {x.actorKind}
+            {x.actorId ? ` ${x.actorId}` : ''}
+            {x.note ? ` · ${x.note}` : ''}
+          </li>
+        ))}
+      </ol>
+      <h3>{t('O-UI-STEPS')}</h3>
+      <ol className="case-list">
+        {c.steps.map((s) => (
+          <li key={s.n}>
+            {s.n}. {t(`O-UI-ADM-PARTY-${s.kind}`)}
+            {s.contactIndex ? ` ${s.contactIndex}` : ''} · {s.result ?? '–'}
+            {s.assessment ? ` · ${s.assessment}` : ''}
+            {s.reason ? ` · ${s.reason}` : ''}
+            {s.note ? ` · ${s.note}` : ''}
+          </li>
+        ))}
+      </ol>
+      <h3>{t('O-UI-ADM-TAB-CALLS')}</h3>
+      <ol className="case-list">
+        {c.calls.map((x) => (
+          <li key={x.id}>
+            <time>{dt(x.at)}</time> {partyLabel(x.party)} ·{' '}
+            {x.answered ? t('O-UI-ADM-ANSWERED') : t('O-UI-ADM-NOT-ANSWERED')}
+            {x.durationSec !== null ? ` · ${x.durationSec} sn` : ''} · {x.operatorName ?? x.operatorId ?? '–'}
+            {x.recording ? ` · ${t('O-UI-ADM-RECORDING')}` : ''}
+          </li>
+        ))}
+      </ol>
+      {c.dispatch && (
+        <>
+          <h3>{t('O-UI-DISPATCH')}</h3>
+          <ol className="case-list">
+            {c.dispatch.timeline.map((u, i) => (
+              <li key={i}>
+                <time>{dt(u.at!)}</time> {t(`O-DISPATCH-STAGE-${u.status}`)} · {t(`O-UI-DISPATCH-SOURCE-${u.source}`)}
+                {u.note ? ` · ${u.note}` : ''}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+      <h3>
+        {t('O-UI-ADM-NOTIFICATIONS')} ({c.notifications.delivered}/{c.notifications.total})
+      </h3>
+      <ol className="case-list">
+        {c.notifications.items.map((n, i) => (
+          <li key={i} className={n.status === 'failed' ? 'late' : ''}>
+            <time>{dt(n.createdAt!)}</time> {n.code} · {n.recipientKind} · {n.channel} · {n.status}
+            {n.fallback ? ` · ${t('O-UI-ADM-FALLBACK')}` : ''}
+            {n.deliveredAt ? ` · ${dt(n.deliveredAt)}` : ''}
+          </li>
+        ))}
+      </ol>
+      {c.alerts.length > 0 && (
+        <>
+          <h3>{t('O-UI-ALERTS')}</h3>
+          <ol className="case-list">
+            {c.alerts.map((a, i) => (
+              <li key={i}>
+                <time>{dt(a.at!)}</time> {a.code}
+                {a.ackedBy ? ` · ${t('O-UI-ALERTS-ACKED', { by: a.ackedBy, time: dt(a.ackedAt!) })}` : ''}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
     </section>
   );
 }

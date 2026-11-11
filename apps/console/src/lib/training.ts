@@ -273,6 +273,10 @@ export class TrainingSim {
       throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
     },
     adminAudit: async () => [],
+    adminEvents: async () => [],
+    adminCase: async () => {
+      throw new ApiError(404, 'Eğitim modunda vaka dosyası yok');
+    },
     wellnessChecks: async () => [],
     alerts: async () => [],
     ackAlert: async () => {

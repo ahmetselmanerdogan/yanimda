@@ -234,6 +234,8 @@ export interface AdminCall {
   eventType: string | null;
   person: string | null;
   operatorId: string | null;
+  operatorName: string | null;
+  isTest: boolean;
   party: string;
   stepN: number | null;
   status: string;
@@ -330,6 +332,80 @@ export interface SupervisorAlertView {
   ackedBy: string | null;
 }
 
+export interface AdminCase {
+  event: {
+    id: string;
+    type: string;
+    priority: number;
+    state: EventState;
+    outcome: string | null;
+    isTest: boolean;
+    person: string | null;
+    operatorId: string | null;
+    createdAt: string | null;
+    escalatedAt: string | null;
+    closedAt: string | null;
+    closeReason: string | null;
+    signals: number;
+  };
+  transitions: {
+    from: string | null;
+    to: EventState;
+    actorKind: string;
+    actorId: string | null;
+    at: string | null;
+    note: string | null;
+  }[];
+  steps: {
+    n: number;
+    kind: string;
+    contactIndex: number | null;
+    result: string | null;
+    assessment: string | null;
+    reason: string | null;
+    note: string | null;
+    operatorId: string | null;
+    calledAt: string | null;
+    completedAt: string | null;
+  }[];
+  calls: AdminCall[];
+  dispatch: {
+    status: DispatchStage;
+    caseRef: string | null;
+    hospital: string | null;
+    notifiedAt: string | null;
+    onSceneAt: string | null;
+    timeline: {
+      status: DispatchStage;
+      at: string | null;
+      actorKind: string;
+      actorId: string | null;
+      source: DispatchSource;
+      note: string | null;
+    }[];
+  } | null;
+  notifications: {
+    total: number;
+    delivered: number;
+    failed: number;
+    items: {
+      code: string;
+      audience: string;
+      recipientKind: string;
+      channel: string;
+      status: string;
+      attempts: number;
+      fallback: boolean;
+      createdAt: string | null;
+      sentAt: string | null;
+      deliveredAt: string | null;
+    }[];
+  };
+  wellness: { checkId: string; status: string; dueAt: string | null } | null;
+  alerts: { code: string; at: string | null; ackedAt: string | null; ackedBy: string | null }[];
+  audit: AuditRow[];
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -404,6 +480,23 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       req<AdminCall[]>('GET', `/admin/calls?days=${days}${answered === undefined ? '' : `&answered=${answered}`}`),
     adminAnalytics: (days: number) => req<AdminAnalytics>('GET', `/admin/analytics?days=${days}`),
     adminHealth: () => req<AdminHealth>('GET', '/admin/health'),
+    adminEvents: (days: number, q?: string) =>
+      req<
+        {
+          id: string;
+          type: string;
+          priority: number;
+          state: EventState;
+          outcome: string | null;
+          isTest: boolean;
+          createdAt: string;
+          closedAt: string | null;
+          operatorId: string | null;
+          person: string | null;
+          dispatch: DispatchStage | null;
+        }[]
+      >('GET', `/admin/events?days=${days}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+    adminCase: (id: string) => req<AdminCase>('GET', `/admin/events/${encodeURIComponent(id)}/case`),
     alerts: (open = true) => req<SupervisorAlertView[]>('GET', `/supervisor/alerts${open ? '?open=1' : ''}`),
     ackAlert: (id: string) => req<SupervisorAlertView>('POST', `/supervisor/alerts/${encodeURIComponent(id)}/ack`, {}),
     pushConfig: () => req<{ enabled: boolean; publicKey: string | null }>('GET', '/push/web/config'),

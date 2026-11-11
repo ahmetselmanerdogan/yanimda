@@ -1123,3 +1123,26 @@ table.data td {
     grid-column: 1 / -1;
   }
 }
+
+/* Vaka dosyası */
+.case {
+  border-color: var(--brand);
+}
+.case-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  font-size: var(--font-table, 12px);
+}
+.case-list time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+button.link {
+  background: none;
+  border: 0;
+  padding: 0 4px;
+  color: #8ab4ff;
+  text-decoration: underline;
+}

@@ -708,6 +708,46 @@
     "channel": "console",
     "text": "Genel bakış"
   },
+  "O-UI-ADM-TAB-EVENTS": {
+    "channel": "console",
+    "text": "Olaylar"
+  },
+  "O-UI-ADM-SEARCH": {
+    "channel": "console",
+    "text": "Kişi adı veya olay kimliği"
+  },
+  "O-UI-ADM-COL-TYPE": {
+    "channel": "console",
+    "text": "Tür"
+  },
+  "O-UI-ADM-COL-112": {
+    "channel": "console",
+    "text": "112"
+  },
+  "O-UI-ADM-OPEN-CASE": {
+    "channel": "console",
+    "text": "Vaka dosyası"
+  },
+  "O-UI-ADM-CASE": {
+    "channel": "console",
+    "text": "Vaka dosyası"
+  },
+  "O-UI-ADM-SIGNALS": {
+    "channel": "console",
+    "text": "{n} sinyal"
+  },
+  "O-UI-ADM-CASE-TIMELINE": {
+    "channel": "console",
+    "text": "Durum geçmişi"
+  },
+  "O-UI-ADM-NOTIFICATIONS": {
+    "channel": "console",
+    "text": "Bildirimler (teslim / toplam)"
+  },
+  "O-UI-ADM-FALLBACK": {
+    "channel": "console",
+    "text": "yedek SMS"
+  },
   "O-UI-ADM-TAB-CALLS": {
     "channel": "console",
     "text": "Çağrılar"

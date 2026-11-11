@@ -51,6 +51,30 @@ export class AdminController {
     return new StreamableFile(r.body, { type: r.contentType, disposition: 'inline' });
   }
 
+  /** GET /v1/admin/events — olay arama (kişi adı parçası veya olay kimliği, tür, sonuç, operatör). */
+  @Get('events')
+  events(
+    @Query('days') days?: string,
+    @Query('q') q?: string,
+    @Query('type') type?: string,
+    @Query('outcome') outcome?: string,
+    @Query('operatorId') operatorId?: string,
+  ) {
+    return this.admin.events({
+      ...range(days),
+      ...(q ? { q: q.slice(0, 100) } : {}),
+      ...(type ? { type } : {}),
+      ...(outcome ? { outcome } : {}),
+      ...(operatorId ? { operatorId } : {}),
+    });
+  }
+
+  /** GET /v1/admin/events/{id}/case — vaka dosyası (tüm iz; numara / adres / sağlık yok). */
+  @Get('events/:id/case')
+  caseFile(@Param('id') id: string) {
+    return this.admin.caseFile(id);
+  }
+
   @Get('analytics')
   analytics(@Query('days') days?: string) {
     return this.admin.analytics(Math.min(Math.max(Number(days) || 30, 1), 365));

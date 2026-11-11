@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
@@ -21,6 +21,9 @@ export interface CallRow {
   eventType: string | null;
   person: string | null;
   operatorId: string | null;
+  /** Operatörün görünen adı (identity.operator); yoksa null. */
+  operatorName: string | null;
+  isTest: boolean;
   /** Aranan / arayan: rehber rolü (WATCH, PHONE, CONTACT, NEIGHBOR, 112, DESK) ve sırası; numara yok. */
   party: string;
   stepN: number | null;
@@ -60,6 +63,7 @@ export interface Analytics {
   falseAlarmRatio: number;
   operators: {
     operatorId: string;
+    operatorName: string | null;
     claims: number;
     closed: number;
     calls: number;
@@ -99,6 +103,8 @@ export class AdminService {
       event_type: string | null;
       person: string | null;
       operator_id: string | null;
+      operator_name: string | null;
+      is_test: boolean;
       party: string;
       step_n: number | null;
       status: string;
@@ -107,9 +113,9 @@ export class AdminService {
       result: string | null;
       recording: boolean;
     }>(sql`
-      SELECT * FROM (
+      SELECT x.*, o.display_name AS operator_name FROM (
         SELECT c.id::text, 'OUT' AS direction, c.created_at AS at, c.event_id::text, e.type AS event_type,
-               p.display_name AS person, c.operator_id,
+               coalesce(e.is_test, false) AS is_test, p.display_name AS person, c.operator_id,
                coalesce(s.kind || coalesce(':' || s.contact_index, ''), 'STEP') AS party, c.step_n,
                c.status, c.answered, c.duration_sec, s.result, (c.recording_ref IS NOT NULL) AS recording
         FROM telephony.call c
@@ -119,7 +125,8 @@ export class AdminService {
         LEFT JOIN chain.chain_step s ON s.run_id = r.id AND s.n = c.step_n
         WHERE c.created_at >= ${f.from} AND c.created_at < ${f.to}
         UNION ALL
-        SELECT i.id::text, 'IN', i.created_at, i.event_id::text, e.type, p.display_name, i.operator_id,
+        SELECT i.id::text, 'IN', i.created_at, i.event_id::text, e.type, coalesce(e.is_test, false), p.display_name,
+               i.operator_id,
                'INBOUND', NULL, i.status, (i.answered_at IS NOT NULL), i.duration_sec, NULL,
                (i.recording_ref IS NOT NULL)
         FROM telephony.inbound_call i
@@ -127,6 +134,7 @@ export class AdminService {
         LEFT JOIN profile.protected_person p ON p.id::text = i.protected_person_id
         WHERE i.created_at >= ${f.from} AND i.created_at < ${f.to}
       ) x
+      LEFT JOIN identity.operator o ON o.subject = x.operator_id
       WHERE true
         ${f.operatorId ? sql`AND x.operator_id = ${f.operatorId}` : sql``}
         ${f.eventId && UUID.test(f.eventId) ? sql`AND x.event_id = ${f.eventId}` : sql``}
@@ -141,6 +149,8 @@ export class AdminService {
       eventType: r.event_type,
       person: r.person,
       operatorId: r.operator_id,
+      operatorName: r.operator_name,
+      isTest: r.is_test,
       party: r.party,
       stepN: r.step_n,
       status: r.status,
@@ -154,6 +164,8 @@ export class AdminService {
   /** Ses kaydı (yetkili rol): her dinleme audit.log'a yazılır (kim, hangi çağrı, neden). */
   async recording(callId: string, actor: { id: string; role: string }, reason: string | undefined) {
     if (!UUID.test(callId)) throw new NotFoundException('Kayıt yok');
+    const why = (reason ?? '').trim();
+    if (why.length < 5) throw new BadRequestException('Dinleme gerekçesi zorunlu (en az 5 karakter)');
     const [r] = await this.q<{ ref: string | null; event_id: string | null }>(sql`
       SELECT recording_ref AS ref, event_id::text FROM telephony.call WHERE id = ${callId}::uuid
       UNION ALL
@@ -162,12 +174,12 @@ export class AdminService {
     const obj = await this.recordings.get(r.ref);
     if (!obj) throw new NotFoundException('Kayıt yok');
     await this.db.insert(auditLog).values({
-      actorKind: 'OPERATOR',
+      actorKind: actor.role,
       actorId: actor.id,
       action: 'recording.played',
       entityType: 'call',
       entityId: callId,
-      data: { role: actor.role, eventId: r.event_id, reason: (reason ?? '').slice(0, 200) || null },
+      data: { role: actor.role, eventId: r.event_id, reason: why.slice(0, 200) },
     });
     return obj;
   }
@@ -200,6 +212,7 @@ export class AdminService {
       SELECT coalesce(s.kind, 'STEP') AS k, count(*)::int AS n, count(*) FILTER (WHERE c.answered)::int AS a,
              avg(c.duration_sec) FILTER (WHERE c.answered) AS talk
       FROM telephony.call c
+      JOIN event.event e ON e.id = c.event_id AND NOT e.is_test
       LEFT JOIN chain.chain_run r ON r.event_id = c.event_id
       LEFT JOIN chain.chain_step s ON s.run_id = r.id AND s.n = c.step_n
       WHERE c.created_at >= ${since} AND c.created_at <= ${now} GROUP BY 1`);
@@ -230,6 +243,7 @@ export class AdminService {
       FROM event.check_call WHERE due_at >= ${since} AND due_at <= ${now}`);
     const ops = await this.q<{
       op: string;
+      name: string | null;
       claims: number;
       closed: number;
       calls: number;
@@ -243,9 +257,10 @@ export class AdminService {
         FROM event.transition t
         WHERE t.at >= ${since} AND t.at <= ${now} AND t.actor_kind = 'OPERATOR' AND t.actor_id IS NOT NULL),
       c AS (
-        SELECT operator_id AS op, count(*)::int AS calls, count(*) FILTER (WHERE answered)::int AS answered
-        FROM telephony.call WHERE created_at >= ${since} AND created_at <= ${now} GROUP BY 1)
-      SELECT t.op,
+        SELECT c.operator_id AS op, count(*)::int AS calls, count(*) FILTER (WHERE c.answered)::int AS answered
+        FROM telephony.call c JOIN event.event e ON e.id = c.event_id AND NOT e.is_test
+        WHERE c.created_at >= ${since} AND c.created_at <= ${now} GROUP BY 1)
+      SELECT t.op, (SELECT o.display_name FROM identity.operator o WHERE o.subject = t.op) AS name,
              count(*) FILTER (WHERE t.to_state = 'OPERATOR_ASSIGNED')::int AS claims,
              count(*) FILTER (WHERE t.to_state = 'CLOSED')::int AS closed,
              coalesce(max(c.calls), 0)::int AS calls, coalesce(max(c.answered), 0)::int AS answered,
@@ -307,6 +322,7 @@ export class AdminService {
       falseAlarmRatio: closedReal ? (outcome.FALSE_ALARM ?? 0) / closedReal : 0,
       operators: ops.map((o) => ({
         operatorId: o.op,
+        operatorName: o.name,
         claims: o.claims,
         closed: o.closed,
         calls: o.calls,
@@ -315,6 +331,235 @@ export class AdminService {
         avgHandleMin: num(o.handle_m),
       })),
       daily,
+    };
+  }
+
+  /** Olay arama (vaka dosyası listesi): tür, sonuç, kişi adı parçası, operatör; en yeni önce. */
+  async events(f: {
+    from: Date;
+    to: Date;
+    q?: string;
+    type?: string;
+    outcome?: string;
+    operatorId?: string;
+    limit?: number;
+  }) {
+    const rows = await this.q<{
+      id: string;
+      type: string;
+      priority: number;
+      state: string;
+      outcome: string | null;
+      is_test: boolean;
+      created_at: Date | string;
+      closed_at: Date | string | null;
+      operator_id: string | null;
+      person: string | null;
+      dispatch: string | null;
+    }>(sql`
+      SELECT e.id::text, e.type, e.priority, e.state, e.confirmed_outcome AS outcome, e.is_test, e.created_at,
+             e.closed_at, e.operator_id, p.display_name AS person, d.status AS dispatch
+      FROM event.event e
+      LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
+      LEFT JOIN event.dispatch d ON d.event_id = e.id
+      WHERE e.created_at >= ${f.from} AND e.created_at < ${f.to}
+        ${f.type ? sql`AND e.type = ${f.type}` : sql``}
+        ${f.outcome ? sql`AND e.confirmed_outcome = ${f.outcome}` : sql``}
+        ${f.operatorId ? sql`AND e.operator_id = ${f.operatorId}` : sql``}
+        ${f.q ? (UUID.test(f.q) ? sql`AND e.id = ${f.q}::uuid` : sql`AND p.display_name ILIKE ${`%${f.q.replace(/[%_]/g, '')}%`}`) : sql``}
+      ORDER BY e.created_at DESC
+      LIMIT ${Math.min(f.limit ?? 100, 500)}`);
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      priority: r.priority,
+      state: r.state,
+      outcome: r.outcome,
+      isTest: r.is_test,
+      createdAt: new Date(r.created_at).toISOString(),
+      closedAt: r.closed_at ? new Date(r.closed_at).toISOString() : null,
+      operatorId: r.operator_id,
+      person: r.person,
+      dispatch: r.dispatch,
+    }));
+  }
+
+  /**
+   * Vaka dosyası: bir olayın tüm izi tek zaman çizelgesinde — geçişler (kim), zincir adımları (rehber rolü / sonuç /
+   * not), aramalar (cevap, süre, kayıt), 112 süreci, bildirim teslimi (kod, alıcı türü, kanal, durum, deneme, yedek),
+   * düzenli arama bağı, amir uyarıları (gördü mü), denetim kaydı. Numara, adres ve sağlık verisi yok.
+   */
+  async caseFile(eventId: string) {
+    if (!UUID.test(eventId)) throw new NotFoundException('Olay yok');
+    const [ev] = await this.q<{
+      id: string;
+      type: string;
+      priority: number;
+      state: string;
+      outcome: string | null;
+      is_test: boolean;
+      created_at: Date | string;
+      escalated_at: Date | string | null;
+      closed_at: Date | string | null;
+      close_reason: string | null;
+      operator_id: string | null;
+      person: string | null;
+      sources: string[];
+    }>(sql`
+      SELECT e.id::text, e.type, e.priority, e.state, e.confirmed_outcome AS outcome, e.is_test, e.created_at,
+             e.escalated_at, e.closed_at, e.close_reason, e.operator_id, p.display_name AS person,
+             e.source_signal_ids AS sources
+      FROM event.event e LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
+      WHERE e.id = ${eventId}::uuid`);
+    if (!ev) throw new NotFoundException('Olay yok');
+    const iso = (d: Date | string | null) => (d ? new Date(d).toISOString() : null);
+    const transitions = await this.q<{
+      from_state: string | null;
+      to_state: string;
+      actor_kind: string;
+      actor_id: string | null;
+      at: Date | string;
+      note: string | null;
+    }>(sql`
+      SELECT from_state, to_state, actor_kind, actor_id, at, note FROM event.transition WHERE event_id = ${eventId}::uuid ORDER BY seq`);
+    const steps = await this.q<{
+      n: number;
+      kind: string;
+      contact_index: number | null;
+      result: string | null;
+      assessment: string | null;
+      reason: string | null;
+      note: string | null;
+      operator_id: string | null;
+      called_at: Date | string | null;
+      completed_at: Date | string | null;
+    }>(sql`
+      SELECT s.n, s.kind, s.contact_index, s.result, s.assessment, s.reason, s.note, s.operator_id, s.called_at, s.completed_at
+      FROM chain.chain_step s JOIN chain.chain_run r ON r.id = s.run_id WHERE r.event_id = ${eventId}::uuid ORDER BY s.n`);
+    const notices = await this.q<{
+      code: string;
+      audience: string;
+      recipient_kind: string;
+      channel: string;
+      status: string;
+      attempts: number;
+      created_at: Date | string;
+      sent_at: Date | string | null;
+      delivered_at: Date | string | null;
+      fallback_of: string | null;
+    }>(sql`
+      SELECT code, audience, recipient_kind, channel, status, attempts, created_at, sent_at, delivered_at, fallback_of::text
+      FROM notify.notification WHERE event_id = ${eventId}::uuid ORDER BY created_at, id`);
+    const alerts = await this.q<{
+      code: string;
+      at: Date | string;
+      acked_at: Date | string | null;
+      acked_by: string | null;
+    }>(sql`
+      SELECT code, at, acked_at, acked_by FROM event.supervisor_alert WHERE event_id = ${eventId} ORDER BY at`);
+    const [check] = await this.q<{ id: string; status: string; due_at: Date | string }>(sql`
+      SELECT id::text, status, due_at FROM event.check_call WHERE event_id = ${eventId}::uuid LIMIT 1`);
+    const [d] = await this.q<{
+      status: string;
+      case_ref: string | null;
+      hospital: string | null;
+      notified_at: Date | string;
+      on_scene_at: Date | string | null;
+    }>(sql`
+      SELECT status, case_ref, hospital, notified_at, on_scene_at FROM event.dispatch WHERE event_id = ${eventId}::uuid`);
+    const dispatchTimeline = d
+      ? await this.q<{
+          status: string;
+          at: Date | string;
+          actor_kind: string;
+          actor_id: string | null;
+          source: string;
+          note: string | null;
+        }>(sql`
+          SELECT status, at, actor_kind, actor_id, source, note FROM event.dispatch_update WHERE event_id = ${eventId}::uuid ORDER BY at, id`)
+      : [];
+    const audit = await this.audit({
+      from: new Date(0),
+      to: new Date(Date.now() + 60_000),
+      entityId: eventId,
+      limit: 500,
+    });
+    const calls = await this.calls({ from: new Date(0), to: new Date(Date.now() + 60_000), eventId });
+    const delivered = notices.filter((n) => n.delivered_at).length;
+    return {
+      event: {
+        id: ev.id,
+        type: ev.type,
+        priority: ev.priority,
+        state: ev.state,
+        outcome: ev.outcome,
+        isTest: ev.is_test,
+        person: ev.person,
+        operatorId: ev.operator_id,
+        createdAt: iso(ev.created_at),
+        escalatedAt: iso(ev.escalated_at),
+        closedAt: iso(ev.closed_at),
+        closeReason: ev.close_reason,
+        signals: ev.sources.length,
+      },
+      transitions: transitions.map((t) => ({
+        from: t.from_state,
+        to: t.to_state,
+        actorKind: t.actor_kind,
+        actorId: t.actor_id,
+        at: iso(t.at),
+        note: t.note,
+      })),
+      steps: steps.map((x) => ({
+        n: x.n,
+        kind: x.kind,
+        contactIndex: x.contact_index,
+        result: x.result,
+        assessment: x.assessment,
+        reason: x.reason,
+        note: x.note,
+        operatorId: x.operator_id,
+        calledAt: iso(x.called_at),
+        completedAt: iso(x.completed_at),
+      })),
+      calls,
+      dispatch: d
+        ? {
+            status: d.status,
+            caseRef: d.case_ref,
+            hospital: d.hospital,
+            notifiedAt: iso(d.notified_at),
+            onSceneAt: iso(d.on_scene_at),
+            timeline: dispatchTimeline.map((u) => ({
+              status: u.status,
+              at: iso(u.at),
+              actorKind: u.actor_kind,
+              actorId: u.actor_id,
+              source: u.source,
+              note: u.note,
+            })),
+          }
+        : null,
+      notifications: {
+        total: notices.length,
+        delivered,
+        failed: notices.filter((n) => n.status === 'failed').length,
+        items: notices.map((n) => ({
+          code: n.code,
+          audience: n.audience,
+          recipientKind: n.recipient_kind,
+          channel: n.channel,
+          status: n.status,
+          attempts: n.attempts,
+          fallback: !!n.fallback_of,
+          createdAt: iso(n.created_at),
+          sentAt: iso(n.sent_at),
+          deliveredAt: iso(n.delivered_at),
+        })),
+      },
+      wellness: check ? { checkId: check.id, status: check.status, dueAt: iso(check.due_at) } : null,
+      alerts: alerts.map((a) => ({ code: a.code, at: iso(a.at), ackedAt: iso(a.acked_at), ackedBy: a.acked_by })),
+      audit,
     };
   }
 
