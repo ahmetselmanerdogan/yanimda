@@ -499,6 +499,7 @@ describe('saf kurallar', () => {
     onBody: category === 'PHONE' ? null : true,
     estimatedHoursLeft: null,
     voiceOrder: category === 'RING' ? null : category === 'PHONE' ? 3 : 1,
+    voiceOrderManual: false,
     ...o,
   });
 

@@ -1388,8 +1388,10 @@ paths:
       description: |
         Kaldırılmış / emekli cihazlar listelenmez. Kategori, sınıf ve pil ömrü cihaz kataloğundan (device_model);
         son durum (görülme, pil, şarj, takılı) sinyal alımında yazılır. `estimatedHoursLeft` = pil % × katalog pil
-        ömrü (şarjdayken null). `voiceOrder` geçerli sesli arama sırasıdır: elle verilenler önce, sonra takılı > en son
-        görülen > ev ünitesi > telefon (S1.8); sesli görüşmesi olmayan cihazda null. Yetki `/coverage` ile aynı.
+        ömrü (şarjdayken null). `voiceOrder` geçerli sesli arama sırasıdır: elle verilenler önce
+        (`voiceOrderManual: true`), sonra şu an takılı giyilebilirler > ev ünitesi > telefon, her grupta en son görülen
+        önce; şarjdaki, çıkarılmış veya çevrimdışı cihazlar telefondan sonra (S1.8). Sesli görüşmesi olmayan cihazda
+        null. Yetki `/coverage` ile aynı.
       operationId: listDevices
       security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
@@ -2779,6 +2781,7 @@ components:
           onBody,
           estimatedHoursLeft,
           voiceOrder,
+          voiceOrderManual,
         ]
       properties:
         id: { type: string }
@@ -2795,6 +2798,9 @@ components:
         onBody: { type: [boolean, 'null'], description: Telefonda her zaman null }
         estimatedHoursLeft: { type: [number, 'null'] }
         voiceOrder: { type: [integer, 'null'], minimum: 1 }
+        voiceOrderManual:
+          type: boolean
+          description: Sıra aile / operatör tarafından elle verildi (PATCH voiceOrder); false ise hesaplanan sıra
     CoverageView:
       type: object
       required: [level, since, reasons, capabilities, devices]
