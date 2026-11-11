@@ -163,13 +163,28 @@ export class SignalService {
     // Tamponlanıp geç gelen eski sinyal yeni durumu ezmesin diye yalnız daha yeni occurredAt yazılır.
     const battery = s.device?.batteryPct ?? (s.kind === 'BATTERY' && s.value != null ? Math.round(s.value) : null);
     const onWrist = s.device?.onWrist ?? (s.kind === 'ON_BODY' ? true : s.kind === 'OFF_BODY' ? false : null);
+    // T-086: şarj (CHARGE_START/END veya cihaz bloğundaki charging). Takılan cihaz şarjda değildir.
+    const charging =
+      s.kind === 'CHARGE_START'
+        ? true
+        : s.kind === 'CHARGE_END' || onWrist === true
+          ? false
+          : (s.device?.charging ?? null);
     await tx
       .update(device)
       .set({
         lastSeenAt: occurredAt,
         batteryPct: battery ?? sql`${device.batteryPct}`,
-        onWrist: onWrist ?? sql`${device.onWrist}`,
+        onWrist: (charging === true ? false : onWrist) ?? sql`${device.onWrist}`,
         connectivity: s.device?.connectivity ?? sql`${device.connectivity}`,
+        charging: charging ?? sql`${device.charging}`,
+        chargingSince:
+          charging === true
+            ? sql`CASE WHEN ${device.charging} THEN coalesce(${device.chargingSince}, ${occurredAt.toISOString()}::timestamptz)
+                ELSE ${occurredAt.toISOString()}::timestamptz END`
+            : charging === false
+              ? null
+              : sql`${device.chargingSince}`,
       })
       .where(
         and(eq(sql`${device.id}::text`, s.deviceId), or(isNull(device.lastSeenAt), lte(device.lastSeenAt, occurredAt))),

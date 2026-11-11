@@ -24,6 +24,8 @@ export class IosPhoneAdapter implements DeviceAdapter {
   capabilities(): DeviceCapabilities {
     return {
       role: 'PHONE',
+      category: 'PHONE',
+      tier: 'A',
       signals: [...new AndroidPhoneAdapter(this.push).capabilities().signals],
       fallDetection: false,
       offBodyDetection: false,
@@ -31,6 +33,8 @@ export class IosPhoneAdapter implements DeviceAdapter {
       devicePrompt: true,
       tts: false,
       ring: true,
+      voice: true,
+      location: true,
     };
   }
 

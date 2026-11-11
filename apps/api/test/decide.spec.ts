@@ -62,6 +62,8 @@ describe('Sinyal → karar tablosu (TR kural paketi)', () => {
     ['HEART_RATE', 72, day, { action: 'none', reason: 'yalnız kayıt' }],
     ['STEPS', 3200, day, { action: 'none', reason: 'yalnız kayıt' }],
     ['LOCATION', undefined, day, { action: 'none', reason: 'yalnız kayıt' }],
+    ['CHARGE_START', undefined, day, { action: 'charge-start' }],
+    ['CHARGE_END', undefined, day, { action: 'none', reason: 'yalnız kayıt' }],
   ];
   it.each(table)('%s (değer=%s, gece=%o) → %o', (kind, value, ctx, expected) => {
     expect(d(kind, value, ctx)).toEqual(expected);
@@ -84,6 +86,8 @@ describe('Sinyal → karar tablosu (TR kural paketi)', () => {
       'HEARTBEAT',
       'CALLBACK_REQUEST',
       'TEST',
+      'CHARGE_START',
+      'CHARGE_END',
     ])
       expect(kinds.has(k as Signal['kind']), k).toBe(true);
   });
@@ -110,6 +114,50 @@ describe('Sinyal → karar tablosu (TR kural paketi)', () => {
       if (r.action !== 'notify') throw new Error('notify bekleniyordu');
       for (const n of r.notices) expect(catalogs.tr[n.code as keyof typeof catalogs.tr], n.code).toBeTruthy();
     }
+  });
+});
+
+describe('T-085 / T-086: şarj ve çoklu cihaz bağlamı', () => {
+  it('şarj bilgisini taşıyan düşme yok sayılır (S3.4); taşımayan P1 açılır', () => {
+    expect(decide({ kind: 'FALL', device: { charging: true } }, day)).toEqual({
+      action: 'ignore',
+      reason: 'CHARGING_FALL',
+    });
+    expect(decide({ kind: 'FALL', device: { charging: false } }, { ...day, charging: true })).toEqual({
+      action: 'create',
+      type: 'FALL',
+    });
+  });
+
+  it('şarjdayken pil uyarısı yok', () => {
+    expect(decide({ kind: 'BATTERY', value: 10 }, { ...day, charging: true })).toEqual({
+      action: 'none',
+      reason: 'şarjda',
+    });
+    expect(decide({ kind: 'BATTERY', value: 10, device: { charging: true } }, day)).toEqual({
+      action: 'none',
+      reason: 'şarjda',
+    });
+  });
+
+  it('"saat çıkarıldı" yalnız hiçbir A sınıfı cihaz takılı değilken ve şarj dışı (S3.4)', () => {
+    expect(decide({ kind: 'OFF_BODY' }, { ...day, alarmWorn: true }).action).toBe('none');
+    expect(decide({ kind: 'OFF_BODY' }, { ...day, charging: true }).action).toBe('none');
+    expect(decide({ kind: 'OFF_BODY' }, { ...day, alarmWearable: false }).action).toBe('none');
+    expect(decide({ kind: 'OFF_BODY' }, { ...day, alarmWorn: false, alarmWearable: true })).toEqual({
+      action: 'create',
+      type: 'WATCH_OFF',
+    });
+  });
+
+  it('pil eşikleri kural paketinden (battery.warnPct / criticalPct)', () => {
+    const p2 = { ...pack, battery: { ...pack.battery!, warnPct: 30, criticalPct: 15 } };
+    expect(decide({ kind: 'BATTERY', value: 25 }, { pack: p2, night: false })).toEqual({
+      action: 'notify',
+      notices: [{ code: 'W-BAT-20', audience: 'ELDER' }],
+    });
+    expect(decide({ kind: 'BATTERY', value: 15 }, { pack: p2, night: false }).action).toBe('notify');
+    expect(decide({ kind: 'BATTERY', value: 31 }, { pack: p2, night: false }).action).toBe('none');
   });
 });
 

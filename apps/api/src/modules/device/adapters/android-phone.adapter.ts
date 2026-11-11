@@ -21,6 +21,8 @@ export class AndroidPhoneAdapter implements DeviceAdapter {
   capabilities(): DeviceCapabilities {
     return {
       role: 'PHONE',
+      category: 'PHONE',
+      tier: 'A',
       signals: [
         'SOS',
         'CANCEL',
@@ -32,6 +34,8 @@ export class AndroidPhoneAdapter implements DeviceAdapter {
         'HEARTBEAT',
         'CALLBACK_REQUEST',
         'TEST',
+        'CHARGE_START', // T-086 (S4.8): telefonun kendi şarjı (BLE köprüsü telefona bağlı)
+        'CHARGE_END',
       ],
       fallDetection: false,
       offBodyDetection: false,
@@ -39,6 +43,8 @@ export class AndroidPhoneAdapter implements DeviceAdapter {
       devicePrompt: true,
       tts: true,
       ring: true,
+      voice: true,
+      location: true,
     };
   }
 
