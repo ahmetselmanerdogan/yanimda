@@ -137,3 +137,16 @@ describe('operatördeki olaya yeni alarm', () => {
     );
   });
 });
+
+describe('alarm olmayan tespit başka olaya eklenince', () => {
+  it('P4 geri arama olayına pil bitti (P3) → öncelik P3 (bulgu 7b)', async () => {
+    await deliver('CALLBACK_REQUEST');
+    const [cb] = await events.all();
+    expect(cb).toMatchObject({ type: 'CALLBACK', priority: 4 });
+    // Cihaz taraması (sweepDevices) bu iç yolu kullanır.
+    const create = (events as unknown as { create(t: string, s: object): Promise<boolean> }).create.bind(events);
+    await create('BATTERY_DEAD', { protectedPersonId: P, sourceId: `battery-dead:${P}:t1` });
+    const [after] = await events.all();
+    expect(after).toMatchObject({ type: 'CALLBACK', priority: 3 });
+  });
+});

@@ -124,10 +124,10 @@ describe('alarm olmayan açık olaya gerçek alarm → yükseltme', () => {
     ).toHaveLength(0);
   });
 
-  it('alarm olmayan sinyal alarm olmayan olaya eklenir, tür/öncelik değişmez', async () => {
+  it('alarm olmayan sinyal alarm olmayan olaya eklenir: tür değişmez, daha acil öncelik alınır (bulgu 7b)', async () => {
     await deliver('CALLBACK_REQUEST');
     await deliver('OFF_BODY', { occurredAt: '2026-11-08T11:00:00Z' });
-    expect(await only()).toMatchObject({ type: 'CALLBACK', priority: 4 });
+    expect(await only()).toMatchObject({ type: 'CALLBACK', priority: 3 }); // WATCH_OFF P3 > CALLBACK P4
   });
 
   it('kapatılmış TEST sonrası SOS yeni olay açar (yükseltme yalnız açık olaya)', async () => {

@@ -124,8 +124,15 @@ jobs:
         env:
           VITE_OIDC_AUTHORITY: http://localhost:8080/realms/operations
           CONSOLE_API_PROXY: http://127.0.0.1:3000
+      # API log'u yığın dizinindedir (stack-cli yalnız dizini yazdırır); denetim ve artefakt bu dosyadan.
+      - name: API log'u (yığın dizininden)
+        if: always()
+        run: |
+          D=$(grep -o '"dir":"[^"]*"' test-results-stack.log | head -1 | cut -d'"' -f4)
+          test -n "$D" && cp "$D/api.log" test-results-api.log
+          test -s test-results-api.log
       - name: PII log denetimi (T-081; konsol akışları boyunca API log'u)
-        run: pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../test-results-stack.log
+        run: pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../test-results-api.log
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -134,6 +141,7 @@ jobs:
             test-results/console/
             apps/console/test-results/
             test-results-stack.log
+            test-results-api.log
           if-no-files-found: ignore
 
   sast:
