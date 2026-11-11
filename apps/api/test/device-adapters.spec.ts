@@ -27,6 +27,8 @@ const ALL_KINDS: Signal['kind'][] = [
   'HEARTBEAT',
   'CALLBACK_REQUEST',
   'TEST',
+  'CHARGE_START', // T-086
+  'CHARGE_END',
 ];
 
 describe('WearOsAdapter', () => {
@@ -37,6 +39,10 @@ describe('WearOsAdapter', () => {
     expect(a.kind).toBe('WEAROS_WATCH');
     expect(a.capabilities()).toEqual({
       role: 'WATCH',
+      category: 'WATCH', // T-085: katalog satırı yoksa geçerli kategori / sınıf
+      tier: 'A',
+      voice: true,
+      location: true,
       signals: ALL_KINDS,
       fallDetection: true,
       offBodyDetection: true,
@@ -244,12 +250,22 @@ describe('Sinyal alımı adaptör üzerinden', () => {
       )
     ).map((r) => r.envelope.payload);
 
-  it('sunucu kaynağı işaretler: source = { kind, role } (olay motoru cihaz bilmez)', async () => {
+  it('sunucu kaynağı işaretler: source = { kind, role } + T-085 profil (kategori, sınıf, katalog yetenekleri)', async () => {
     await h.signals.accept([s('HEARTBEAT', { deviceId: PHONE }), s('HEARTBEAT', { deviceId: WATCH }), s('SOS')]);
+    const all = { sos: true, fall: true, voice: true, location: true };
     expect((await outboxPayloads()).map((p) => p.source)).toEqual([
-      { kind: 'ANDROID_PHONE', role: 'PHONE' },
-      { kind: 'WEAROS_WATCH', role: 'WATCH' },
-      { kind: 'SIMULATOR', role: 'WATCH' },
+      // Kayıtlı cihazlar: device.device_model kataloğu (pil ömrü dahil).
+      {
+        kind: 'ANDROID_PHONE',
+        role: 'PHONE',
+        category: 'PHONE',
+        tier: 'A',
+        caps: { ...all, fall: false },
+        batteryLifeH: 30,
+      },
+      { kind: 'WEAROS_WATCH', role: 'WATCH', category: 'WATCH', tier: 'A', caps: all, batteryLifeH: 40 },
+      // Kayıtsız (simülatör): adaptör varsayılanları.
+      { kind: 'SIMULATOR', role: 'WATCH', category: 'WATCH', tier: 'A', caps: all, batteryLifeH: null },
     ]);
   });
 

@@ -79,6 +79,11 @@ const DELIVERY: Record<string, Delivery> = {
   'F-LEARN-REPORT': FEED, // T-070 dönem sonu profil raporu
   'F-FA-REVIEW': INFO, //   T-071 eşik önerisi (operatör arayacak)
   'F-PERM': INFO, //        T-042 telefonda izin eksik (kurulum durumu)
+  'F-CHARGE-GAP': INFO, //  T-086 şarj boşluğu 90 dk (plan dışında 60 dk), günde bir
+  'F-COVERAGE-NONE': INFO, // T-086 hiçbir SOS yolu yok (uyanık 45 dk)
+  'F-COVERAGE-BACK': FEED, // T-086 kapsama geri geldi
+  'F-BAT-PLAN': INFO, //    T-086 18:00 pil akşama yetmeyecek (%15 altı)
+  'F-DEVICE-LIMIT': INFO, // T-085 kişi başına cihaz sınırı aşıldı
 };
 
 /** Aile kodları için teslim biçimi; kişinin kendi cihazına giden kodlar (W-*, P-*) yalnız cihaz push'u. */

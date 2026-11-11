@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS event.charging_plan;
+DROP TABLE IF EXISTS event.coverage_history;
+DROP TABLE IF EXISTS event.coverage_state;
+DROP INDEX IF EXISTS device.device_person_active_idx;
+ALTER TABLE device.device DROP COLUMN IF EXISTS charging_since;
+ALTER TABLE device.device DROP COLUMN IF EXISTS charging;
+ALTER TABLE device.device DROP COLUMN IF EXISTS retired_at;
+ALTER TABLE device.device DROP COLUMN IF EXISTS vendor_device_id;
+ALTER TABLE device.device DROP COLUMN IF EXISTS nickname;
+ALTER TABLE device.device DROP COLUMN IF EXISTS voice_order;
+ALTER TABLE device.device DROP COLUMN IF EXISTS bridge_device_id;
+ALTER TABLE device.device DROP COLUMN IF EXISTS connection_path;
+ALTER TABLE device.device DROP COLUMN IF EXISTS body_location;
+ALTER TABLE device.device DROP COLUMN IF EXISTS tier;
+ALTER TABLE device.device DROP COLUMN IF EXISTS category;
+ALTER TABLE device.device DROP COLUMN IF EXISTS model_id;
+DROP TABLE IF EXISTS device.device_model;

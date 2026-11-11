@@ -2897,5 +2897,251 @@
   "F-UI-PUSH-CHANNEL-INFO": {
     "channel": "family",
     "text": "Bilgilendirme"
+  },
+  "W-CHARGE-DONE": {
+    "channel": "watch",
+    "text": "Şarj tamam. Saatinizi takabilirsiniz.",
+    "action": "Taktım"
+  },
+  "W-WEAR-REMIND": {
+    "channel": "watch",
+    "text": "Saatinizi takmayı unutmayın."
+  },
+  "W-BAT-PLAN": {
+    "channel": "watch",
+    "text": "Pil akşama yetmeyebilir. Şimdi şarja takın."
+  },
+  "P-CHARGE-COVER": {
+    "channel": "phone",
+    "text": "Saatiniz şarjda. Telefonunuzu yanınızda tutun."
+  },
+  "P-CHARGE-DONE": {
+    "channel": "phone",
+    "text": "Saatinizin şarjı tamam. Takabilirsiniz."
+  },
+  "P-WEAR-REMIND": {
+    "channel": "phone",
+    "text": "Saatiniz şarjdan çıktı. Takmayı unutmayın."
+  },
+  "P-CHARGE-NOW": {
+    "channel": "phone",
+    "text": "Saatinizin pili akşama yetmeyebilir. Şimdi şarj edin."
+  },
+  "P-CHARGE-INTENT": {
+    "channel": "phone",
+    "text": "Saatimi şarj ediyorum",
+    "action": "Şarj ediyorum"
+  },
+  "P-COVERAGE-FULL": {
+    "channel": "phone",
+    "text": "Korunuyorsunuz. Düşme algılama ve yardım düğmesi açık."
+  },
+  "P-COVERAGE-BASIC": {
+    "channel": "phone",
+    "text": "Yardım düğmeniz takılı. Düşme algılama şu an kapalı."
+  },
+  "P-COVERAGE-PHONE_ONLY": {
+    "channel": "phone",
+    "text": "Telefonunuz sizi koruyor. Yardım gerekirse düğmeye basılı tutun."
+  },
+  "P-COVERAGE-NIGHT": {
+    "channel": "phone",
+    "text": "Gece modu. Telefonunuz yanınızda kalsın."
+  },
+  "P-COVERAGE-NONE": {
+    "channel": "phone",
+    "text": "Koruma şu an çalışmıyor. Saatinizi takın, telefonunuzu açık tutun."
+  },
+  "F-CHARGE-GAP": {
+    "channel": "family",
+    "text": "{name}'ın saati {min} dakikadır şarjda ya da takılı değil. Takmasını hatırlatabilir misiniz?"
+  },
+  "F-COVERAGE-NONE": {
+    "channel": "family",
+    "text": "{name} şu an korunmuyor: saat ve telefon bağlı değil. Kendisine ulaşabilir misiniz?"
+  },
+  "F-COVERAGE-BACK": {
+    "channel": "family",
+    "text": "{name} yeniden korunuyor."
+  },
+  "F-DEVICE-LIMIT": {
+    "channel": "family",
+    "text": "Cihaz eklenemedi: kişi başına en çok 6 cihaz, 3 alarm cihazı ve 1 telefon olabilir. Önce eski cihazı kaldırın."
+  },
+  "F-BAT-PLAN": {
+    "channel": "family",
+    "text": "{name}'ın saat pili akşama yetmeyebilir (%{pct}). Şarj etmesini hatırlatabilir misiniz?"
+  },
+  "F-UI-DEVICES": {
+    "channel": "family",
+    "text": "Cihazlar"
+  },
+  "F-UI-DEVICES-CHARGING": {
+    "channel": "family",
+    "text": "Şarjda {min} dk"
+  },
+  "F-UI-DEVICES-WORN": {
+    "channel": "family",
+    "text": "Takılı"
+  },
+  "F-UI-DEVICES-NOT-WORN": {
+    "channel": "family",
+    "text": "Takılı değil"
+  },
+  "F-UI-DEVICES-OFFLINE": {
+    "channel": "family",
+    "text": "Bağlı değil"
+  },
+  "F-UI-DEVICES-HOURS-LEFT": {
+    "channel": "family",
+    "text": "Yaklaşık {hours} saat pil"
+  },
+  "F-UI-DEVICES-VOICE-ORDER": {
+    "channel": "family",
+    "text": "Sesli arama sırası"
+  },
+  "F-UI-DEVICES-REMOVE": {
+    "channel": "family",
+    "text": "Cihazı kaldır (kayıp / çalıntı)"
+  },
+  "F-UI-COVERAGE-TITLE": {
+    "channel": "family",
+    "text": "Koruma"
+  },
+  "F-UI-COVERAGE-FULL": {
+    "channel": "family",
+    "text": "Tam koruma"
+  },
+  "F-UI-COVERAGE-BASIC": {
+    "channel": "family",
+    "text": "Temel koruma (düşme algılama yok)"
+  },
+  "F-UI-COVERAGE-PHONE_ONLY": {
+    "channel": "family",
+    "text": "Yalnız telefon"
+  },
+  "F-UI-COVERAGE-NIGHT": {
+    "channel": "family",
+    "text": "Gece"
+  },
+  "F-UI-COVERAGE-NONE": {
+    "channel": "family",
+    "text": "Koruma yok"
+  },
+  "F-UI-COVERAGE-REASON-WATCH_CHARGING": {
+    "channel": "family",
+    "text": "Saat şarjda"
+  },
+  "F-UI-COVERAGE-REASON-NO_ALARM_DEVICE_WORN": {
+    "channel": "family",
+    "text": "Alarm cihazı takılı değil"
+  },
+  "F-UI-COVERAGE-REASON-ALARM_DEVICE_OFFLINE": {
+    "channel": "family",
+    "text": "Alarm cihazı bağlı değil"
+  },
+  "F-UI-COVERAGE-REASON-PHONE_OFFLINE": {
+    "channel": "family",
+    "text": "Telefon bağlı değil"
+  },
+  "F-UI-COVERAGE-REASON-NIGHT_WINDOW": {
+    "channel": "family",
+    "text": "Uyku saatleri"
+  },
+  "F-UI-COVERAGE-REASON-ON_HOLD": {
+    "channel": "family",
+    "text": "Koruma beklemede"
+  },
+  "F-UI-COVERAGE-CAP-SOS": {
+    "channel": "family",
+    "text": "Yardım düğmesi"
+  },
+  "F-UI-COVERAGE-CAP-FALL": {
+    "channel": "family",
+    "text": "Düşme algılama"
+  },
+  "F-UI-COVERAGE-CAP-VOICE": {
+    "channel": "family",
+    "text": "Sesli görüşme"
+  },
+  "F-UI-COVERAGE-CAP-LOCATION": {
+    "channel": "family",
+    "text": "Konum"
+  },
+  "F-UI-COVERAGE-PLAN": {
+    "channel": "family",
+    "text": "Şarj saati"
+  },
+  "F-UI-COVERAGE-PLAN-HINT": {
+    "channel": "family",
+    "text": "Saati her gün bu saatlerde şarj edin. Önerimiz 19:00–21:00: oturulan, düşme riskinin en düşük olduğu saatler."
+  },
+  "F-UI-COVERAGE-NIGHT-CHARGE": {
+    "channel": "family",
+    "text": "Gece şarjına izin ver"
+  },
+  "F-UI-COVERAGE-INTENT": {
+    "channel": "family",
+    "text": "Saati şarj ediyor (90 dk hatırlatma yok)"
+  },
+  "F-UI-NIGHT-CHARGE-WARN": {
+    "channel": "family",
+    "text": "Tek alarm cihazı gece şarj edilirse gece düşmeleri algılanamaz. Yine de izin veriyor musunuz?"
+  },
+  "F-UI-TYPE-COVERAGE_GAP": {
+    "channel": "family",
+    "text": "Koruma boşluğu"
+  },
+  "O-TYPE-COVERAGE_GAP": {
+    "channel": "console",
+    "text": "Kapsama boşluğu"
+  },
+  "O-SCRIPT-COVERAGE": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Bir süredir saatinizden sinyal alamıyoruz. İyi misiniz? Saatinizi takıp telefonunuzu yanınızda tutabilir misiniz?"
+  },
+  "O-UI-DEVICES": {
+    "channel": "console",
+    "text": "Cihazlar"
+  },
+  "O-UI-COVERAGE-FULL": {
+    "channel": "console",
+    "text": "Tam"
+  },
+  "O-UI-COVERAGE-BASIC": {
+    "channel": "console",
+    "text": "Temel"
+  },
+  "O-UI-COVERAGE-PHONE_ONLY": {
+    "channel": "console",
+    "text": "Yalnız telefon"
+  },
+  "O-UI-COVERAGE-NIGHT": {
+    "channel": "console",
+    "text": "Gece"
+  },
+  "O-UI-COVERAGE-NONE": {
+    "channel": "console",
+    "text": "Yok"
+  },
+  "O-UI-COVERAGE-PLANNED": {
+    "channel": "console",
+    "text": "Planlı şarj"
+  },
+  "O-UI-GAP-CHARGING": {
+    "channel": "console",
+    "text": "Saat şarjda veya şarjdan sonra takılmadı"
+  },
+  "O-UI-GAP-WATCH_OFF": {
+    "channel": "console",
+    "text": "Saat takılı değil"
+  },
+  "O-UI-GAP-BATTERY_DEAD": {
+    "channel": "console",
+    "text": "Pil bitti"
+  },
+  "O-UI-GAP-CONNECTION_LOST": {
+    "channel": "console",
+    "text": "Cihazlardan sinyal yok"
   }
 }

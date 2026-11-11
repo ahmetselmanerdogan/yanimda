@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Headers,
   HttpCode,
@@ -16,7 +15,6 @@ import {
 } from '@nestjs/common';
 
 import { RateLimit } from '../../common/rate-limit';
-import { AdminGuard } from '../identity/oidc.guard';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
 import { type DevicePrincipal, EnrollmentService, etagMatches } from './enrollment.service';
 
@@ -28,7 +26,7 @@ interface Res304 {
 
 const principal = (req: DeviceRequest): DevicePrincipal => req.device!; // DeviceTokenGuard doldurur
 
-/** T-041 cihaz kaydı, token, yapılandırma, push token. */
+/** T-041 cihaz kaydı, token, yapılandırma, push token. Kaldırma (DELETE) T-085'ten beri DeviceManageController'da. */
 @Controller('devices')
 export class EnrollmentController {
   constructor(@Inject(EnrollmentService) private readonly enrollment: EnrollmentService) {}
@@ -79,13 +77,5 @@ export class EnrollmentController {
   async pushToken(@Param('id') id: string, @Req() req: DeviceRequest, @Body() body: unknown) {
     EnrollmentService.assertSelf(principal(req), id);
     await this.enrollment.setPushToken(principal(req), body);
-  }
-
-  /** DELETE /v1/devices/{id} — cihazı kaldır; token'ı iptal olur (401). TODO T-020: FAMILY sahiplik kontrolü. */
-  @Delete(':id')
-  @HttpCode(204)
-  @UseGuards(AdminGuard)
-  async revoke(@Param('id') id: string) {
-    await this.enrollment.revoke(id);
   }
 }

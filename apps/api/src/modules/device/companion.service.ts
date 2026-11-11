@@ -19,6 +19,7 @@ import { device } from '../../db/schema';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
 import type { SignalRejectReason } from '../signal/signal-reject';
+import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
 import { type DevicePrincipal, EnrollmentService, type TokenResponse } from './enrollment.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,7 +88,7 @@ export class CompanionService {
     if ((b.kind ?? 'WEAROS_WATCH') !== 'WEAROS_WATCH') throw new BadRequestException('kind WEAROS_WATCH olmalı');
     const id = b.deviceId.toLowerCase();
     if (id === p.deviceId) throw new BadRequestException('Telefon kendini saat olarak kaydedemez');
-    const fields = {
+    const base = {
       protectedPersonId: p.protectedPersonId,
       kind: 'WEAROS_WATCH',
       model: str(b.model, 100) ?? null,
@@ -95,33 +96,52 @@ export class CompanionService {
       appVersion: str(b.appVersion, 50) ?? null,
     };
 
-    const created = await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ personId: device.protectedPersonId, kind: device.kind, revokedAt: device.revokedAt })
-        .from(device)
-        .where(eq(device.id, id))
-        .for('update');
-      if (!row) {
-        await tx.insert(device).values({ id, ...fields, enrolledAt: now });
-        return true;
-      }
-      if (row.revokedAt) {
-        // Kaldırılmış saat yeniden eşleşir; eski token'ları geçersiz kalır (enrolledAt yenilenir).
+    const created = await this.db
+      .transaction(async (tx) => {
+        const [row] = await tx
+          .select({ personId: device.protectedPersonId, kind: device.kind, revokedAt: device.revokedAt })
+          .from(device)
+          .where(eq(device.id, id))
+          .for('update');
+        const cls = await classOf(tx, 'WEAROS_WATCH');
+        const fields = { ...base, modelId: cls.modelId, category: cls.category, tier: cls.tier, retiredAt: null };
+        // T-085 (S1.7): yeni veya yeniden etkinleşen saat kişi başına sınırlara takılabilir.
+        if (!row || row.revokedAt) await assertDeviceLimits(tx, p.protectedPersonId, cls, id);
+        if (!row) {
+          await tx.insert(device).values({ id, ...fields, enrolledAt: now });
+          return true;
+        }
+        if (row.revokedAt) {
+          // Kaldırılmış saat yeniden eşleşir; eski token'ları geçersiz kalır (enrolledAt yenilenir).
+          await tx
+            .update(device)
+            .set({
+              ...fields,
+              enrolledAt: now,
+              revokedAt: null,
+              pushProvider: null,
+              pushToken: null,
+              pushSandbox: null,
+            })
+            .where(eq(device.id, id));
+          return true;
+        }
+        if (row.personId !== p.protectedPersonId || row.kind !== 'WEAROS_WATCH')
+          throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
+        // Aynı kişinin etkin saati: yeniden deneme (yanıt yolda kayboldu) veya telefon yeniden kuruldu → yeni token.
         await tx
           .update(device)
-          .set({ ...fields, enrolledAt: now, revokedAt: null, pushProvider: null, pushToken: null, pushSandbox: null })
+          .set({ model: fields.model, osVersion: fields.osVersion, appVersion: fields.appVersion })
           .where(eq(device.id, id));
-        return true;
-      }
-      if (row.personId !== p.protectedPersonId || row.kind !== 'WEAROS_WATCH')
-        throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
-      // Aynı kişinin etkin saati: yeniden deneme (yanıt yolda kayboldu) veya telefon yeniden kuruldu → yeni token.
-      await tx
-        .update(device)
-        .set({ model: fields.model, osVersion: fields.osVersion, appVersion: fields.appVersion })
-        .where(eq(device.id, id));
-      return false;
-    });
+        return false;
+      })
+      .catch(async (e: unknown) => {
+        if (e instanceof DeviceLimitError)
+          await notifyDeviceLimit(this.outbox, e.protectedPersonId, now).catch((err: unknown) =>
+            this.log.warn(`F-DEVICE-LIMIT yazılamadı: ${safeError(err)}`),
+          );
+        throw e;
+      });
     this.log.log(`Saat telefon üzerinden kaydedildi${created ? '' : ' (yeniden)'}`);
     return {
       created,

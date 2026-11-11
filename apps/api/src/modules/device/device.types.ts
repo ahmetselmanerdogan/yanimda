@@ -1,6 +1,6 @@
-import type { DeviceKind, DeviceRole, Signal } from '@yanimda/contracts';
+import type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier, Signal } from '@yanimda/contracts';
 
-export type { DeviceKind, DeviceRole } from '@yanimda/contracts';
+export type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier } from '@yanimda/contracts';
 
 /**
  * T-015 cihaz adaptörü arayüzü. Olay motoru cihaz bilmez: cihaza özgü her şey (sinyal düzeltme,
@@ -9,6 +9,13 @@ export type { DeviceKind, DeviceRole } from '@yanimda/contracts';
  */
 export interface DeviceCapabilities {
   role: DeviceRole;
+  /** T-085: kategori ve sınıf (katalogda model satırı yoksa bunlar geçerli; device.device_model önceliklidir). */
+  category: DeviceCategory;
+  tier: DeviceTier;
+  /** İki yönlü sesli görüşme (sesli arama sırası, kapsama "ses" yeteneği). */
+  voice: boolean;
+  /** Konum gönderebilir. */
+  location: boolean;
   /** Bu cihazın gönderebileceği sinyal türleri; dışındakiler alımda reddedilir. */
   signals: Signal['kind'][];
   fallDetection: boolean;
@@ -60,6 +67,8 @@ export const ALL_SIGNAL_KINDS: Signal['kind'][] = [
   'HEARTBEAT',
   'CALLBACK_REQUEST',
   'TEST',
+  'CHARGE_START',
+  'CHARGE_END',
 ];
 
 export function assertSupported(adapter: DeviceAdapter, s: Signal) {

@@ -13,7 +13,10 @@ export type SignalKind =
   | 'LOCATION'
   | 'HEARTBEAT'
   | 'CALLBACK_REQUEST'
-  | 'TEST';
+  | 'TEST'
+  /** T-086 (S4.2): cihaz şarja girdi / şarjdan çıktı. */
+  | 'CHARGE_START'
+  | 'CHARGE_END';
 
 export interface Signal {
   schemaVersion: 1;
@@ -30,13 +33,29 @@ export interface Signal {
     onWrist?: boolean;
     connectivity?: 'BLE' | 'LTE' | 'WIFI' | 'NONE';
     appVersion?: string;
+    /** T-086: cihaz şu an şarjda mı. Şarjdaki cihazın düşmesi yok sayılır (S3.4), pil uyarıları susar. */
+    charging?: boolean;
   };
   payload?: Record<string, unknown>;
   /**
    * Sunucu doldurur (T-015, cihaz adaptörü); istemci gönderemez (şema additionalProperties: false).
    * Olay motoru cihaz türünü buradan okur, cihaz tablosundan değil.
    */
-  source?: { kind: DeviceKind; role: DeviceRole };
+  source?: SignalSource;
+}
+
+/**
+ * Sunucunun sinyale eklediği cihaz profili (T-015 adaptör + T-085 cihaz kataloğu). Olay motoru cihaz modelini
+ * bilmez; kapsama hesabı yalnız bu alanları kullanır. Eski kayıtlarda yalnız kind/role bulunabilir.
+ */
+export interface SignalSource {
+  kind: DeviceKind;
+  role: DeviceRole;
+  category?: DeviceCategory;
+  tier?: DeviceTier;
+  caps?: CoverageCapabilities;
+  /** Katalogdaki tam pil ömrü (saat); tahmini kalan süre = pil % × bu değer. */
+  batteryLifeH?: number | null;
 }
 
 export type EventType =
@@ -51,7 +70,12 @@ export type EventType =
   | 'ROUTINE_DEVIATION'
   | 'HEART_ANOMALY'
   | 'TEST'
-  | 'FOLLOW_UP';
+  | 'FOLLOW_UP'
+  /** T-086 (S4.4, S4.7): kapsama boşluğu; nedenleri CHARGING, WATCH_OFF, BATTERY_DEAD, CONNECTION_LOST. */
+  | 'COVERAGE_GAP';
+
+/** COVERAGE_GAP olayının nedeni (eski WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST tespitleri bunun nedenidir). */
+export type CoverageGapReason = 'CHARGING' | 'WATCH_OFF' | 'BATTERY_DEAD' | 'CONNECTION_LOST';
 
 export type EventState =
   | 'CREATED'
@@ -71,7 +95,65 @@ export type EventState =
 export type DeviceKind = 'WEAROS_WATCH' | 'ANDROID_PHONE' | 'IOS_PHONE' | 'SIMULATOR';
 export type DeviceRole = 'WATCH' | 'PHONE';
 
+/** Eski koruma durumu: bir sürüm boyunca kapsama seviyesinden türetilir (S3.1). */
 export type ProtectionState = 'PROTECTED_WATCH' | 'PROTECTED_PHONE' | 'NIGHT' | 'UNPROTECTED';
+
+// ---- T-085 çoklu cihaz ve kapsama (docs/07 S1, S3) ----
+export type DeviceCategory = 'WATCH' | 'PHONE' | 'PENDANT' | 'RING' | 'EARBUD' | 'EARRING' | 'HOME_UNIT' | 'CLOUD';
+/** A alarm (SOS/düşme açar, korumaya sayılır), B canlı izlem, C eğilim (S2.1). */
+export type DeviceTier = 'A' | 'B' | 'C';
+export type BodyLocation = 'WRIST_LEFT' | 'WRIST_RIGHT' | 'NECK' | 'CHEST' | 'FINGER' | 'EAR' | 'POCKET' | 'HOME';
+export type CoverageLevel = 'FULL' | 'BASIC' | 'PHONE_ONLY' | 'NIGHT' | 'NONE';
+export type CoverageReason =
+  'WATCH_CHARGING' | 'NO_ALARM_DEVICE_WORN' | 'ALARM_DEVICE_OFFLINE' | 'PHONE_OFFLINE' | 'NIGHT_WINDOW' | 'ON_HOLD';
+export interface CoverageCapabilities {
+  sos: boolean;
+  fall: boolean;
+  voice: boolean;
+  location: boolean;
+}
+
+/** GET /protected-persons/{id}/devices öğesi. */
+export interface DeviceSummary {
+  id: string;
+  kind: string;
+  category: DeviceCategory;
+  tier: DeviceTier;
+  bodyLocation: BodyLocation | null;
+  nickname: string | null;
+  online: boolean;
+  lastSeenAt: string | null;
+  batteryPct: number | null;
+  charging: boolean;
+  chargingSince: string | null;
+  onBody: boolean | null;
+  estimatedHoursLeft: number | null;
+  voiceOrder: number | null;
+}
+
+/** GET /protected-persons/{id}/coverage */
+export interface CoverageView {
+  level: CoverageLevel;
+  since: string;
+  reasons: CoverageReason[];
+  capabilities: CoverageCapabilities;
+  devices: DeviceSummary[];
+}
+
+/** GET|PUT /protected-persons/{id}/charging-plan */
+export interface ChargingPlan {
+  window: string;
+  source: 'DEFAULT' | 'LEARNED' | 'FAMILY';
+  nightChargeAllowed: boolean;
+}
+
+/** GET /supervisor/coverage (S4.11): seviye başına kişi sayısı; akşam planlı şarj ayrı sayılır. */
+export interface SupervisorCoverage {
+  counts: Record<CoverageLevel, number>;
+  plannedCharging: number;
+  total: number;
+  at: string;
+}
 
 export interface KafkaEnvelope<T> {
   eventId: string;
@@ -92,6 +174,8 @@ export const TOPICS = {
   notifyRequested: 'notify.requested',
   rulesReloaded: 'rules.reloaded',
   protectionChanged: 'user.protection.changed',
+  /** T-085: kişinin kapsama seviyesi değişti (FULL / BASIC / PHONE_ONLY / NIGHT / NONE). */
+  coverageChanged: 'user.coverage.changed',
   chainStepResult: 'chain.step.result',
   devicePromptAnswered: 'device.prompt.answered',
   /** Amir uyarısı (T-021: operatör kilidi düştü). Konsol amir odasına yayınlar. */
