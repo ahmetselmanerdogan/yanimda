@@ -136,6 +136,14 @@ describe('plan ve dönemler', () => {
     expect(await alerts()).toContain('O-WELLNESS-MISSED');
     const c = await wellness.compliance(id, 30, new Date('2026-11-11T12:00:00Z'));
     expect(c).toMatchObject({ planned: 1, missed: 1, ratio: 0 });
+    // Denetim bulgu 7: kuyrukta bekleyen P4 geri arama olayı sistemce kapanır (sonraki tespitleri yutmasın).
+    const open = await h.rows("SELECT id FROM event.event WHERE protected_person_id = $1 AND state <> 'CLOSED'", [id]);
+    expect(open).toEqual([]);
+    const [closed] = await h.rows<{ confirmed_outcome: string }>(
+      'SELECT confirmed_outcome FROM event.event WHERE protected_person_id = $1',
+      [id],
+    );
+    expect(closed!.confirmed_outcome).toBe('SUPPRESSED');
   });
 
   it('yalnız bildirim kanalı: geri arama açılmaz, NOTIFIED; plan kapatılınca yeni dönem yok', async () => {

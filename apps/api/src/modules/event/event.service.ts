@@ -431,6 +431,23 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    * T-071: kişiye "eşik görüşmesi" CALLBACK olayı (P4) açar. Aynı kaynak için bir kez; kişinin açık olayı varsa ona
    * eklenir. Yeni olay açıldıysa true.
    */
+  /**
+   * Sistem geri çekmesi (denetim bulgu 7a): henüz operatöre geçmemiş (CREATED / DEVICE_PROMPT / OPERATOR_QUEUE) ALARM
+   * OLMAYAN olayı kapatır — ör. penceresi dolan düzenli arama geri araması kuyrukta kalıp sonraki tespitleri yutmasın.
+   * Gerçek alarma yükseltilmiş veya operatördeki olaya dokunmaz (false).
+   */
+  async closeBySystem(id: string, outcome: string, reason: string): Promise<boolean> {
+    const r = await this.withEvent(id, async (u) => {
+      if (ALARM_TYPES.has(u.ev.type)) return false;
+      if (u.ev.state === 'DEVICE_PROMPT') this.transition(u, 'CANCELLED_BY_USER', 'SYSTEM', undefined, reason);
+      else if (u.ev.state !== 'CREATED' && u.ev.state !== 'OPERATOR_QUEUE') return false;
+      this.close(u, outcome, reason, 'SYSTEM');
+      u.after.push(() => this.cancelWaitTimers(u.ev.id));
+      return true;
+    });
+    return r === true;
+  }
+
   raiseCallback(protectedPersonId: string, sourceId: string, note: string, exclusive = false): Promise<boolean> {
     return this.create('CALLBACK', { protectedPersonId, sourceId, note, exclusive });
   }
@@ -673,7 +690,12 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const upgrade =
       ALARM_TYPES.has(type) && (!ALARM_TYPES.has(u.ev.type) || (u.ev.type === 'INACTIVITY' && type !== 'INACTIVITY'));
     const rule = ruleFor(this.pack, type);
-    const to = upgrade ? Math.min(u.ev.priority, rule?.priority ?? 1) : type === 'SOS' ? 1 : u.ev.priority;
+    // Eklenen tespitin kendi önceliği daha acilse olay ona çekilir (bulgu 7b: P4 geri aramaya pil bitti → P3).
+    const to = upgrade
+      ? Math.min(u.ev.priority, rule?.priority ?? 1)
+      : type === 'SOS'
+        ? 1
+        : Math.min(u.ev.priority, rule?.priority ?? u.ev.priority);
     if (to < u.ev.priority) {
       await this.repo.insertAudit(u.tx, {
         actorKind: 'SYSTEM',

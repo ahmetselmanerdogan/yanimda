@@ -206,7 +206,14 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
         const [ev] = await this.db.select({ state: event.state }).from(event).where(eq(event.id, c.eventId));
         if (ev && HANDLING.has(ev.state)) continue;
       }
-      if (await this.miss(c.id, 'WINDOW', now)) n++;
+      if (await this.miss(c.id, 'WINDOW', now)) {
+        n++;
+        // Kuyrukta bekleyen geri arama olayı kalmasın (denetim bulgu 7a); operatördeyse veya alarma döndüyse kalır.
+        if (c.eventId)
+          await this.events
+            .closeBySystem(c.eventId, 'SUPPRESSED', 'düzenli arama penceresi doldu')
+            .catch((e) => this.log.warn(`Geri arama kapatılamadı: ${safeError(e)}`));
+      }
     }
     if (n) this.outbox.notifyCommitted();
     return n;
