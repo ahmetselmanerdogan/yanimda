@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -17,6 +18,7 @@ import {
   type SupervisorAlert,
   TOPICS,
 } from '@yanimda/contracts';
+import { t } from '@yanimda/messages';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -186,6 +188,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   /**
    * POST /v1/events/{id}/dispatch — aşama ve ayrıntılar. Aşama yalnız ileri gider (aynı aşama yalnız ayrıntı
    * günceller); CANCELLED her an, son aşamadan sonra değişiklik yok (409).
+   * Yetki: amir/yönetici her süreci; operatör yalnız olayı yürüttüğü (event.operator_id) sürecin — olay kapandıktan
+   * sonra da (kapanış operatörü korur). Değilse 403 O-DISPATCH-NOT-OWNER.
    */
   async update(
     eventId: string,
@@ -220,6 +224,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const result = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(dispatch).where(eq(dispatch.eventId, eventId)).for('update');
       if (!row) throw new NotFoundException('Süreç yok');
+      if (actor.kind === 'OPERATOR') {
+        const [ev] = await tx.select({ operatorId: event.operatorId }).from(event).where(eq(event.id, eventId));
+        if (!ev || ev.operatorId !== actor.id)
+          throw new ForbiddenException({ message: t('O-DISPATCH-NOT-OWNER', 'tr'), code: 'O-DISPATCH-NOT-OWNER' });
+      }
       const cur = row.status as DispatchStage;
       if (TERMINAL.has(cur)) throw new ConflictException('Süreç kapandı');
       const advance = status !== undefined && status !== cur;

@@ -402,6 +402,8 @@ paths:
         Ekip olay yerinde → aileye F-112-ON-SCENE; nakil/hastanede → F-112-HOSPITAL. Ekip DISPATCH_ARRIVAL_SLA_MIN
         (15) içinde ulaşmazsa amire O-DISPATCH-NO-ARRIVAL, ulaştıktan sonra süreç açık kaldıkça O-DISPATCH-OPEN
         (DISPATCH_OPEN_REMIND_MIN, 60). Kapanmış süreç 409, geri aşama 409.
+        Yetki: SUPERVISOR/ADMIN her süreci; OPERATOR yalnız olayı yürüttüğü (olayın operatörü) süreci — olay
+        kapandıktan sonra da. Başka operatör 403 (`code: O-DISPATCH-NOT-OWNER`); süreç yoksa önce 404.
       operationId: updateDispatch
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }]
@@ -430,6 +432,7 @@ paths:
             content: { application/json: { schema: { $ref: '#/components/schemas/DispatchView' } } },
           }
         '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
   /events/{id}/claim:
