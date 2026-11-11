@@ -2,7 +2,7 @@
 # (tr.yaml → rules[].chain, stepTimeoutSec); burada her adım türünün etiketi, operatör metni (katalog kodu) ve
 # atlanabilirliği tanımlanır. Metinler packages/messages kataloğundadır.
 country: TR
-version: 1
+version: 2
 steps:
   CALL_WATCH:
     label: O-STEP-WATCH
@@ -16,11 +16,25 @@ steps:
     target: ELDER_PHONE
     required: true
     defaultTimeoutSec: 15
+  # T-087 (S5.2): kişiye son deneme — en iyi sesli cihaz (doğrulayan / en son görülen saat, yoksa telefon).
+  CALL_REDIAL:
+    label: O-STEP-REDIAL
+    script: O-SCRIPT-ELDER
+    target: VOICE_DEVICE
+    required: false
+    defaultTimeoutSec: 15
   CALL_CONTACT:
     label: O-STEP-CONTACT
     script: O-SCRIPT-CONTACT
     target: CONTACT
     required: true
+    defaultTimeoutSec: 25
+  # T-087 (S5.6): yakın kaydında "anahtarı var" olan, eve varma süresi en kısa olan (ulaşılabilir saatlerde).
+  CALL_KEY_HOLDER:
+    label: O-STEP-KEY-HOLDER
+    script: O-SCRIPT-KEY-HOLDER
+    target: KEY_HOLDER
+    required: false
     defaultTimeoutSec: 25
   CALL_NEIGHBOR:
     label: O-STEP-NEIGHBOR

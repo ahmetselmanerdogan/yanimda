@@ -39,6 +39,45 @@
       },
       "additionalProperties": false
     },
+    "call112DeadlineSec": {
+      "description": "docs/07 S5.2/S5.4 (T-087): kuyruğa düşüşten 112 son sınırı (sn), olay türüne göre",
+      "type": "object",
+      "propertyNames": { "enum": ["SOS", "FALL", "INACTIVITY"] },
+      "additionalProperties": { "type": "integer", "minimum": 30, "maximum": 7200 }
+    },
+    "ladder": {
+      "description": "docs/07 S5 (T-087) ulaşılamama merdiveni",
+      "type": "object",
+      "properties": {
+        "offlineSkipMin": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "autoAnswerSec": { "type": "integer", "minimum": 0, "maximum": 60 },
+        "unclaimedSupervisorSec": { "type": "integer", "minimum": 10, "maximum": 600 },
+        "unclaimedVoiceContact": {
+          "type": "object",
+          "required": ["enabled", "afterSec", "phrase"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "afterSec": { "type": "integer", "minimum": 60, "maximum": 1800 },
+            "phrase": { "type": "string", "pattern": "^V-[A-Z0-9-]+$" }
+          },
+          "additionalProperties": false
+        },
+        "awayFromHomeM": { "type": "integer", "minimum": 50, "maximum": 10000 }
+      },
+      "additionalProperties": false
+    },
+    "fusion": {
+      "description": "docs/07 S3.3–S3.7 (T-088) sinyal birleştirme",
+      "type": "object",
+      "properties": {
+        "corroborateSec": { "type": "integer", "minimum": 10, "maximum": 600 },
+        "corroboratedPromptSec": { "type": "integer", "minimum": 10, "maximum": 120 },
+        "crossCancelFollowUp": { "type": "boolean" },
+        "crossCancelFollowUpMin": { "type": "integer", "minimum": 5, "maximum": 720 },
+        "gpsFreshSec": { "type": "integer", "minimum": 10, "maximum": 1800 }
+      },
+      "additionalProperties": false
+    },
     "rules": {
       "type": "array",
       "items": {
@@ -131,7 +170,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(CALL_WATCH|CALL_PHONE|CALL_CONTACT:[1-5]|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
+              "pattern": "^(CALL_WATCH|CALL_PHONE|CALL_REDIAL|CALL_CONTACT:[1-5]|CALL_KEY_HOLDER|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
             }
           },
           "stepTimeoutSec": { "type": "object", "additionalProperties": { "type": "integer" } },

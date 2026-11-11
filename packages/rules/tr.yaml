@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 1
+version: 2
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -8,20 +8,50 @@ falseAlarm: { windowDays: 30, reviewAfter: 3 }
 # T-052 resmi hatlar (operatör masadaki sabit hattan arar; CPaaS bu numaraları aramaz). Servisin ana ve yedek numarası
 # hesaba bağlıdır: CPAAS_INBOUND_NUMBER / CPAAS_BACKUP_NUMBER (.env.example).
 numbers: { emergency: '112', social: '183', health: '182' }
+# docs/07 S5.2 / S5.4 (T-087): kuyruğa düşüşten 112 son sınırı (sn). Kişiye ulaşılmadıysa operatör 112'yi arar; sistem
+# 112'yi asla kendisi aramaz ve P1 olayı kendisi kapatmaz (S5.8).
+call112DeadlineSec: { SOS: 180, FALL: 300, INACTIVITY: 1200 }
+# docs/07 S5.1–S5.5 (T-087) ulaşılamama merdiveni.
+#  offlineSkipMin: aramadan önce cihaz son bu kadar dakikada görülmediyse adım "çevrimdışı — atlandı" (S3.2 A sınıfı 15)
+#  autoAnswerSec: P1'de sesli cihaz bu sürede kendiliğinden cevaplar (yanınızdayız aramasında asla); 20 sn sessiz
+#  kalan otomatik cevaplı arama "cevap yok" değil olası acil durumdur (kuralın silenceIsEmergencySec'i)
+#  unclaimedSupervisorSec: kuyrukta üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED)
+#  unclaimedVoiceContact: üstlenilmeyen P1'de 1. yakına sesli mesaj (S5.3; sahip kararı, varsayılan kapalı)
+#  awayFromHomeM: kişi evden bu kadar uzaktaysa komşu ve anahtar sahibi adımları atlanır (S5.5)
+ladder:
+  offlineSkipMin: 15
+  autoAnswerSec: 10
+  unclaimedSupervisorSec: 90
+  unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: V-NO-OPERATOR }
+  awayFromHomeM: 200
+# docs/07 S3.3–S3.7 (T-088) sinyal birleştirme. İki farklı cihaz corroborateSec içinde düşme bildirirse olay
+# doğrulanmış: soru süresi corroboratedPromptSec; doğrulanmış düşme başka cihazdan iptal edilirse aynı gün takip
+# araması (crossCancelFollowUp, followUpMin sonra). Açık P1/P2'de konum: gpsFreshSec'ten yeni GPS önce.
+fusion:
+  corroborateSec: 90
+  corroboratedPromptSec: 30
+  crossCancelFollowUp: true
+  crossCancelFollowUpMin: 60
+  gpsFreshSec: 120
 rules:
   - type: SOS
     priority: 1
     devicePrompt: { enabled: false }
-    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1, CALL_112]
-    stepTimeoutSec: { CALL_WATCH: 15, CALL_PHONE: 15, CALL_CONTACT: 25 }
+    # S5.2: 1. sesli cihaz 20 → telefon 20 → en iyi cihaza yeniden 15 (kişiye ≤75 sn) → yakınlar 25 → anahtar
+    # sahibi 25 → 112 (son sınır call112DeadlineSec.SOS).
+    chain: [CALL_WATCH, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_112]
+    stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
     silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: FALL
     priority: 1
     devicePrompt: { enabled: true, windowSec: 60, repeatVibrateSec: 5, tts: W-FALL-1 }
     escalateWhen: { noAnswer: true }
-    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1, CALL_CONTACT:2, CALL_NEIGHBOR, CALL_112]
-    stepTimeoutSec: { CALL_WATCH: 15, CALL_PHONE: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
+    # S5.2 (SOS ile aynı) + komşu; doğrulanmış düşmede (T-088) doğrulayan cihaz önce aranır.
+    chain:
+      [CALL_WATCH, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_NEIGHBOR, CALL_112]
+    stepTimeoutSec:
+      { CALL_WATCH: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25, CALL_NEIGHBOR: 25 }
     silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: INACTIVITY
@@ -40,8 +70,10 @@ rules:
       timeoutSec: 120
       operatorSampleRate: 0.2
     learningMode: { extraSilentAsks: 1 }
-    chain: [CALL_PHONE, CALL_WATCH, CALL_CONTACT:1, CALL_NEIGHBOR, CALL_112]
-    stepTimeoutSec: { CALL_PHONE: 15, CALL_WATCH: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
+    # S5.4: sessiz soru 120 → sesli ön eleme 120 → cihaz/telefon → yakınlar → anahtar sahibi ("gidip bakar mısınız")
+    # → 112 (kuyruğa düşüşten 20 dk, call112DeadlineSec.INACTIVITY).
+    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_NEIGHBOR, CALL_112]
+    stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25, CALL_NEIGHBOR: 25 }
   - type: WATCH_OFF
     priority: 3
     suppressIn: [NIGHT]
