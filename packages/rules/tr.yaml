@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 1
+version: 2
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -8,6 +8,28 @@ falseAlarm: { windowDays: 30, reviewAfter: 3 }
 # T-052 resmi hatlar (operatör masadaki sabit hattan arar; CPaaS bu numaraları aramaz). Servisin ana ve yedek numarası
 # hesaba bağlıdır: CPAAS_INBOUND_NUMBER / CPAAS_BACKUP_NUMBER (.env.example).
 numbers: { emergency: '112', social: '183', health: '182' }
+# T-085/T-086 (docs/07 S3.2, S4, S8.4): kapsama, pil ve şarj eşikleri. Kodda sabit pil eşiği kalmaz.
+# coverage.onlineMin: A sınıfı cihaz bu kadar dk görülmezse çevrimdışı, B sınıfı daha uzun (S3.2).
+coverage: { onlineMin: { A: 15, B: 30 }, locationStaleMin: 30 }
+# battery: warnPct (W-BAT-20) ve criticalPct (W-BAT-10 + F-BAT-10) sinyal anında; planPct/familyPct 18:00
+# planlı şarj kontrolünde (S4.6); deadPct ve altı "pil bitti" (yetenek sayılmaz).
+battery: { warnPct: 20, planPct: 30, familyPct: 15, criticalPct: 10, deadPct: 5, planHour: '18:00' }
+# charging (S4.3–S4.5): varsayılan pencere, "şarj tamam" (%80 ve 20 dk), takma hatırlatmaları, aile (90 dk; plan
+# dışında 60 dk), operatör (120 dk). Süreler uyanık dakikadır: gece penceresinde durur, uyanış + resumeAfterWakeMin'de
+# devam eder. "Şarj ediyorum" (intentMin) hatırlatmaları susturur, operatör olayını susturmaz.
+charging:
+  defaultWindow: '19:00-21:00'
+  chargeDonePct: 80
+  chargeDoneMin: 20
+  putOnMin: [15, 30]
+  familyGapMin: 90
+  familyGapOffPlanMin: 60
+  maxGapMin: 120
+  intentMin: 90
+  resumeAfterWakeMin: 30
+# coverageNone (S4.7): hiçbir SOS yolu yokken (uyanık) hatırlatma 20 dk, aile 45 dk, KAPSAMA BOŞLUĞU 60 dk.
+# welfare* (YERİNDE KONTROL, P2) ulaşılamama merdiveni görevine (T-087) aittir; değerler burada tutulur.
+coverageNone: { remindMin: 20, familyMin: 45, eventMin: 60, welfareSilentH: 6, welfareDroppedH: 2 }
 rules:
   - type: SOS
     priority: 1
@@ -42,6 +64,7 @@ rules:
     learningMode: { extraSilentAsks: 1 }
     chain: [CALL_PHONE, CALL_WATCH, CALL_CONTACT:1, CALL_NEIGHBOR, CALL_112]
     stepTimeoutSec: { CALL_PHONE: 15, CALL_WATCH: 15, CALL_CONTACT: 25, CALL_NEIGHBOR: 25 }
+  # S3.4: yalnız hiçbir A sınıfı cihaz takılı değilken açılır; şarja takılan saat beklemeyi kapatır (şarj boşluğu).
   - type: WATCH_OFF
     priority: 3
     suppressIn: [NIGHT]
@@ -52,6 +75,8 @@ rules:
   - type: BATTERY_LOW
     priority: 3
     chain: [NOTIFY_FAMILY]
+  # T-086: BATTERY_DEAD ve CONNECTION_LOST artık açılmaz; KAPSAMA BOŞLUĞU'nun nedenleridir. Kurallar, sürüm
+  # geçişinde açık kalmış eski olayların zinciri için durur. afterHours yalnız GET /status bağlantı etiketi (LOST).
   - type: BATTERY_DEAD
     priority: 3
     operatorAfterMin: 120
@@ -61,6 +86,13 @@ rules:
     afterHours: 6
     suppressIn: [NIGHT]
     chain: [CALL_PHONE, CALL_CONTACT:1]
+  # T-086 (S4.4, S4.7, S5.4): şarj boşluğu 120 dk veya kapsama YOK 60 dk (uyanık). Önce sesli ön eleme, sonra
+  # telefon ve 1. yakın; 112 yok. Kapsama geri gelince operatör üstlenmemişse sistem kapatır.
+  - type: COVERAGE_GAP
+    priority: 3
+    autoVoiceScreening: *screening
+    chain: [CALL_PHONE, CALL_CONTACT:1]
+    operatorScript: O-SCRIPT-COVERAGE
   - type: CALLBACK
     priority: 4
     chain: [CALL_PHONE]
