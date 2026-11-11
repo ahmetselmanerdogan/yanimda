@@ -249,6 +249,9 @@ export class TrainingSim {
     supervisorCoverage: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
+    coverageBoard: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     // Amir panosu eğitim modunda yok (T-074).
     dashboard: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
@@ -276,6 +279,9 @@ export class TrainingSim {
       throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
     },
     adminHealth: async () => {
+      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+    },
+    adminCoverageMetrics: async () => {
       throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
     },
     adminAudit: async () => [],
