@@ -6,6 +6,7 @@ import {
   assertSupported,
   type DeviceAdapter,
   type DeviceCapabilities,
+  type DeviceCommand,
   type PromptRequest,
   type RingRequest,
   UnsupportedSignalError,
@@ -19,7 +20,9 @@ import { simulatorEnabled } from '../simulator-mode';
 export class SimulatorAdapter implements DeviceAdapter {
   readonly kind = 'SIMULATOR' as const;
   readonly commands: (
-    ({ type: 'PROMPT'; deviceId: string } & PromptRequest) | ({ type: 'RING'; deviceId: string } & RingRequest)
+    | ({ type: 'PROMPT'; deviceId: string } & PromptRequest)
+    | ({ type: 'RING'; deviceId: string } & RingRequest)
+    | ({ deviceId: string } & DeviceCommand)
   )[] = [];
   private readonly log = new Logger('SimulatorAdapter');
   private readonly enabled: boolean;
@@ -59,5 +62,10 @@ export class SimulatorAdapter implements DeviceAdapter {
   async ring(deviceId: string, req: RingRequest) {
     this.commands.push({ type: 'RING', deviceId, ...req });
     this.log.debug('RING');
+  }
+
+  async command(deviceId: string, cmd: DeviceCommand) {
+    this.commands.push({ deviceId, ...cmd });
+    this.log.debug(cmd.type);
   }
 }

@@ -5,11 +5,12 @@ import {
   assertSupported,
   type DeviceAdapter,
   type DeviceCapabilities,
+  type DeviceCommand,
   type PromptRequest,
   type RingRequest,
 } from '../device.types';
 import type { PushPort } from '../push.port';
-import { pushPrompt, pushRing } from './push-device';
+import { pushCommand, pushPrompt, pushRing } from './push-device';
 
 /** Wear OS saat (Galaxy Watch). Sinyaller zaten kanonik (Signal veri sınıfı şemayla birebir, T-030): normalize no-op. */
 export class WearOsAdapter implements DeviceAdapter {
@@ -44,5 +45,9 @@ export class WearOsAdapter implements DeviceAdapter {
 
   ring(deviceId: string, req: RingRequest) {
     return pushRing(this.push, deviceId, req);
+  }
+
+  command(deviceId: string, cmd: DeviceCommand) {
+    return pushCommand(this.push, deviceId, cmd);
   }
 }

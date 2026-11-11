@@ -4,11 +4,12 @@ import {
   assertSupported,
   type DeviceAdapter,
   type DeviceCapabilities,
+  type DeviceCommand,
   type PromptRequest,
   type RingRequest,
 } from '../device.types';
 import type { PushPort } from '../push.port';
-import { pushPrompt, pushRing } from './push-device';
+import { pushCommand, pushPrompt, pushRing } from './push-device';
 
 /**
  * Android eşlikçi telefon (koruma modu B-06: SOS + hareketsizlik; düşme/bilek/nabız sensörü yok).
@@ -62,5 +63,9 @@ export class AndroidPhoneAdapter implements DeviceAdapter {
 
   ring(deviceId: string, req: RingRequest) {
     return pushRing(this.push, deviceId, req);
+  }
+
+  command(deviceId: string, cmd: DeviceCommand) {
+    return pushCommand(this.push, deviceId, cmd);
   }
 }

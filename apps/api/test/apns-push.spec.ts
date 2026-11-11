@@ -221,6 +221,27 @@ describe("DevicePush (cihaz token'ına göre yönlendirme)", () => {
     });
   });
 
+  it('düşme sorusu telefonda telefon metniyle (P-FALL-PROMPT); tür ve mutlak bitiş yükte', async () => {
+    const tr = new FakeTransport();
+    const push = new DevicePush(h.db, new ApnsClient(CFG, tr), () => T0);
+    const until = new Date(T0.getTime() + 30_000).toISOString();
+    await push.send({
+      deviceId: IOS,
+      priority: 'normal',
+      data: { type: 'PROMPT', eventId: 'ev2', kind: 'FALL', tts: 'W-FALL-1', windowSec: '30', until, silent: 'false' },
+      ttlSec: 30,
+    });
+    expect(tr.calls[0]).toMatchObject({
+      body: {
+        aps: { alert: { body: 'Düşme algılandı. İyi misiniz?' }, category: 'yanimda.inactivity' },
+        type: 'PROMPT',
+        eventId: 'ev2',
+        kind: 'FALL',
+        until,
+      },
+    });
+  });
+
   it('geçersiz token cihaz kaydından silinir', async () => {
     const push = new DevicePush(
       h.db,

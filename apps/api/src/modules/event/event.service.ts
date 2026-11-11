@@ -281,7 +281,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   /**
    * Sessiz soru cevapsız. D-06 (T-070): kişi öğrenme modundaysa ve kural `learningMode.extraSilentAsks` veriyorsa
-   * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza ELDER bildirimi, kuralın tts kodu); o da
+   * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza PROMPT, kuralın tts kodu; T-090); o da
    * cevapsızsa yükseltilir. SOS/FALL'da sessiz soru yoktur, değişmez. Yükseltmeden önce otomatik sesli ön eleme
    * (T-072, `screenOrEscalate`).
    */
@@ -306,11 +306,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           topic: TOPICS.eventUpdated,
           payload: { eventId: u.ev.id, devicePromptUntil: u.ev.devicePromptUntil, reason: 'LEARNING_MODE_REASK' },
         });
-        if (rule.devicePrompt.tts)
-          await this.notify(u.tx, u.ev.protectedPersonId, [{ code: rule.devicePrompt.tts, audience: 'ELDER' }], {
-            dedupeBase: `learning-ask:${u.ev.id}`,
-            eventId: u.ev.id,
-          });
+        // T-090: soru cihaza PROMPT olarak gider (DevicePromptService, LEARNING_MODE_REASK güncellemesiyle yeni bitiş).
         await this.timers.schedule(u.ev.id, 'learning-ask-expire', win); // commit'ten önce (bkz. sınıf notu)
         return;
       }

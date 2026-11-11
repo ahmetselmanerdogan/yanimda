@@ -4,12 +4,13 @@ import {
   assertSupported,
   type DeviceAdapter,
   type DeviceCapabilities,
+  type DeviceCommand,
   type PromptRequest,
   type RingRequest,
 } from '../device.types';
 import type { PushPort } from '../push.port';
 import { AndroidPhoneAdapter } from './android-phone.adapter';
-import { pushPrompt, pushRing } from './push-device';
+import { pushCommand, pushPrompt, pushRing } from './push-device';
 
 /**
  * iOS eşlikçi telefon (T-073, repo: yanimda-ios). Android telefonla aynı sinyal kümesi: SOS, hareketsizlik
@@ -52,5 +53,9 @@ export class IosPhoneAdapter implements DeviceAdapter {
 
   ring(deviceId: string, req: RingRequest) {
     return pushRing(this.push, deviceId, req);
+  }
+
+  command(deviceId: string, cmd: DeviceCommand) {
+    return pushCommand(this.push, deviceId, cmd);
   }
 }

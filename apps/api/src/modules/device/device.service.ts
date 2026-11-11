@@ -9,7 +9,13 @@ import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
 import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
-import { type DeviceAdapter, type PromptRequest, type RingRequest, UnsupportedSignalError } from './device.types';
+import {
+  type DeviceAdapter,
+  type DeviceCommand,
+  type PromptRequest,
+  type RingRequest,
+  UnsupportedSignalError,
+} from './device.types';
 import { PUSH, type PushPort, RecordingPush } from './push.port';
 
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
@@ -113,6 +119,15 @@ export class DeviceService {
     const a = await this.adapterFor(deviceId);
     if (!a.capabilities().ring) return false;
     await a.ring(deviceId, req);
+    return true;
+  }
+
+  /** T-089: konum iste (cihaz konum gönderebiliyorsa) veya cihaz testi (push alabiliyorsa). Desteklemiyorsa false. */
+  async command(deviceId: string, cmd: DeviceCommand): Promise<boolean> {
+    const a = await this.adapterFor(deviceId);
+    const c = a.capabilities();
+    if (cmd.type === 'LOCATE' ? !c.location : !c.ring) return false;
+    await a.command(deviceId, cmd);
     return true;
   }
 }

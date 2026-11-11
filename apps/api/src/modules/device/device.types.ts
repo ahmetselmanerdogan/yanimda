@@ -30,15 +30,23 @@ export interface DeviceCapabilities {
 
 export interface PromptRequest {
   eventId: string;
+  /** Olay türü (FALL, INACTIVITY …): telefon kendi soru metnini buna göre seçer. */
+  kind: string;
   /** Mesaj kataloğu kodu (W-FALL-1 …); metin cihazda katalogdan okunur. */
   tts: string;
+  /** Gönderim anında kalan süre (sn). */
   windowSec: number;
+  /** Sorunun mutlak bitişi (ISO, sunucu saati): doğrulanmış düşmenin kısalan süresi dahil. */
+  until: string;
   silent: boolean;
 }
 
 export interface RingRequest {
   eventId: string;
 }
+
+/** T-089 operatör komutları (S7.1, S8.3): konum iste (açık olay), cihaz testi (aylık deneme, S4.9). */
+export type DeviceCommand = { type: 'LOCATE'; eventId: string } | { type: 'TEST' };
 
 export interface DeviceAdapter {
   readonly kind: DeviceKind;
@@ -47,6 +55,7 @@ export interface DeviceAdapter {
   normalize(raw: Signal): Signal;
   promptUser(deviceId: string, req: PromptRequest): Promise<void>;
   ring(deviceId: string, req: RingRequest): Promise<void>;
+  command(deviceId: string, cmd: DeviceCommand): Promise<void>;
 }
 
 /** Cihaz bu sinyali gönderemez / tür bilinmiyor / simülatör kapalı → 400. */

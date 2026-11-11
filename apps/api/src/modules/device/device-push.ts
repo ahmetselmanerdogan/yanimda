@@ -69,7 +69,8 @@ export class DevicePush implements PushPort {
   /** FCM (Android saat/telefon): veri mesajı; NOTICE ve PROMPT ayrıca görünür bildirim. */
   private async viaFcm(msg: PushMessage, token: string): Promise<PushOutcome> {
     const m: FcmMessage = { token, data: msg.data, priority: msg.priority, ttlSec: msg.ttlSec };
-    if (msg.data.type === 'NOTICE' && msg.data.code) m.body = t(msg.data.code);
+    // Saate aktarılan bildirim (forDeviceId) telefonda gösterilmez: yalnız veri, uygulama saate iletir.
+    if (msg.data.type === 'NOTICE' && msg.data.code && !msg.data.forDeviceId) m.body = t(msg.data.code);
     if (msg.data.type === 'WAKE') m.collapseKey = 'wake';
     const res = await this.fcm!.send(m);
     if (res.status === 'ok') return 'sent';
@@ -99,6 +100,20 @@ export class DevicePush implements PushPort {
         collapseId: 'wake', // birikenlerden yalnız sonuncusu teslim edilir
         payload: { aps: { 'content-available': 1 }, type: 'WAKE' },
       };
+    if (type === 'NOTICE' && msg.data.code && msg.data.forDeviceId)
+      return {
+        token,
+        sandbox,
+        pushType: 'background',
+        priority: 5,
+        expiration,
+        payload: {
+          aps: { 'content-available': 1 },
+          type: 'NOTICE',
+          code: msg.data.code,
+          forDeviceId: msg.data.forDeviceId,
+        },
+      };
     if (type === 'NOTICE' && msg.data.code)
       return {
         token,
@@ -118,11 +133,17 @@ export class DevicePush implements PushPort {
         expiration,
         collapseId: msg.data.eventId,
         payload: {
-          aps: { alert: { body: t(msg.data.tts) }, sound: 'default', category: IOS_PROMPT_CATEGORY },
+          aps: { alert: { body: t(phonePromptCode(msg.data)) }, sound: 'default', category: IOS_PROMPT_CATEGORY },
           type: 'PROMPT',
           eventId: msg.data.eventId,
+          ...(msg.data.kind ? { kind: msg.data.kind } : {}),
+          ...(msg.data.until ? { until: msg.data.until } : {}),
         },
       };
     return null;
   }
 }
+
+/** Telefonda gösterilen soru metni: olay türünün telefon metni (P-*), yoksa cihaz kodu. */
+const PHONE_PROMPT: Record<string, string> = { FALL: 'P-FALL-PROMPT', INACTIVITY: 'P-INACT-1' };
+export const phonePromptCode = (d: Record<string, string>) => (d.kind && PHONE_PROMPT[d.kind]) || d.tts!;

@@ -247,11 +247,14 @@ describe('GET /devices/{id}/config', () => {
     expect(body.sleepWindow).toEqual({ timezone: 'Europe/Istanbul', start: '22:00', end: '08:00' });
     expect(body.devicePrompt).toEqual({ fallWindowSec: 60, inactivityWindowSec: 120 });
     expect(body.inactivityThresholdMin).toBe(30);
+    expect(body.charging).toEqual({ chargeDonePct: 80, chargeDoneMin: 20 }); // T-090: kural paketinden
     expect(Object.keys(body.messages).every((k) => k.startsWith('P-'))).toBe(true);
     expect(body.messages['P-SOS-HOLD']).toMatchObject({ action: expect.any(String) });
     const watch = (await svc.config({ ...phone, kind: 'WEAROS_WATCH' })).body;
     expect(Object.keys(watch.messages).every((k) => k.startsWith('W-'))).toBe(true);
     expect(watch.messages['W-FALL-1']).toBeDefined();
+    expect(watch.messages['W-CHARGING']).toBeDefined();
+    expect(watch.charging).toEqual({ chargeDonePct: 80, chargeDoneMin: 20 });
   });
 
   it('ETag kararlı; If-None-Match eşleşirse 304 (kabul); eşik değişince ETag değişir', async () => {

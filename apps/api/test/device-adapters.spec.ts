@@ -60,12 +60,27 @@ describe('WearOsAdapter', () => {
 
   it('promptUser → FCM data mesajı (normal öncelik): olay, TTS kodu, pencere', async () => {
     push.sent.length = 0;
-    await a.promptUser('dev-w', { eventId: 'ev-1', tts: 'W-FALL-1', windowSec: 60, silent: false });
+    await a.promptUser('dev-w', {
+      eventId: 'ev-1',
+      kind: 'FALL',
+      tts: 'W-FALL-1',
+      windowSec: 60,
+      until: '2026-11-11T10:01:00.000Z',
+      silent: false,
+    });
     expect(push.sent).toEqual([
       {
         deviceId: 'dev-w',
         priority: 'normal',
-        data: { type: 'PROMPT', eventId: 'ev-1', tts: 'W-FALL-1', windowSec: '60', silent: 'false' },
+        data: {
+          type: 'PROMPT',
+          eventId: 'ev-1',
+          kind: 'FALL',
+          tts: 'W-FALL-1',
+          windowSec: '60',
+          until: '2026-11-11T10:01:00.000Z',
+          silent: 'false',
+        },
         ttlSec: 60,
       },
     ]);
@@ -76,6 +91,16 @@ describe('WearOsAdapter', () => {
     await a.ring('dev-w', { eventId: 'ev-1' });
     expect(push.sent).toEqual([
       { deviceId: 'dev-w', priority: 'high', data: { type: 'RING', eventId: 'ev-1' }, ttlSec: 30 },
+    ]);
+  });
+
+  it('komutlar (T-089): LOCATE yüksek öncelik olayla, TEST normal öncelik', async () => {
+    push.sent.length = 0;
+    await a.command('dev-w', { type: 'LOCATE', eventId: 'ev-1' });
+    await a.command('dev-w', { type: 'TEST' });
+    expect(push.sent).toEqual([
+      { deviceId: 'dev-w', priority: 'high', data: { type: 'LOCATE', eventId: 'ev-1' }, ttlSec: 60 },
+      { deviceId: 'dev-w', priority: 'normal', data: { type: 'TEST' }, ttlSec: 3600 },
     ]);
   });
 });
@@ -118,7 +143,14 @@ describe('AndroidPhoneAdapter', () => {
   });
 
   it('promptUser → FCM data mesajı; ring → yüksek öncelik', async () => {
-    await a.promptUser('dev-p', { eventId: 'ev-2', tts: 'W-INACT-1', windowSec: 120, silent: true });
+    await a.promptUser('dev-p', {
+      eventId: 'ev-2',
+      kind: 'INACTIVITY',
+      tts: 'W-INACT-1',
+      windowSec: 120,
+      until: '2026-11-11T10:01:00.000Z',
+      silent: true,
+    });
     await a.ring('dev-p', { eventId: 'ev-2' });
     expect(push.sent.map((m) => [m.data.type, m.priority])).toEqual([
       ['PROMPT', 'normal'],
@@ -157,7 +189,14 @@ describe('IosPhoneAdapter', () => {
   });
 
   it('promptUser / ring push ile gider (T-053 APNs)', async () => {
-    await a.promptUser('dev-i', { eventId: 'ev-3', tts: 'W-INACT-1', windowSec: 120, silent: false });
+    await a.promptUser('dev-i', {
+      eventId: 'ev-3',
+      kind: 'INACTIVITY',
+      tts: 'W-INACT-1',
+      windowSec: 120,
+      until: '2026-11-11T10:01:00.000Z',
+      silent: false,
+    });
     await a.ring('dev-i', { eventId: 'ev-3' });
     expect(push.sent.map((m) => [m.deviceId, m.data.type, m.priority])).toEqual([
       ['dev-i', 'PROMPT', 'normal'],
@@ -187,9 +226,17 @@ describe('SimulatorAdapter', () => {
 
   it('promptUser / ring push göndermez, yalnız kaydeder', async () => {
     const a = new SimulatorAdapter({ enabled: true });
-    await a.promptUser('dev-s', { eventId: 'e', tts: 'W-FALL-1', windowSec: 60, silent: false });
+    await a.promptUser('dev-s', {
+      eventId: 'e',
+      kind: 'FALL',
+      tts: 'W-FALL-1',
+      windowSec: 60,
+      until: '2026-11-11T10:01:00.000Z',
+      silent: false,
+    });
     await a.ring('dev-s', { eventId: 'e' });
-    expect(a.commands.map((c) => c.type)).toEqual(['PROMPT', 'RING']);
+    await a.command('dev-s', { type: 'LOCATE', eventId: 'e' });
+    expect(a.commands.map((c) => c.type)).toEqual(['PROMPT', 'RING', 'LOCATE']);
   });
 });
 

@@ -25,7 +25,7 @@ import { contact, device, invite } from '../../db/schema';
 import { subscriptionProtection } from '../billing/subscription-protection';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
-import { loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
+import { chargingOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
 import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
 import { DEVICE_TOKEN_REFRESH_BEFORE_SEC, deviceTokenSecret, signDeviceToken, verifyDeviceToken } from './device-token';
@@ -74,6 +74,8 @@ export interface DeviceConfig {
   sleepWindow: { timezone: string; start: string; end: string };
   devicePrompt: { fallWindowSec: number | null; inactivityWindowSec: number | null };
   inactivityThresholdMin: number | null;
+  /** T-090 (S4.4): "şarj tamam" eşikleri — pil ≥ chargeDonePct ve ≥ chargeDoneMin dk şarjda (veya %100). */
+  charging: { chargeDonePct: number; chargeDoneMin: number };
   /** Cihazın göstereceği / seslendireceği metinler (katalog; saat W-*, telefon P-*). */
   messages: Record<string, { text: string; action?: string }>;
   /**
@@ -401,6 +403,7 @@ export class EnrollmentService {
     const pack = this.rules.current();
     const fall = ruleFor(pack, 'FALL');
     const inact = ruleFor(pack, 'INACTIVITY');
+    const charging = chargingOf(pack);
     const prefix = PHONE_KINDS.includes(p.kind) ? 'P-' : 'W-';
     const settings = await this.protection.settingsOf(p.protectedPersonId);
     const sub = await subscriptionProtection(this.db, p.protectedPersonId, now);
@@ -421,6 +424,7 @@ export class EnrollmentService {
         inactivityWindowSec: inact?.devicePrompt?.enabled ? (inact.devicePrompt.windowSec ?? null) : null,
       },
       inactivityThresholdMin: inactivityThreshold(pack, settings.inactivityMin) ?? null, // T-070 kişiye özel
+      charging: { chargeDonePct: charging.chargeDonePct, chargeDoneMin: charging.chargeDoneMin },
       messages,
       operator: operatorInfo(),
       familyContact: PHONE_KINDS.includes(p.kind) ? await this.firstContact(p.protectedPersonId) : null,

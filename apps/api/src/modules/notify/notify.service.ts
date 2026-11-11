@@ -9,14 +9,23 @@ import {
   Optional,
 } from '@nestjs/common';
 import { type EventState, type KafkaEnvelope, type NotifyRequest, TOPICS } from '@yanimda/contracts';
-import { t } from '@yanimda/messages';
+import { catalogs, t } from '@yanimda/messages';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
-import { contact, device, event, familyMember, notification, protectedPerson, pushTarget } from '../../db/schema';
+import {
+  contact,
+  device,
+  deviceModel,
+  event,
+  familyMember,
+  notification,
+  protectedPerson,
+  pushTarget,
+} from '../../db/schema';
 import { DevicePush } from '../device/device-push';
 import { PUSH, type PushPort } from '../device/push.port';
 import type { CpaasProvider } from '../telephony/cpaas';
@@ -140,7 +149,7 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
       rows.push({ ...base, id: uuidv7(), channel, recipientKind, recipientId, ...extra });
 
     if (req.audience === 'ELDER') {
-      for (const id of await this.devicesOf(req.protectedPersonId)) add('DEVICE', 'DEVICE', id);
+      for (const r of await this.elderRecipients(req.protectedPersonId, req.code)) add('DEVICE', r.kind, r.id);
     } else if (d.voiceOnly) {
       const [first] = await this.familyContacts(req.protectedPersonId);
       if (first) add('VOICE', 'CONTACT', first); // T-087: yalnız 1. yakına sesli mesaj
@@ -344,12 +353,24 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
     return { kind: 'failed', error: r.reason, invalidTarget: r.status === 'invalid-token' };
   }
 
+  /**
+   * Cihaz bildirimi: `{type: NOTICE, code, notificationId}`. DEVICE_RELAY (token'sız saat): köprü telefona
+   * `forDeviceId` = saat ile gider; telefon bunu göstermez, Data Layer'dan saate `/yanimda/prompt` NOTICE iletir.
+   */
   private async sendDevice(row: Row): Promise<Outcome> {
+    const relay = row.recipientKind === 'DEVICE_RELAY';
+    const target = relay ? await this.bridgeOf(row.protectedPersonId) : row.recipientId;
+    if (!target) return { kind: 'failed', error: 'no-bridge' };
     const msg = {
-      deviceId: row.recipientId,
+      deviceId: target,
       priority: 'high' as const,
       ttlSec: PUSH_TTL_SEC,
-      data: { type: 'NOTICE', code: row.code, notificationId: row.id },
+      data: {
+        type: 'NOTICE',
+        code: row.code,
+        notificationId: row.id,
+        ...(relay ? { forDeviceId: row.recipientId } : {}),
+      },
     };
     if (!(this.devicePush instanceof DevicePush)) {
       await this.devicePush.send(msg);
@@ -429,13 +450,47 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
     return rows.map((r) => r.id);
   }
 
-  private async devicesOf(personId: string): Promise<string[]> {
+  /** Kişinin etkin cihazları: kategori (kayıt, katalog, yoksa türden), push token'ı var mı; en son görülen önce. */
+  private async elderDevices(personId: string) {
     if (!UUID.test(personId)) return [];
     const rows = await this.db
-      .select({ id: device.id })
+      .select({
+        id: device.id,
+        kind: device.kind,
+        category: sql<string | null>`coalesce(${device.category}, ${deviceModel.category})`,
+        hasToken: sql<boolean>`${device.pushToken} IS NOT NULL`,
+      })
       .from(device)
-      .where(and(eq(device.protectedPersonId, personId), isNull(device.revokedAt), isNotNull(device.pushToken)));
-    return rows.map((r) => r.id);
+      .leftJoin(deviceModel, sql`${deviceModel.id} = coalesce(${device.modelId}, ${device.kind})`)
+      .where(and(eq(device.protectedPersonId, personId), isNull(device.revokedAt), isNull(device.retiredAt)))
+      .orderBy(sql`${device.lastSeenAt} DESC NULLS LAST`, asc(device.id));
+    return rows.map((r) => ({
+      id: r.id,
+      hasToken: r.hasToken,
+      category: r.category ?? (r.kind.endsWith('PHONE') ? 'PHONE' : 'WATCH'),
+    }));
+  }
+
+  /**
+   * Yaşlıya giden bildirimin alıcıları, kodun katalog kanalına göre: saat metni (W-*, `watch`) yalnız saat
+   * kategorisindeki cihazlara, telefon metni (P-*, `phone`) yalnız telefona; diğerleri push token'ı olan her cihaza.
+   * Kendi push token'ı olmayan saat (Wear OS: FCM yok, telefona bağlı) bildirimi telefon üzerinden alır
+   * (DEVICE_RELAY: alıcı saat, gönderimde köprü telefon çözülür).
+   */
+  private async elderRecipients(personId: string, code: string): Promise<{ kind: Row['recipientKind']; id: string }[]> {
+    const devices = await this.elderDevices(personId);
+    const channel = catalogs.tr[code]?.channel;
+    if (channel === 'watch')
+      return devices
+        .filter((d) => d.category === 'WATCH')
+        .map((d) => ({ kind: d.hasToken ? 'DEVICE' : 'DEVICE_RELAY', id: d.id }));
+    const own = devices.filter((d) => d.hasToken && (channel !== 'phone' || d.category === 'PHONE'));
+    return own.map((d) => ({ kind: 'DEVICE', id: d.id }));
+  }
+
+  /** Saatin köprüsü: kişinin push token'ı olan, en son görülen telefonu. */
+  private async bridgeOf(personId: string): Promise<string | undefined> {
+    return (await this.elderDevices(personId)).find((d) => d.category === 'PHONE' && d.hasToken)?.id;
   }
 
   // ---- uygulama uçları ----
