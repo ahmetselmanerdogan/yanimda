@@ -251,7 +251,7 @@ export class CoverageService {
       since: (row && row.level === cov.level ? row.since : now).toISOString(),
       reasons: cov.reasons,
       capabilities: cov.capabilities,
-      devices: await this.summaries(protectedPersonId, now, facts, row),
+      devices: await deviceSummaries(this.db, this.pack, protectedPersonId, now, { facts, state: row }),
     };
   }
 
@@ -262,7 +262,7 @@ export class CoverageService {
       .select()
       .from(coverageState)
       .where(eq(coverageState.protectedPersonId, protectedPersonId));
-    return this.summaries(protectedPersonId, now, factsOf(row), row);
+    return deviceSummaries(this.db, this.pack, protectedPersonId, now, { facts: factsOf(row), state: row });
   }
 
   /** GET /supervisor/coverage (S4.11): seviye başına kişi; akşam planlı şarj (pencere içinde başlayan şarj boşluğu). */
@@ -562,79 +562,90 @@ export class CoverageService {
       : await this.db.execute(sql`SELECT 1 FROM event.coverage_state WHERE protected_person_id = ${personId}`);
     if (!(r as unknown as { rows: unknown[] }).rows.length) throw new NotFoundException('Kişi bulunamadı');
   }
+}
 
-  /**
-   * Cihaz kartları: kayıtlı cihazlar (kayıt + katalog + sinyal alımında yazılan son durum) ve kaydı olmayan
-   * (simülatör) cihazların olguları. Çevrimiçi kuralı kapsamayla aynı; sesli arama sırası: elle verilenler önce,
-   * sonra takılı > en son görülen > ev ünitesi > telefon (S1.8).
-   */
-  private async summaries(personId: string, now: Date, facts: Facts, state?: Row): Promise<DeviceSummary[]> {
-    const rows = UUID.test(personId)
-      ? ((
-          (await this.db.execute(sql`
-            SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
-                   coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.voice_order, d.last_seen_at,
-                   d.battery_pct, d.charging, d.charging_since, d.on_wrist, d.connectivity, m.capabilities,
-                   m.battery_life_h
-            FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
-            WHERE d.protected_person_id = ${personId}::uuid AND d.revoked_at IS NULL AND d.retired_at IS NULL
-            ORDER BY d.created_at, d.id`)) as unknown as { rows: DeviceRow[] }
-        ).rows ?? [])
-      : [];
-    const merged: Facts = { devices: { ...facts.devices }, bridgeSeenAt: facts.bridgeSeenAt };
-    const meta = new Map<string, DeviceRow>();
-    for (const r of rows) {
-      meta.set(r.id, r);
-      const f = rowFact(r, facts.devices[r.id]);
-      merged.devices[r.id] = f;
-      if (f.bridged && f.seenAt && (!merged.bridgeSeenAt || f.seenAt > merged.bridgeSeenAt))
-        merged.bridgeSeenAt = f.seenAt;
-    }
-    if (state?.bridgeSeenAt && (!merged.bridgeSeenAt || state.bridgeSeenAt.toISOString() > merged.bridgeSeenAt))
-      merged.bridgeSeenAt = state.bridgeSeenAt.toISOString();
-    const params = coverageOf(this.pack);
-    const ids = [...rows.map((r) => r.id), ...Object.keys(facts.devices).filter((id) => !meta.has(id))];
-    const list = ids.map((id) => {
-      const f = merged.devices[id]!;
-      const r = meta.get(id);
-      const online = deviceOnline(f, merged, now, params);
-      return {
-        f,
-        r,
-        online,
-        summary: {
-          id,
-          kind: r?.kind ?? f.kind ?? 'SIMULATOR',
-          category: f.category,
-          tier: f.tier,
-          bodyLocation: (r?.body_location as DeviceSummary['bodyLocation']) ?? null,
-          nickname: r?.nickname ?? null,
-          online,
-          lastSeenAt: f.seenAt,
-          batteryPct: f.batteryPct,
-          charging: f.charging,
-          chargingSince: f.chargingSince,
-          onBody: f.category === 'PHONE' ? null : f.onBody,
-          estimatedHoursLeft: estimatedHoursLeft(f),
-          voiceOrder: null as number | null,
-        } satisfies DeviceSummary,
-      };
-    });
-    const rank = (x: (typeof list)[number]) => {
-      const worn = x.online && x.f.onBody === true && !x.f.charging ? 0 : 1;
-      const cat = isWearable(x.f) ? 0 : x.f.category === 'HOME_UNIT' ? 1 : 2;
-      return [x.r?.voice_order ?? 100, cat, worn, -(x.f.seenAt ? Date.parse(x.f.seenAt) : 0)];
-    };
-    const voice = list
-      .filter((x) => x.f.caps.voice)
-      .sort((a, b) => {
-        const [ra, rb] = [rank(a), rank(b)];
-        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i]! - rb[i]!;
-        return 0;
-      });
-    voice.forEach((x, i) => (x.summary.voiceOrder = i + 1));
-    return list.map((x) => x.summary);
+/**
+ * Cihaz kartları: kayıtlı cihazlar (kayıt + katalog + sinyal alımında yazılan son durum) ve kaydı olmayan
+ * (simülatör) cihazların olguları. Çevrimiçi kuralı kapsamayla aynı; sesli arama sırası: elle verilenler önce,
+ * sonra takılı > en son görülen > ev ünitesi > telefon (S1.8). GET /devices, /coverage ve T-087 merdiveni (çevrimdışı
+ * atlama, T+0 çaldırma, en iyi sesli cihaz) aynı görünümü kullanır; `q` çağıranın transaction'ı olabilir (olay
+ * kilidi altında okuma). `facts`/`state` verilmezse kapsama satırı `q` ile okunur.
+ */
+export async function deviceSummaries(
+  q: Pick<Db, 'select' | 'execute'>,
+  pack: RulePack,
+  personId: string,
+  now: Date,
+  known?: { facts: Facts; state?: Row },
+): Promise<DeviceSummary[]> {
+  let state = known?.state;
+  if (!known) [state] = await q.select().from(coverageState).where(eq(coverageState.protectedPersonId, personId));
+  const facts = known?.facts ?? factsOf(state);
+  const rows = UUID.test(personId)
+    ? ((
+        (await q.execute(sql`
+          SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
+                 coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.voice_order, d.last_seen_at,
+                 d.battery_pct, d.charging, d.charging_since, d.on_wrist, d.connectivity, m.capabilities,
+                 m.battery_life_h
+          FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
+          WHERE d.protected_person_id = ${personId}::uuid AND d.revoked_at IS NULL AND d.retired_at IS NULL
+          ORDER BY d.created_at, d.id`)) as unknown as { rows: DeviceRow[] }
+      ).rows ?? [])
+    : [];
+  const merged: Facts = { devices: { ...facts.devices }, bridgeSeenAt: facts.bridgeSeenAt };
+  const meta = new Map<string, DeviceRow>();
+  for (const r of rows) {
+    meta.set(r.id, r);
+    const f = rowFact(r, facts.devices[r.id]);
+    merged.devices[r.id] = f;
+    if (f.bridged && f.seenAt && (!merged.bridgeSeenAt || f.seenAt > merged.bridgeSeenAt))
+      merged.bridgeSeenAt = f.seenAt;
   }
+  if (state?.bridgeSeenAt && (!merged.bridgeSeenAt || state.bridgeSeenAt.toISOString() > merged.bridgeSeenAt))
+    merged.bridgeSeenAt = state.bridgeSeenAt.toISOString();
+  const params = coverageOf(pack);
+  const ids = [...rows.map((r) => r.id), ...Object.keys(facts.devices).filter((id) => !meta.has(id))];
+  const list = ids.map((id) => {
+    const f = merged.devices[id]!;
+    const r = meta.get(id);
+    const online = deviceOnline(f, merged, now, params);
+    return {
+      f,
+      r,
+      online,
+      summary: {
+        id,
+        kind: r?.kind ?? f.kind ?? 'SIMULATOR',
+        category: f.category,
+        tier: f.tier,
+        bodyLocation: (r?.body_location as DeviceSummary['bodyLocation']) ?? null,
+        nickname: r?.nickname ?? null,
+        online,
+        lastSeenAt: f.seenAt,
+        batteryPct: f.batteryPct,
+        charging: f.charging,
+        chargingSince: f.chargingSince,
+        onBody: f.category === 'PHONE' ? null : f.onBody,
+        estimatedHoursLeft: estimatedHoursLeft(f),
+        voiceOrder: null as number | null,
+      } satisfies DeviceSummary,
+    };
+  });
+  const rank = (x: (typeof list)[number]) => {
+    const worn = x.online && x.f.onBody === true && !x.f.charging ? 0 : 1;
+    const cat = isWearable(x.f) ? 0 : x.f.category === 'HOME_UNIT' ? 1 : 2;
+    return [x.r?.voice_order ?? 100, cat, worn, -(x.f.seenAt ? Date.parse(x.f.seenAt) : 0)];
+  };
+  const voice = list
+    .filter((x) => x.f.caps.voice)
+    .sort((a, b) => {
+      const [ra, rb] = [rank(a), rank(b)];
+      for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i]! - rb[i]!;
+      return 0;
+    });
+  voice.forEach((x, i) => (x.summary.voiceOrder = i + 1));
+  return list.map((x) => x.summary);
 }
 
 interface DeviceRow {

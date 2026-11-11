@@ -286,7 +286,7 @@ export class QueueGateway implements OnApplicationBootstrap, OnApplicationShutdo
       if ('alert' in f)
         return this.broadcast(
           { type: 'alert', alert: f.alert },
-          f.alert.code === 'O-QUEUE-UNCLAIMED'
+          f.alert.code === 'O-QUEUE-UNCLAIMED' || f.alert.code === 'O-P1-UNCLAIMED'
             ? undefined
             : (c) => !!c.user?.roles.some((r) => r === 'SUPERVISOR' || r === 'ADMIN'),
         );

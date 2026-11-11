@@ -47,6 +47,10 @@ for (const f of yamls.filter((f) => !f.startsWith('procedures.'))) {
       if (phrase && catalog[phrase]?.channel !== 'voice')
         fail(`${f}: ${r.type} → ${phrase} mesaj kataloğunda voice kanalında yok`);
     }
+  // T-087: üstlenilmeyen P1 sesli mesajı katalogda voice kanalında olmalı.
+  const noOperator = doc.ladder?.unclaimedVoiceContact?.phrase;
+  if (noOperator && catalog[noOperator]?.channel !== 'voice')
+    fail(`${f}: ladder.unclaimedVoiceContact → ${noOperator} mesaj kataloğunda voice kanalında yok`);
   console.log(`${f}: ok (${doc.rules.length} kural)`);
 }
 process.exit(failed ? 1 : 0);

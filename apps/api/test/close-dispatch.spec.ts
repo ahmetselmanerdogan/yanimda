@@ -57,7 +57,7 @@ describe('kapatma ve takip araması', () => {
   it('EMERGENCY → varsayılan 24 saat; tetiklenince FOLLOW_UP P4 kuyrukta', async () => {
     const id = await claimed();
     await chain.escalate112(id, 'op-1', { reason: 'düştü, kalkamıyor' });
-    await chain.stepResult(id, 4, 'op-1', { result: 'REACHED' });
+    await chain.stepResult(id, 7, 'op-1', { result: 'REACHED' }); // T-087: 112 7. adım
     await chain.close(id, 'op-1', { outcome: 'EMERGENCY', note: 'ambulans yolda' });
     expect(timers.delayOf(`${id}.follow-up`)).toBe(24 * 3600 * 1000);
     await timers.fire(id, 'follow-up');
@@ -176,7 +176,7 @@ describe('112 şablonu', () => {
     expect(await status(chain.dispatchScript(id, 'op-2', 'dispatch112'))).toBe(409);
     expect(await status(chain.dispatchScript(id, 'op-1', 'baska'))).toBe(400);
     const at = new Date();
-    const r = await chain.scriptRead(id, 4, 'op-1', at);
-    expect(r.chain!.steps[3]).toMatchObject({ kind: 'CALL_112', scriptReadAt: at.toISOString() });
+    const r = await chain.scriptRead(id, 7, 'op-1', at);
+    expect(r.chain!.steps[6]).toMatchObject({ kind: 'CALL_112', scriptReadAt: at.toISOString() });
   });
 });

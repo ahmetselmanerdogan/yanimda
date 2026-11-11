@@ -57,7 +57,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Türe özel ek alanlar. CANCEL/OK: isteğe bağlı eventId (cihaz sorusunun olay kimliği); verilirse açık olayla eşleşmeli, yoksa cevap yok sayılır."
+      "description": "Türe özel ek alanlar. CANCEL/OK: isteğe bağlı eventId (cihaz sorusunun olay kimliği); verilirse açık olayla eşleşmeli, yoksa cevap yok sayılır. T-088 (docs/07 S3.6): telefondan CANCEL/OK yalnız özel \"İyiyim\" ekranından kabul edilir (screen: IM_OK) — alarmı açan cihaz değilse. SOS/FALL: platformSosFlow: true → kaynak kendi SOS akışını (ör. Apple düşme → 112) zaten çalıştırdı; konsol O-SCRIPT-APPLE-112 gösterir. Alanlar bilerek şemada kısıtlanmaz: yanlış tipli ek alan bir SOS'u reddettirmesin."
     }
   },
   "additionalProperties": false

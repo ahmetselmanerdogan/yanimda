@@ -20,6 +20,7 @@ function toStep(r: StepRow): ChainStep {
     ...(r.scriptCode ? { script: r.scriptCode } : {}),
     timeoutSec: r.timeoutSec,
     required: r.required,
+    ...(r.autoAnswerSec !== null ? { autoAnswerSec: r.autoAnswerSec } : {}),
     calledAt: iso(r.calledAt),
     result: (r.result as StepResult) ?? undefined,
     assessment: (r.assessment as StepAssessment) ?? undefined,
@@ -109,10 +110,10 @@ export class ChainRepository {
       .where(and(eq(chainStep.runId, runId), eq(chainStep.n, s.n)));
   }
 
-  /** Adım sonucu denetim kaydı (append-only audit.log). Not metni yazılmaz (PII olabilir). */
-  async audit(tx: Tx, eventId: string, operatorId: string, action: string, data: Record<string, unknown>) {
+  /** Adım sonucu denetim kaydı (append-only audit.log). Not metni yazılmaz (PII olabilir). operatorId yoksa SYSTEM. */
+  async audit(tx: Tx, eventId: string, operatorId: string | null, action: string, data: Record<string, unknown>) {
     await tx.insert(auditLog).values({
-      actorKind: 'OPERATOR',
+      actorKind: operatorId ? 'OPERATOR' : 'SYSTEM',
       actorId: operatorId,
       action,
       entityType: 'event',
@@ -132,6 +133,7 @@ export class ChainRepository {
       scriptCode: s.script ?? null,
       timeoutSec: s.timeoutSec,
       required: s.required,
+      autoAnswerSec: s.autoAnswerSec ?? null,
     };
   }
 }

@@ -28,6 +28,8 @@ const RESULTS: Record<string, Exclude<StepResult, 'SKIPPED' | 'REACHED'>> = {
   '2': 'NO_ANSWER',
   '3': 'BUSY',
   '4': 'WRONG_NUMBER',
+  // T-087: otomatik cevaplı cihaz araması sessiz (olası acil durum)
+  '6': 'SILENT',
 };
 
 export function commandFor(e: KeyInput, mode: Mode): Command | null {

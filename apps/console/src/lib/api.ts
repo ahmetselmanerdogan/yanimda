@@ -1,4 +1,4 @@
-import type { ChainView, EventState, EventType, StepAssessment, StepResult } from '@yanimda/contracts';
+import type { ChainView, EventState, EventType, LadderView, StepAssessment, StepResult } from '@yanimda/contracts';
 
 export interface QueueItem {
   eventId: string;
@@ -87,6 +87,8 @@ export interface EventWithChain {
   event: EventRecord;
   chain: ChainView | null;
   calls?: CallView[];
+  /** T-087/T-088: 112 son sınırı, "2 cihaz", olası acil durum, Apple akışı. */
+  ladder?: LadderView;
 }
 
 export type CloseOutcome = 'OK' | 'EMERGENCY' | 'FALSE_ALARM' | 'TEST' | 'UNREACHABLE';

@@ -730,6 +730,37 @@ table.breaches tr.live td:first-child {
 .desk-112 p {
   margin: 4px 0;
 }
+/* T-087/T-088: 112 son sınırı, "2 cihaz", olası acil durum */
+.deadline-112 {
+  margin: 4px 0 8px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.deadline-112.late {
+  color: var(--help);
+}
+.ladder-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0;
+}
+.badge-corroborated,
+.badge-alarm {
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.badge-corroborated {
+  border: 1px solid var(--attention);
+  color: var(--attention);
+}
+.badge-alarm {
+  background: var(--help);
+  color: #fff;
+}
 
 /* İnceleme bulgusu 8: kuyrukta bekleyen gelen SOS araması */
 .inbound-waiting {
@@ -1112,6 +1143,7 @@ table.data td {
 }
 .alert-item.a-O-DISPATCH-ESCALATE,
 .alert-item.a-O-QUEUE-UNCLAIMED,
+.alert-item.a-O-P1-UNCLAIMED,
 .alert-item.a-O-DISPATCH-NO-ARRIVAL {
   border-left-color: var(--help);
 }

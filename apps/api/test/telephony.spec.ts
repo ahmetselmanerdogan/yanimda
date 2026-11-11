@@ -177,7 +177,8 @@ describe('sahte CPaaS ile tam akış', () => {
     for (const [n, expected] of [
       [1, 'BUSY'],
       [2, 'NO_ANSWER'],
-      [3, 'WRONG_NUMBER'],
+      [3, 'BUSY'], // T-087 en iyi cihaza yeniden: cihaz kaydı yok → saat numarası
+      [4, 'WRONG_NUMBER'],
     ] as const) {
       await chain.call(id, n, 'op-1');
       await fake.settled;
@@ -228,7 +229,7 @@ describe('sahte CPaaS ile tam akış', () => {
 
     const e = await claimed();
     await chain.escalate112(e, 'op-1', { reason: 'sessiz hat' });
-    expect((await chain.call(e, 4, 'op-1')).calls).toEqual([]); // 112: masa hattından (T-052)
+    expect((await chain.call(e, 7, 'op-1')).calls).toEqual([]); // 112: masa hattından (T-052)
   });
 
   it('operatör hattı tanımlı değilse arama başarısız işaretlenir, olay akışı sürer', async () => {

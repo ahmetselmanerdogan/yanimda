@@ -18,7 +18,9 @@
         "properties": {
           "label": { "type": "string", "pattern": "^O-[A-Z0-9-]+$" },
           "script": { "type": "string", "pattern": "^O-[A-Z0-9-]+$" },
-          "target": { "enum": ["WATCH", "ELDER_PHONE", "CONTACT", "NEIGHBOR", "EMERGENCY", "FAMILY"] },
+          "target": {
+            "enum": ["WATCH", "ELDER_PHONE", "VOICE_DEVICE", "CONTACT", "KEY_HOLDER", "NEIGHBOR", "EMERGENCY", "FAMILY"]
+          },
           "required": { "type": "boolean" },
           "defaultTimeoutSec": { "type": "integer", "minimum": 0 }
         }

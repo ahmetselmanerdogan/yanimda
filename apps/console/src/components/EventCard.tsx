@@ -4,6 +4,7 @@ import type { RefObject } from 'react';
 import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, type QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
 import type { Mode } from '../lib/keys';
+import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from '../lib/ladder';
 import { canTakeOver } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
 import { ScriptPanel } from './Panels';
@@ -27,7 +28,7 @@ interface Props {
   onSkipReason(v: string): void;
   onClaim(): void;
   onCall(): void;
-  onResult(r: 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER'): void;
+  onResult(r: OperatorResult): void;
   onAssess(a: 'OK' | 'EMERGENCY' | 'CONTINUE'): void;
   onSkip(): void;
   onSkipSubmit(): void;
@@ -36,8 +37,10 @@ interface Props {
   onEscalate(): void;
 }
 
+/** Operatörün girdiği arama sonuçları (SILENT: otomatik cevap, ses yok — T-087). */
+export type OperatorResult = 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER' | 'SILENT';
 const stepLabel = (s: ChainStep) => t(s.label, { n: s.contactIndex });
-const KEY_OF: Record<string, string> = { REACHED: '1', NO_ANSWER: '2', BUSY: '3', WRONG_NUMBER: '4' };
+const KEY_OF: Record<string, string> = { REACHED: '1', NO_ANSWER: '2', BUSY: '3', WRONG_NUMBER: '4', SILENT: '6' };
 
 /** T-050: adımın son CPaaS araması — durum, süre, kayıt, sonuç önerisi (operatör onaylar). */
 function CallStatusLine({ call, onApply }: { call: CallView; onApply(r: CallView['suggestedResult']): void }) {
@@ -78,6 +81,8 @@ export function EventCard(p: Props) {
   const open = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'].includes(
     state,
   );
+  const ladder = detail?.ladder;
+  const left112 = deadline112LeftSec(ladder, state, now);
 
   return (
     <section className="card" aria-labelledby="event-title">
@@ -89,6 +94,23 @@ export function EventCard(p: Props) {
         </h1>
         <span className={`state s-${state}`}>{t(`O-STATE-${state}`)}</span>
       </header>
+
+      {ladder && (ladder.corroborated || ladder.possibleEmergency || ladder.hearingSpeechImpaired) && (
+        <div className="ladder-flags" role="status">
+          {ladder.corroborated && (
+            <span className="badge-corroborated" data-testid="corroborated">
+              {t('O-UI-CORROBORATED', { n: ladder.sourceDeviceCount })}
+            </span>
+          )}
+          {ladder.possibleEmergency && <span className="badge-alarm">{t('O-UI-POSSIBLE-EMERGENCY')}</span>}
+          {ladder.hearingSpeechImpaired && <span className="muted small">{t('O-UI-IMPAIRED')}</span>}
+        </div>
+      )}
+      {ladder?.platformSosFlow && (
+        <p className="desk-112" role="note" data-testid="apple-112">
+          {t('O-SCRIPT-APPLE-112')}
+        </p>
+      )}
 
       <dl className="sla" aria-live="polite">
         <div>
@@ -108,6 +130,11 @@ export function EventCard(p: Props) {
           </div>
         )}
       </dl>
+      {left112 !== undefined && (
+        <p className={`deadline-112${left112 < 0 ? ' late' : ''}`} role="timer" data-testid="deadline-112">
+          {left112 < 0 ? t('O-UI-112-DEADLINE-PASSED') : t('O-UI-112-DEADLINE', { time: clock(left112) })}
+        </p>
+      )}
 
       {state === 'OPERATOR_QUEUE' && (
         <div className="claim">
@@ -156,6 +183,11 @@ export function EventCard(p: Props) {
                 {t(`O-RES-${r}`)} <kbd>{k}</kbd>
               </button>
             ))}
+            {isDeviceStep(current) && (
+              <button type="button" onClick={() => p.onResult('SILENT')} disabled={p.busy}>
+                {t('O-RES-SILENT')} <kbd>6</kbd>
+              </button>
+            )}
             <button type="button" onClick={p.onSkip} disabled={p.busy}>
               {t('O-RES-SKIPPED')} <kbd>5</kbd>
             </button>
@@ -256,10 +288,16 @@ function StepRow({ step, current }: { step: ChainStep; current: boolean }) {
         {step.kind === 'CALL_112' && <span className="badge-manual">{t('O-CALL-112-BADGE')}</span>}
       </span>
       <span className="step-result small">
-        {step.result ? t(`O-RES-${step.result}`) : current && step.calledAt ? t('O-UI-CALLING') : ''}
+        {step.result ? t(resultCode(step.result)) : current && step.calledAt ? t('O-UI-CALLING') : ''}
         {step.assessment && ` · ${t(`O-ASSESS-${step.assessment}`)}`}
+        {step.result !== 'OFFLINE_SKIPPED' && systemReason(step.reason) && ` · ${t(systemReason(step.reason)!)}`}
       </span>
-      {step.timeoutSec > 0 && <span className="muted small">{t('O-UI-SECONDS', { n: step.timeoutSec })}</span>}
+      {step.timeoutSec > 0 && (
+        <span className="muted small">
+          {t('O-UI-SECONDS', { n: step.timeoutSec })}
+          {step.autoAnswerSec ? ` · ${t('O-UI-AUTO-ANSWER', { n: step.autoAnswerSec })}` : ''}
+        </span>
+      )}
     </li>
   );
 }

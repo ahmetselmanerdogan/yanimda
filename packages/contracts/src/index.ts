@@ -196,11 +196,25 @@ export interface NotifyRequest {
 }
 
 // ---- T-021 zincir (D-03, D-04) ----
-export type StepResult = 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER' | 'SKIPPED';
-export const STEP_RESULTS: readonly StepResult[] = ['REACHED', 'NO_ANSWER', 'BUSY', 'WRONG_NUMBER', 'SKIPPED'];
+/**
+ * Adım sonucu. T-087 (docs/07 S5.1): SILENT = otomatik cevapla bağlandı ama ses yok (olası acil durum, "cevap yok"
+ * değil); OFFLINE_SKIPPED = cihaz son 15 dk görülmedi, sistem aramadan atladı (operatör giremez).
+ */
+export type StepResult = 'REACHED' | 'NO_ANSWER' | 'BUSY' | 'WRONG_NUMBER' | 'SKIPPED' | 'SILENT' | 'OFFLINE_SKIPPED';
+/** Operatörün girebileceği sonuçlar (OFFLINE_SKIPPED yalnız sistem). */
+export const STEP_RESULTS: readonly StepResult[] = [
+  'REACHED',
+  'NO_ANSWER',
+  'BUSY',
+  'WRONG_NUMBER',
+  'SKIPPED',
+  'SILENT',
+];
 /** Ulaşılınca operatörün değerlendirmesi: OK → CONFIRMED_OK, EMERGENCY → CONFIRMED_EMERGENCY. */
 export type StepAssessment = 'OK' | 'EMERGENCY';
-export type StepTarget = 'WATCH' | 'ELDER_PHONE' | 'CONTACT' | 'NEIGHBOR' | 'EMERGENCY' | 'FAMILY';
+/** VOICE_DEVICE: en iyi sesli cihaz (yeniden arama); KEY_HOLDER: anahtarı olan yakın (T-087). */
+export type StepTarget =
+  'WATCH' | 'ELDER_PHONE' | 'VOICE_DEVICE' | 'CONTACT' | 'KEY_HOLDER' | 'NEIGHBOR' | 'EMERGENCY' | 'FAMILY';
 
 export interface ChainStep {
   n: number;
@@ -214,6 +228,8 @@ export interface ChainStep {
   script?: string;
   timeoutSec: number;
   required: boolean;
+  /** T-087: P1 sesli cihaz aramasında cihaz bu sürede kendiliğinden cevaplar (sn). */
+  autoAnswerSec?: number;
   calledAt?: string;
   result?: StepResult;
   assessment?: StepAssessment;
@@ -229,6 +245,25 @@ export interface ChainView {
   steps: ChainStep[];
   /** Sıradaki adım; hepsi bittiyse null. */
   current: number | null;
+}
+
+/** T-087/T-088 (docs/07 S5, S3.3): konsolun olay ekranındaki merdiven özeti. */
+export interface LadderView {
+  /** Kuyruğa düşüş + kural paketinin 112 son sınırı; sınır yoksa (tür/test) null. */
+  call112DeadlineAt: string | null;
+  call112DeadlineSec: number | null;
+  /** İki farklı cihaz 90 sn içinde düşme bildirdi. */
+  corroborated: boolean;
+  /** Olayı bildiren farklı cihaz sayısı ("2 cihaz"). */
+  sourceDeviceCount: number;
+  /** Olayı iptal eden cihaz (kapanmış olayda). */
+  cancelledByDeviceId: string | null;
+  /** Otomatik cevaplanan bir arama sessiz kaldı (işitme/konuşma güçlüğü yoksa). */
+  possibleEmergency: boolean;
+  /** Kişide işitme/konuşma güçlüğü işaretli. */
+  hearingSpeechImpaired: boolean;
+  /** Kaynak platformun kendi SOS akışını (ör. Apple düşme → 112) çalıştırdığını bildirdi. */
+  platformSosFlow: boolean;
 }
 
 export interface SupervisorAlert {

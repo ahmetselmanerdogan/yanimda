@@ -15,6 +15,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
+  type DeviceRole,
   type EventState,
   type EventType,
   type FalseAlarm,
@@ -35,13 +36,15 @@ import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog } from '../../db/schema';
 import { familyNoticeFor } from '../notify/policy';
-import { isAlarmWearable } from './coverage';
+import { type DeviceFact, isAlarmWearable } from './coverage';
 import { decide, type Notice } from './decide';
 import { type ActorKind, type EventRecord, EventRepository, type TransitionRecord } from './event.repository';
 import { assertTransition } from './event-state-machine';
+import { answerAllowed, betterLocation, corroborates, corroborationPair, type FusedLocation } from './fusion';
 import { isInWindow } from './night';
 import { type CoverageUpdate, type ProtectionChange, ProtectionService } from './protection.service';
 import {
+  fusionOf,
   loadRulePack,
   type Rule,
   ruleFor,
@@ -63,6 +66,12 @@ interface EventSource {
   note?: string;
   /** Açık olay varsa ekleme, açma (düzenli arama: süren olaya karışmasın). */
   exclusive?: boolean;
+  /** T-088: sinyali gönderen cihaz ve rolü, sunucunun aldığı an (doğrulama penceresi). */
+  deviceId?: string;
+  deviceRole?: DeviceRole;
+  at?: string;
+  /** T-088 + T-086: kişinin şu an şarjdaki cihazları (kapsama olguları) — şarjdaki cihazın düşmesi doğrulamaz. */
+  chargingDeviceIds?: string[];
 }
 
 /** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
@@ -500,7 +509,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     });
     switch (d.action) {
       case 'answer':
-        await this.onUserAnswer(s);
+        await this.onUserAnswer(s, fact);
         break;
       case 'on-body':
         await this.autoCloseWatchOff(s.protectedPersonId, 'saat takıldı');
@@ -529,11 +538,18 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           protectedPersonId: s.protectedPersonId,
           sourceId: s.idempotencyKey,
           location: s.location,
+          deviceId: s.deviceId,
+          deviceRole: s.source?.role,
+          at: s.receivedAt ?? s.occurredAt,
+          chargingDeviceIds: Object.values(upd.facts.devices)
+            .filter((d) => d.charging)
+            .map((d) => d.id),
         });
         break;
       case 'none':
         break;
     }
+    if (s.location) await this.fuseLocation(s);
     await this.onCoverageUpdate(upd);
   }
 
@@ -649,7 +665,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           await this.flush(superseded);
           const id = superseded.ev.id;
           superseded.after.push(() => this.cancelWaitTimers(id));
-        } else if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId);
+        } else if (open) return this.attachToOpen(this.uow(tx, open, after), type, s.sourceId, s);
 
         const now = new Date();
         const u = this.uow(tx, this.newRecord(type, rule, s, now), after, true);
@@ -713,9 +729,21 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    * gelirse olay o alarma YÜKSELTİLİR: tür, öncelik ve test bayrağı değişir (112 adımı zincire girer), bekleme varsa
    * hemen operatöre gider, kuyruğa daha önce girmişse aileye alarm bildirimi ayrıca planlanır.
    */
-  private async attachToOpen(u: Uow, type: EventType, sourceId: string) {
+  private async attachToOpen(u: Uow, type: EventType, sourceId: string, src?: EventSource) {
     u.ev.sourceSignalIds.push(sourceId);
     u.dirty = true;
+    // T-088 (S3.3): ikinci sinyal olaya kaynak olarak eklenir; farklı cihazdan pencere içinde düşme → doğrulanmış.
+    if (src?.deviceId && !u.ev.sourceDeviceIds.includes(src.deviceId)) {
+      u.ev.sourceDeviceIds.push(src.deviceId);
+      const charging = new Set(src.chargingDeviceIds ?? []);
+      if (
+        type === 'FALL' &&
+        u.ev.type === 'FALL' &&
+        !u.ev.corroboratedAt &&
+        corroborationPair(u.ev.sourceDeviceIds, src.deviceId, charging)
+      )
+        await this.corroborate(u, src);
+    }
     // Alarm olmayan olay her gerçek alarma; hareketsizlik (en hafif alarm) düşme / SOS'a yükseltilir (denetim bulgu 2:
     // düşme hareketsizlik sorusunda P2 kalıp ses ön elemesine gitmesin).
     const upgrade =
@@ -757,6 +785,75 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       });
     this.log.log(`Açık olaya ${type} kaynağı eklendi (olay=${u.ev.id}${upgrade ? ', yükseltildi' : ''})`);
     await this.flush(u);
+  }
+
+  /**
+   * T-088 (S3.3): iki farklı cihaz `fusion.corroborateSec` içinde düşme bildirdi → olay doğrulanmış. Cihaz sorusu
+   * sürüyorsa süresi soru açılışından `corroboratedPromptSec`'e iner (daha kısa değil; aile ayarı zaten kısaysa
+   * değişmez); süre geçtiyse hemen kuyruğa. Konsol "2 cihaz" görür; zincir doğrulayan cihazı önce arar (T-087).
+   */
+  private async corroborate(u: Uow, src: EventSource) {
+    const f = fusionOf(this.pack);
+    const now = new Date();
+    if (!corroborates(u.ev.createdAt, src.at ?? now.toISOString(), f.corroborateSec)) return;
+    u.ev.corroboratedAt = now.toISOString();
+    await this.repo.insertAudit(u.tx, {
+      actorKind: 'SYSTEM',
+      action: 'event.corroborated',
+      entityId: u.ev.id,
+      data: { devices: u.ev.sourceDeviceIds.length, by: src.deviceId, role: src.deviceRole ?? null },
+    });
+    u.publishes.push({
+      topic: TOPICS.eventUpdated,
+      payload: {
+        eventId: u.ev.id,
+        corroborated: true,
+        sourceDeviceCount: u.ev.sourceDeviceIds.length,
+        reason: 'CORROBORATED',
+      },
+    });
+    if (u.ev.state !== 'DEVICE_PROMPT' || !u.ev.devicePromptUntil) return;
+    const askedAt = [...u.ev.transitions].reverse().find((t) => t.to === 'DEVICE_PROMPT')?.at ?? u.ev.createdAt;
+    const until = Date.parse(askedAt) + f.corroboratedPromptSec * 1000;
+    if (until >= Date.parse(u.ev.devicePromptUntil)) return;
+    const id = u.ev.id;
+    if (until <= now.getTime()) {
+      this.escalate(u, 'doğrulanmış düşme');
+      u.after.push(() => this.cancelWaitTimers(id));
+      return;
+    }
+    u.ev.devicePromptUntil = new Date(until).toISOString();
+    const rule = ruleFor(this.pack, u.ev.type);
+    const kind = rule ? this.promptKind(rule) : 'prompt-expire';
+    // Kısa süre: eski iş iptal, yenisi kurulur (commit sonrası; arada çökme olursa tarama devicePromptUntil'i görür).
+    u.after.push(async () => {
+      await this.timers.cancel(id, kind);
+      await this.timers.schedule(id, kind, Math.max(0, until - Date.now()));
+    });
+  }
+
+  /**
+   * T-088 (S3.7): açık P1/P2 olayda konum en taze ve en doğru kaynaktan yeniden birleştirilir (yeni GPS > cihaz >
+   * telefon ağı). Konsola yalnız kaynak ve an gider (koordinat olay kaydında; log'a yazılmaz).
+   */
+  private async fuseLocation(s: Signal) {
+    const f = fusionOf(this.pack);
+    await this.withOpenEvent(s.protectedPersonId, async (u) => {
+      if (u.ev.priority > 2 || !s.location) return;
+      const incoming: FusedLocation = { ...s.location, at: s.occurredAt };
+      if (!betterLocation(u.ev.location as FusedLocation | undefined, incoming, new Date(), f.gpsFreshSec)) return;
+      u.ev.location = incoming;
+      u.dirty = true;
+      u.publishes.push({
+        topic: TOPICS.eventUpdated,
+        payload: {
+          eventId: u.ev.id,
+          reason: 'LOCATION_FUSED',
+          locationSource: incoming.source ?? null,
+          at: incoming.at,
+        },
+      });
+    });
   }
 
   private async upgradeType(u: Uow, type: EventType, sourceId: string) {
@@ -802,7 +899,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    *  - cihaz `payload.eventId` gönderiyorsa açık olayla aynı olmalı.
    * Uymayan cevap yok sayılır (audit `event.answer_ignored`).
    */
-  private async onUserAnswer(s: Signal) {
+  private async onUserAnswer(s: Signal, fact?: DeviceFact) {
     await this.withOpenEvent(s.protectedPersonId, async (u) => {
       // Yalnız cihaz sorusu cevaplanır; WATCH_OFF beklemesi saat takılınca (ON_BODY), KAPSAMA BOŞLUĞU kapsama
       // geri gelince kapanır.
@@ -810,12 +907,24 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       const askedAt = [...u.ev.transitions].reverse().find((t) => t.to === 'DEVICE_PROMPT')?.at;
       const answeredAt = s.receivedAt ?? s.occurredAt;
       const forEvent = typeof s.payload?.eventId === 'string' ? s.payload.eventId : undefined;
+      // T-088 (S3.6): soru penceresi içinde ve yalnız izinli cihazdan (alarmı açan, takılı A sınıfı, telefon "İyiyim").
+      // Takılı / şarj / sınıf T-085 kapsama olgusundan (sinyal uygulandıktan sonra: sinyaldeki bilgi, yoksa son bilinen).
+      const allowed = answerAllowed(u.ev.sourceDeviceIds, {
+        deviceId: s.deviceId,
+        device: fact,
+        role: s.source?.role,
+        screen: s.payload?.screen,
+      });
       const reason =
         forEvent !== undefined && forEvent !== u.ev.id
           ? 'OTHER_EVENT'
           : askedAt && Date.parse(answeredAt) < Date.parse(askedAt)
             ? 'BEFORE_PROMPT'
-            : null;
+            : u.ev.devicePromptUntil && Date.parse(answeredAt) > Date.parse(u.ev.devicePromptUntil)
+              ? 'AFTER_PROMPT'
+              : !allowed
+                ? 'DEVICE_NOT_ALLOWED'
+                : null;
       if (reason) {
         await this.repo.insertAudit(u.tx, {
           actorKind: 'SYSTEM',
@@ -826,9 +935,27 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         this.log.warn(`Cevap yok sayıldı (${reason}) olay=${u.ev.id}`);
         return;
       }
+      u.ev.cancelledByDeviceId = s.deviceId;
       this.transition(u, 'CANCELLED_BY_USER', 'USER', s.deviceId, 'kullanıcı iyiyim dedi');
       this.close(u, 'FALSE_ALARM', 'kullanıcı iptali', 'SYSTEM', undefined, 'USER_CANCEL');
       u.after.push(() => this.cancelWaitTimers(u.ev.id));
+      // T-088 (S3.6): doğrulanmış düşme başka bir cihazdan iptal edildi (bir cihazın alarmını öteki kapattı) → olay
+      // kapanır ama aynı gün P4 takip araması planlanır (ucuz sigorta; kural paketi bayrağı).
+      const f = fusionOf(this.pack);
+      if (
+        f.crossCancelFollowUp &&
+        u.ev.corroboratedAt &&
+        u.ev.type === 'FALL' &&
+        u.ev.sourceDeviceIds.some((d) => d !== s.deviceId)
+      ) {
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'SYSTEM',
+          action: 'event.follow_up_planned',
+          entityId: u.ev.id,
+          data: { minutes: f.crossCancelFollowUpMin, reason: 'CROSS_DEVICE_CANCEL', by: s.deviceId },
+        });
+        await this.timers.schedule(u.ev.id, 'follow-up', f.crossCancelFollowUpMin * 60_000); // commit'ten önce
+      }
     });
   }
 
@@ -1099,6 +1226,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       createdAt: now.toISOString(),
       location: s.location ?? undefined,
       sourceSignalIds: [s.sourceId],
+      sourceDeviceIds: s.deviceId ? [s.deviceId] : [],
       isTest: type === 'TEST',
       transitions: [],
     };

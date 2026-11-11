@@ -141,6 +141,9 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
 
     if (req.audience === 'ELDER') {
       for (const id of await this.devicesOf(req.protectedPersonId)) add('DEVICE', 'DEVICE', id);
+    } else if (d.voiceOnly) {
+      const [first] = await this.familyContacts(req.protectedPersonId);
+      if (first) add('VOICE', 'CONTACT', first); // T-087: yalnız 1. yakına sesli mesaj
     } else {
       const targets = await this.familyTargets(req.protectedPersonId);
       const contacts = await this.familyContacts(req.protectedPersonId);
