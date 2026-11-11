@@ -261,6 +261,85 @@ describe('kişinin cihazı (ELDER)', () => {
     expect(devicePush.sent.map((m) => [m.deviceId.slice(-2), m.data.code])).toEqual([['d1', 'W-BAT-20']]);
   });
 
+  describe('kanal yönlendirmesi: W-* yalnız saat kategorisine, P-* yalnız telefona', () => {
+    const WATCH = '0190b000-0000-7000-8000-0000000000d1';
+    const PHONE = '0190b000-0000-7000-8000-0000000000d2';
+    const PENDANT = '0190b000-0000-7000-8000-0000000000d4';
+    const TOKENLESS_WATCH = '0190b000-0000-7000-8000-0000000000d5';
+    const sent = () => devicePush.sent.map((m) => [m.deviceId.slice(-2), m.data.code, m.data.forDeviceId?.slice(-2)]);
+    beforeEach(async () => {
+      await h.pg.exec(`
+        INSERT INTO device.device (id, protected_person_id, kind, category, push_provider, push_token) VALUES
+          ('${WATCH}', '${PERSON}', 'WEAROS_WATCH', NULL, 'FCM', 'tok-1'),
+          ('${PHONE}', '${PERSON}', 'ANDROID_PHONE', NULL, 'FCM', 'tok-2'),
+          ('${PENDANT}', '${PERSON}', 'SIMULATOR', 'PENDANT', 'FCM', 'tok-4');`);
+    });
+    // Kolye (PENDANT) saat kategorisi değil: W-* almaz.
+    const TABLE: [string, (string | undefined)[][]][] = [
+      ['W-BAT-PLAN', [['d1', 'W-BAT-PLAN', undefined]]],
+      ['P-CHARGE-NOW', [['d2', 'P-CHARGE-NOW', undefined]]],
+      ['P-WATCH-OFF-2H', [['d2', 'P-WATCH-OFF-2H', undefined]]],
+    ];
+    it.each(TABLE)('%s', async (code, expected) => {
+      await notify.plan(req(code, 'ELDER'));
+      await notify.settled();
+      expect(sent()).toEqual(expected);
+    });
+
+    it('push token’ı olmayan saate W-* bildirimi telefon üzerinden (NOTICE, forDeviceId = saat); tekrar teslimde tek', async () => {
+      await h.pg.exec(`UPDATE device.device SET push_token = NULL, push_provider = NULL WHERE id = '${WATCH}';
+        INSERT INTO device.device (id, protected_person_id, kind) VALUES ('${TOKENLESS_WATCH}', '${PERSON}', 'WEAROS_WATCH');`);
+      expect(await notify.plan(req('W-CHARGE-DONE', 'ELDER'))).toBe(2);
+      expect(await notify.plan(req('W-CHARGE-DONE', 'ELDER'))).toBe(0);
+      await notify.settled();
+      expect(sent().sort()).toEqual([
+        ['d2', 'W-CHARGE-DONE', 'd1'],
+        ['d2', 'W-CHARGE-DONE', 'd5'],
+      ]);
+      expect(devicePush.sent[0]!.data).toEqual({
+        type: 'NOTICE',
+        code: 'W-CHARGE-DONE',
+        notificationId: expect.any(String),
+        forDeviceId: expect.stringMatching(/^0190b000/),
+      });
+      const r = await h.rows<{ recipient_kind: string; status: string }>(
+        'SELECT recipient_kind, status FROM notify.notification',
+      );
+      expect(r.every((x) => x.recipient_kind === 'DEVICE_RELAY' && x.status === 'sent')).toBe(true);
+    });
+
+    it('köprü telefonu yoksa (token yok) aktarım başarısız sayılır; olay akışı durmaz', async () => {
+      await h.pg.exec(
+        `UPDATE device.device SET push_token = NULL, push_provider = NULL WHERE id IN ('${WATCH}', '${PHONE}')`,
+      );
+      expect(await notify.plan(req('W-WEAR-REMIND', 'ELDER'))).toBe(1);
+      await notify.settled();
+      expect(devicePush.sent).toHaveLength(0);
+      expect((await rows()).map((x) => [x.status, x.error])).toEqual([['failed', 'no-bridge']]);
+    });
+
+    it('DevicePush: aktarılan NOTICE telefonda görünür bildirim değil (FCM data-only, APNs arka plan)', async () => {
+      const dp = new DevicePush(h.db, null, undefined, fcm);
+      const data = { type: 'NOTICE', code: 'W-CHARGE-DONE', forDeviceId: WATCH };
+      expect(await dp.deliver({ deviceId: PHONE, priority: 'high', ttlSec: 60, data })).toBe('sent');
+      expect(fcm.sent[0]).toMatchObject({ token: 'tok-2', data });
+      expect(fcm.sent[0]!.body).toBeUndefined();
+      const apns = {
+        sent: [] as unknown[],
+        send: async (r: unknown) => (apns.sent.push(r), { status: 'ok' as const }),
+      };
+      await h.pg.exec(`UPDATE device.device SET push_provider = 'APNS' WHERE id = '${PHONE}'`);
+      expect(await new DevicePush(h.db, apns).deliver({ deviceId: PHONE, priority: 'high', ttlSec: 60, data })).toBe(
+        'sent',
+      );
+      expect(apns.sent[0]).toMatchObject({
+        pushType: 'background',
+        priority: 5,
+        payload: { aps: { 'content-available': 1 }, type: 'NOTICE', code: 'W-CHARGE-DONE', forDeviceId: WATCH },
+      });
+    });
+  });
+
   it('DevicePush: FCM cihazına NOTICE görünür bildirim (metin katalogdan); geçersiz token silinir', async () => {
     await h.pg.exec(`INSERT INTO device.device (id, protected_person_id, kind, push_provider, push_token)
       VALUES ('0190b000-0000-7000-8000-0000000000d1', '${PERSON}', 'WEAROS_WATCH', 'FCM', 'tok-1')`);

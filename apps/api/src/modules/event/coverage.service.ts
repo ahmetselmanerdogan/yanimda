@@ -40,6 +40,7 @@ import {
   planCheck,
   stepLadders,
   toProtectionState,
+  voiceOrderOf,
 } from './coverage';
 import { isInWindow } from './night';
 import { PROTECTION_REASON, type ProtectionFacts, type SleepWindow } from './protection';
@@ -566,8 +567,8 @@ export class CoverageService {
 
 /**
  * Cihaz kartları: kayıtlı cihazlar (kayıt + katalog + sinyal alımında yazılan son durum) ve kaydı olmayan
- * (simülatör) cihazların olguları. Çevrimiçi kuralı kapsamayla aynı; sesli arama sırası: elle verilenler önce,
- * sonra takılı > en son görülen > ev ünitesi > telefon (S1.8). GET /devices, /coverage ve T-087 merdiveni (çevrimdışı
+ * (simülatör) cihazların olguları. Çevrimiçi kuralı kapsamayla aynı; sesli arama sırası `voiceOrderOf` (S1.8: elle
+ * verilenler önce, sonra takılı > en son görülen > ev ünitesi > telefon; şarjdaki / çıkarılmış en sonda). GET /devices, /coverage ve T-087 merdiveni (çevrimdışı
  * atlama, T+0 çaldırma, en iyi sesli cihaz) aynı görünümü kullanır; `q` çağıranın transaction'ı olabilir (olay
  * kilidi altında okuma). `facts`/`state` verilmezse kapsama satırı `q` ile okunur.
  */
@@ -629,22 +630,28 @@ export async function deviceSummaries(
         onBody: f.category === 'PHONE' ? null : f.onBody,
         estimatedHoursLeft: estimatedHoursLeft(f),
         voiceOrder: null as number | null,
+        voiceOrderManual: false as boolean,
       } satisfies DeviceSummary,
     };
   });
-  const rank = (x: (typeof list)[number]) => {
-    const worn = x.online && x.f.onBody === true && !x.f.charging ? 0 : 1;
-    const cat = isWearable(x.f) ? 0 : x.f.category === 'HOME_UNIT' ? 1 : 2;
-    return [x.r?.voice_order ?? 100, cat, worn, -(x.f.seenAt ? Date.parse(x.f.seenAt) : 0)];
-  };
-  const voice = list
-    .filter((x) => x.f.caps.voice)
-    .sort((a, b) => {
-      const [ra, rb] = [rank(a), rank(b)];
-      for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i]! - rb[i]!;
-      return 0;
-    });
-  voice.forEach((x, i) => (x.summary.voiceOrder = i + 1));
+  const order = voiceOrderOf(
+    list
+      .filter((x) => x.f.caps.voice)
+      .map((x) => ({
+        id: x.summary.id,
+        category: x.f.category,
+        online: x.online,
+        onBody: x.f.onBody,
+        charging: x.f.charging,
+        seenAt: x.f.seenAt,
+        manual: x.r?.voice_order ?? null,
+      })),
+  );
+  for (const x of list) {
+    const i = order.indexOf(x.summary.id);
+    x.summary.voiceOrder = i < 0 ? null : i + 1;
+    x.summary.voiceOrderManual = i >= 0 && x.r?.voice_order != null;
+  }
   return list.map((x) => x.summary);
 }
 

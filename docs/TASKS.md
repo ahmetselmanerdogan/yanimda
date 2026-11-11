@@ -35,14 +35,14 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-026 Playwright e2e — S3/S4/S5/S6 + eğitim modu; S5'in sahte CPaaS ayağı T-050 ile
 
 ## Epik 3 · Wear OS saat (S3) — repo: yanimda-android
-- [ ] T-030 Proje: Compose for Wear, Health Services, test modu
-- [ ] T-031 FALL_DETECTED + prompt 60 sn, titreşim, TTS (A-02, A-03)
-- [ ] T-032 SOS: 3 sn buton + fiziksel tuş 3× (A-01)
-- [ ] T-033 Hareketsizlik (A-04)
-- [ ] T-034 Off-body, pil, nabız, konum (A-05…A-08)
-- [ ] T-035 Room kuyruk + Wearable Data Layer + LTE HTTPS (A-09)
-- [ ] T-036 Tile, komplikasyon, durum rozeti (A-11, A-13)
-- [ ] T-037 Gelen arama ve otomatik cevap (A-10)
+- [ ] T-030 Proje: Compose for Wear, Health Services, test modu — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (ayrı repo: `core` + `watch`; `phone` modülü `yanimda-android`'de; test menüsü tile yerine ana ekranda, 5 sn basılı)
+- [ ] T-031 FALL_DETECTED + prompt 60 sn, titreşim, TTS (A-02, A-03) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi
+- [ ] T-032 SOS: 3 sn buton + fiziksel tuş 3× (A-01) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (SOS son konumla hemen; taze GPS ayrı LOCATION; tuş yalnız uygulama öndeyken)
+- [ ] T-033 Hareketsizlik (A-04) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (5 dk zincirli iş, 10 sn ivme örneği + adım farkı)
+- [ ] T-034 Off-body, pil, nabız, konum (A-05…A-08) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi; Battery Historian raporu açık
+- [ ] T-035 Room kuyruk + Wearable Data Layer + LTE HTTPS (A-09) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (Data Layer sözleşmesi telefonla ortak: yanimda-wear README)
+- [ ] T-036 Tile, komplikasyon, durum rozeti (A-11, A-13) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi
+- [ ] T-037 Gelen arama ve otomatik cevap (A-10) — kod ve testler hazır (yerel repo `yanimda-wear`); gerçek saatte denenmedi (InCallService ROLE_DIALER ister; operatör numarası config'te yok → LTE otomatik cevap henüz tetiklenmez)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
 - [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti ve yönetimi 0028 (`members/invite`, `family/members/accept`)
@@ -84,7 +84,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-086 Şarj ve pil (S4) — CHARGE_START/CHARGE_END sinyalleri, cihaz bloğunda charging, eşikler kural paketinde, şarj penceresi ve charging-intent, şarj zamanlayıcıları (80%/20 dk, 90 dk aile, 120 dk operatör, gece sessiz), KAPSAMA BOŞLUĞU (YOK seviyesi 20/45/60 dk), BATTERY_DEAD/CONNECTION_LOST bunun nedenleri — kural paketi v2; şarjdan düşen saatin düşmesi yok sayılır (S3.4); 18:00 planlı şarj kontrolü. Kalan: YOK seviyesinde 20. dk otomatik sesli arama ve YERİNDE KONTROL (P2, 2 sa / 6 sa) T-087'de; öğrenilmiş şarj penceresi (LEARNED, 14 gün); kolye pili iş emri (S4.9); kronik boşluk planı (S4.10)
 - [x] T-087 Ulaşılamama merdiveni (S5) — çevrimdışı cihaz atlama, P1 merdiveni ve 112 son sınırları, üstlenilmeyen P1 (90 sn amir), anahtar sahibi alanları, işitme/konuşma güçlüğü, olay türüne göre merdiven — API + kural paketi + konsol (112 geri sayımı, "2 cihaz", sessiz sonuç), migration 0031; 180 sn sesli mesaj bayrakla kapalı (sahip kararı); çevrimdışı atlama, T+0 çaldırma ve en iyi sesli cihaz T-085 kapsama olgularından (çevrimiçi A 15 / B 30 dk, takılı, şarjda, sesli arama sırası); cihaz tarafı otomatik cevap ve yazılı "İyi misiniz?" sorusu T-037/T-090; kolye ortağı sertifikası (S2.6) kapsam dışı. Kalan: 2. sesli cihaz adımı (S5.2; prosedür adımı + cihaza özel numara), YOK seviyesinde 20. dk yaşlıya otomatik sesli arama ve YERİNDE KONTROL olayı (P2; S4.7 2 sa / 6 sa, eşikler kural paketinde `coverageNone.welfare*`), hastanede/seyahatte modunun (0031 `hold_mode`) kapsama uyarılarını susturması (S4.10, ON_HOLD)
 - [x] T-088 Sinyal birleştirme (S3.3–S3.6) — 90 sn doğrulama (30 sn soru), kaynak cihazlar, iptal eden cihaz ve P4 takip araması, şarjdan düşen saatin düşmesi yok sayılır — doğrulama, iptal kuralları (alarm cihazı / takılı A sınıfı / telefon "İyiyim" `screen: IM_OK`, pencere içinde), takip araması (bayrak) ve S3.7 konum birleştirme yazıldı; şarjdan düşen saatin düşmesi T-086'da yok sayılır, son bilinen durumu şarjda olan cihazın düşmesi doğrulama sayılmaz; iptal kuralı takılı/şarj/sınıfı T-085 kapsama olgusundan okur
-- [ ] T-089 Konsol: cihaz şeridi, kapsama, 112 son sınırı; amir kapsama panosu (S7.1, S7.2)
+- [x] T-089 Konsol: cihaz şeridi, kapsama, 112 son sınırı; amir kapsama panosu (S7.1, S7.2) — olay ekranında kapsama rozeti (seviye + nedenler) ve cihaz şeridi (kategori/ad, pil, şarj, takılı, bağlı/son görülme, sesli arama sırası ve elle verilen, olayı açan/iptal eden); `POST /v1/devices/{id}/commands` (RING / PROMPT / LOCATE açık olayda, TEST; yalnız operasyon, denetimde) ile "Tümünü çaldır", "Bu cihazı çaldır", "Soru gönder", "Konum iste"; KAPSAMA BOŞLUĞU nedeni ve O-SCRIPT-COVERAGE; amir panosunda filo kapsaması (seviye başına kişi, planlı şarj); 112 geri sayımı T-087'de. Kalan (S7.1/S7.2): vücut konumu simgesi ve "telefon üzerinden" rozeti, konum yaşı satırı, değer grafiği (S6), "aynı adreste ikinci kişi"; amirde uyanıkken 20 dk+ YOK listesi, kronik boşluk, çevrimdışı köprüler / ortak gecikmesi / kolye pili kuyruğu, ulaşılamama oranı; cihaz tarafında LOCATE ve TEST komutlarının işlenmesi (T-090)
 - [ ] T-090 Saat ve telefon uygulamaları: şarj/takılı durumu her sinyalde, "Şarj tamam, beni takın", "Saati şarj ediyorum", kapsama satırı (S7.5, S7.6)
 - [ ] T-091 Aile uygulaması: cihazlar, kapsama, şarj penceresi, gece şarjı uyarısı (S7.4)
 - [ ] T-092 Değer kuralları — bayrak arkasında, mevzuat görüşü bekler (S6)

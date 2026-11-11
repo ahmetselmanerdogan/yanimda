@@ -1,3 +1,4 @@
+import type { CoverageLevel, SupervisorCoverage } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
 import { DispatchPanel } from './components/Dispatch';
@@ -15,6 +16,7 @@ import { action, t } from './lib/i18n';
 import { disablePush, enablePush, type PushState, pushState } from './lib/push';
 import { clock } from './lib/sla';
 
+const COVERAGE_LEVELS: CoverageLevel[] = ['FULL', 'BASIC', 'PHONE_ONLY', 'NIGHT', 'NONE'];
 const pct = (x: number) => `%${Math.round(x * 100)}`;
 const sec = (n: number | null | undefined) => (n === null || n === undefined ? null : t('O-UI-SUP-SECONDS', { n }));
 const hhmm = (iso: string) =>
@@ -78,6 +80,14 @@ export function SupervisorBoard({
     const load = () => void api.dispatches(true).then(setDispatches, () => undefined);
     load();
     const id = setInterval(load, 15_000);
+    return () => clearInterval(id);
+  }, [api]);
+  // T-089 (S7.2, S4.11) filo kapsaması: seviye başına kişi, akşam planlı şarj (sunucu taraması 30 sn).
+  const [coverage, setCoverage] = useState<SupervisorCoverage | null>(null);
+  useEffect(() => {
+    const load = () => void api.supervisorCoverage().then(setCoverage, () => undefined);
+    load();
+    const id = setInterval(load, 30_000);
     return () => clearInterval(id);
   }, [api]);
   useEffect(() => void reload(), [reload]);
@@ -189,6 +199,21 @@ export function SupervisorBoard({
               </button>
             </div>
           </section>
+
+          {coverage && (
+            <section className="sup-panel wide" data-testid="sup-coverage" aria-labelledby="sup-coverage-title">
+              <h2 id="sup-coverage-title">
+                {t('O-UI-SUP-COVERAGE')}{' '}
+                <span className="muted small">{t('O-UI-SUP-COVERAGE-TOTAL', { n: coverage.total })}</span>
+              </h2>
+              <div className="sup-coverage">
+                {COVERAGE_LEVELS.map((l) => (
+                  <Tile key={l} label={t(`O-UI-COVERAGE-${l}`)} value={coverage.counts[l]} testId={`coverage-${l}`} />
+                ))}
+                <Tile label={t('O-UI-COVERAGE-PLANNED')} value={coverage.plannedCharging} testId="coverage-planned" />
+              </div>
+            </section>
+          )}
 
           <section className="sup-panel">
             <h2>{t('O-UI-SUP-QUEUE-DEPTH')}</h2>

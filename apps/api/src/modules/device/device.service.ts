@@ -9,8 +9,15 @@ import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
 import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
-import { type DeviceAdapter, type PromptRequest, type RingRequest, UnsupportedSignalError } from './device.types';
-import { PUSH, type PushPort, RecordingPush } from './push.port';
+import {
+  type DeviceAdapter,
+  type DeviceCommand,
+  type PromptRequest,
+  type RingRequest,
+  UnsupportedSignalError,
+} from './device.types';
+import { relayBridgeOf } from './device-push';
+import { PUSH, type PushOutcome, type PushPort, RecordingPush } from './push.port';
 
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
 
@@ -101,19 +108,33 @@ export class DeviceService {
     return this.registry.for((await this.kindsOf([deviceId])).get(deviceId) ?? null);
   }
 
-  /** Cihazda soru göster (cihaz destekliyorsa). Desteklemiyorsa false. */
-  async promptUser(deviceId: string, req: PromptRequest): Promise<boolean> {
+  /**
+   * Cihazda soru göster. Sonuç gerçek teslimdir: 'sent' / 'relayed' (köprü telefon üzerinden) ulaştı; 'unsupported'
+   * cihaz soru gösteremez; diğerleri push sonucu (token yok, sağlayıcı hatası …). Ulaştı mı: `delivered()`.
+   */
+  async promptUser(deviceId: string, req: PromptRequest): Promise<PushOutcome> {
     const a = await this.adapterFor(deviceId);
-    if (!a.capabilities().devicePrompt) return false;
-    await a.promptUser(deviceId, req);
-    return true;
+    if (!a.capabilities().devicePrompt) return 'unsupported';
+    return (await a.promptUser(deviceId, req)) ?? 'sent';
   }
 
-  async ring(deviceId: string, req: RingRequest): Promise<boolean> {
+  async ring(deviceId: string, req: RingRequest): Promise<PushOutcome> {
     const a = await this.adapterFor(deviceId);
-    if (!a.capabilities().ring) return false;
-    await a.ring(deviceId, req);
-    return true;
+    if (!a.capabilities().ring) return 'unsupported';
+    return (await a.ring(deviceId, req)) ?? 'sent';
+  }
+
+  /** T-089: konum iste (cihaz konum gönderebiliyorsa) veya cihaz testi (push alabiliyorsa). */
+  async command(deviceId: string, cmd: DeviceCommand): Promise<PushOutcome> {
+    const a = await this.adapterFor(deviceId);
+    const c = a.capabilities();
+    if (cmd.type === 'LOCATE' ? !c.location : !c.ring) return 'unsupported';
+    return (await a.command(deviceId, cmd)) ?? 'sent';
+  }
+
+  /** Bu cihaza giden komutun aktarılacağı köprü telefon (cihazın kendi push token'ı yoksa); yoksa null. */
+  relayBridgeOf(deviceId: string): Promise<string | null> {
+    return relayBridgeOf(this.db, deviceId);
   }
 }
 

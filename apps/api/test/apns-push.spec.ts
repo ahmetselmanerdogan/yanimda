@@ -206,7 +206,7 @@ describe("DevicePush (cihaz token'ına göre yönlendirme)", () => {
     expect(tr.calls[0]!.headers['apns-expiration']).toBe(String(T0.getTime() / 1000 + 900));
   });
 
-  it('soru: "İyiyim" kategorili uyarı, metin katalogdan', async () => {
+  it('soru: "İyiyim" kategorili uyarı, telefonun metni katalogdan (W-INACT-1 → P-INACT-1)', async () => {
     const tr = new FakeTransport();
     const push = new DevicePush(h.db, new ApnsClient(CFG, tr), () => T0);
     await push.send({
@@ -217,7 +217,58 @@ describe("DevicePush (cihaz token'ına göre yönlendirme)", () => {
     });
     expect(tr.calls[0]).toMatchObject({
       headers: { 'apns-push-type': 'alert', 'apns-priority': '10', 'apns-collapse-id': 'ev1' },
-      body: { aps: { alert: { body: 'İyi misiniz? Dokunun.' }, category: 'yanimda.inactivity' }, type: 'PROMPT' },
+      body: {
+        aps: { alert: { body: 'Bir süredir hareket etmediniz. İyi misiniz?' }, category: 'yanimda.inactivity' },
+        type: 'PROMPT',
+      },
+    });
+  });
+
+  it('operatör sorusu (SOS, W-OP-PROMPT) telefonda P-OP-PROMPT; RING öncelik 10 P-RING; LOCATE / TEST sessiz', async () => {
+    const tr = new FakeTransport();
+    const push = new DevicePush(h.db, new ApnsClient(CFG, tr), () => T0);
+    const send = (data: Record<string, string>) => push.send({ deviceId: IOS, priority: 'high', data, ttlSec: 60 });
+    expect(await send({ type: 'PROMPT', eventId: 'ev3', kind: 'SOS', tts: 'W-OP-PROMPT', windowSec: '60' })).toBe(
+      'sent',
+    );
+    await send({ type: 'RING', eventId: 'ev3' });
+    await send({ type: 'LOCATE', eventId: 'ev3' });
+    await send({ type: 'TEST' });
+    expect(tr.calls.map((c) => [c.headers['apns-push-type'], c.headers['apns-priority']])).toEqual([
+      ['alert', '10'],
+      ['alert', '10'],
+      ['background', '5'],
+      ['background', '5'],
+    ]);
+    expect(tr.calls[0]!.body).toMatchObject({
+      aps: { alert: { body: 'Operatörümüz durumunuzu soruyor. İyi misiniz?' } },
+    });
+    expect(tr.calls[1]!.body).toMatchObject({
+      aps: { alert: { body: 'Yanımda sizi arıyor. Lütfen telefona bakın.' }, sound: 'default' },
+      type: 'RING',
+      eventId: 'ev3',
+    });
+    expect(tr.calls[2]!.body).toEqual({ aps: { 'content-available': 1 }, type: 'LOCATE', eventId: 'ev3' });
+  });
+
+  it('düşme sorusu telefonda telefon metniyle (P-FALL-PROMPT); tür ve mutlak bitiş yükte', async () => {
+    const tr = new FakeTransport();
+    const push = new DevicePush(h.db, new ApnsClient(CFG, tr), () => T0);
+    const until = new Date(T0.getTime() + 30_000).toISOString();
+    await push.send({
+      deviceId: IOS,
+      priority: 'normal',
+      data: { type: 'PROMPT', eventId: 'ev2', kind: 'FALL', tts: 'W-FALL-1', windowSec: '30', until, silent: 'false' },
+      ttlSec: 30,
+    });
+    expect(tr.calls[0]).toMatchObject({
+      body: {
+        aps: { alert: { body: 'Düşme algılandı. İyi misiniz?' }, category: 'yanimda.inactivity' },
+        type: 'PROMPT',
+        eventId: 'ev2',
+        kind: 'FALL',
+        until,
+      },
     });
   });
 

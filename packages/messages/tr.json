@@ -30,6 +30,97 @@
     "text": "Yanımda arıyor.",
     "action": "Cevapla"
   },
+  "W-CALL-PHONE": {
+    "channel": "watch",
+    "text": "Yanımda arıyor. Telefonunuzu açın."
+  },
+  "W-SOS-HOLD": {
+    "channel": "watch",
+    "text": "Yardım için 3 saniye basılı tutun.",
+    "action": "YARDIM"
+  },
+  "W-CALLBACK": {
+    "channel": "watch",
+    "text": "Operatörümüz sizi arasın mı?",
+    "action": "Beni arayın"
+  },
+  "W-CALLBACK-SENT": {
+    "channel": "watch",
+    "text": "İsteğiniz iletildi. Sizi arayacağız."
+  },
+  "W-OK-SENT": {
+    "channel": "watch",
+    "text": "Teşekkürler. İyi olduğunuzu ilettik."
+  },
+  "W-STATUS-OK": {
+    "channel": "watch",
+    "text": "Korunuyor"
+  },
+  "W-STATUS-ATTENTION": {
+    "channel": "watch",
+    "text": "Dikkat"
+  },
+  "W-STATUS-OFF": {
+    "channel": "watch",
+    "text": "Kapalı"
+  },
+  "W-STATUS-OFF-WRIST": {
+    "channel": "watch",
+    "text": "Saat bileğinizde değil."
+  },
+  "W-STATUS-NO-LINK": {
+    "channel": "watch",
+    "text": "Bağlantı yok. Sinyaller saklanıyor."
+  },
+  "W-STATUS-NOT-PAIRED": {
+    "channel": "watch",
+    "text": "Saat henüz eşleşmedi."
+  },
+  "W-PAIR": {
+    "channel": "watch",
+    "text": "Telefonunuzdaki Yanımda uygulamasını açın. Saatiniz kendiliğinden eşleşecek."
+  },
+  "W-PAIR-DONE": {
+    "channel": "watch",
+    "text": "Eşleşme tamam. Yanımda sizi koruyor."
+  },
+  "W-PERM": {
+    "channel": "watch",
+    "text": "Sizi koruyabilmemiz için izin verin.",
+    "action": "İzin ver"
+  },
+  "W-TEST-MENU": {
+    "channel": "watch",
+    "text": "Test menüsü"
+  },
+  "W-TEST-FALL": {
+    "channel": "watch",
+    "text": "Sahte düşme"
+  },
+  "W-TEST-SOS": {
+    "channel": "watch",
+    "text": "Sahte SOS"
+  },
+  "W-TEST-QUEUE": {
+    "channel": "watch",
+    "text": "Sinyal kuyruğunu göster"
+  },
+  "W-TEST-QUEUE-EMPTY": {
+    "channel": "watch",
+    "text": "Kuyruk boş"
+  },
+  "W-TEST-QUEUE-ITEM": {
+    "channel": "watch",
+    "text": "{kind} · {state} · {attempts} deneme"
+  },
+  "W-TEST-SENT": {
+    "channel": "watch",
+    "text": "gönderildi"
+  },
+  "W-TEST-PENDING": {
+    "channel": "watch",
+    "text": "bekliyor"
+  },
   "P-HOME-OK": {
     "channel": "phone",
     "text": "Korunuyorsunuz. Operatörünüz: {operator}."
@@ -2980,6 +3071,24 @@
     "channel": "watch",
     "text": "Pil akşama yetmeyebilir. Şimdi şarja takın."
   },
+  "W-CHARGING": {
+    "channel": "watch",
+    "text": "Şarj oluyor. Telefonunuz yanınızda olsun."
+  },
+  "W-TEST-MONTHLY": {
+    "channel": "watch",
+    "text": "Aylık deneme zamanı. Yardım düğmesini birlikte deneyelim mi?",
+    "action": "Dene"
+  },
+  "W-OP-PROMPT": {
+    "channel": "watch",
+    "text": "Operatörümüz soruyor: İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "W-RING": {
+    "channel": "watch",
+    "text": "Yanımda sizi arıyor. Lütfen saate bakın."
+  },
   "P-CHARGE-COVER": {
     "channel": "phone",
     "text": "Saatiniz şarjda. Telefonunuzu yanınızda tutun."
@@ -3001,6 +3110,10 @@
     "text": "Saatimi şarj ediyorum",
     "action": "Şarj ediyorum"
   },
+  "P-CHARGE-INTENT-OK": {
+    "channel": "phone",
+    "text": "Tamam. Şarj hatırlatmaları {until} saatine kadar susturuldu."
+  },
   "P-COVERAGE-FULL": {
     "channel": "phone",
     "text": "Korunuyorsunuz. Düşme algılama ve yardım düğmesi açık."
@@ -3020,6 +3133,40 @@
   "P-COVERAGE-NONE": {
     "channel": "phone",
     "text": "Koruma şu an çalışmıyor. Saatinizi takın, telefonunuzu açık tutun."
+  },
+  "P-COVERAGE-BY-WATCH": {
+    "channel": "phone",
+    "text": "Saat koruyor"
+  },
+  "P-COVERAGE-BY-PENDANT": {
+    "channel": "phone",
+    "text": "Kolye koruyor"
+  },
+  "P-COVERAGE-BY-HOME_UNIT": {
+    "channel": "phone",
+    "text": "Ev ünitesi koruyor"
+  },
+  "P-COVERAGE-BY-PHONE": {
+    "channel": "phone",
+    "text": "Telefon koruyor"
+  },
+  "P-FALL-PROMPT": {
+    "channel": "phone",
+    "text": "Düşme algılandı. İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "P-OP-PROMPT": {
+    "channel": "phone",
+    "text": "Operatörümüz durumunuzu soruyor. İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "P-RING": {
+    "channel": "phone",
+    "text": "Yanımda sizi arıyor. Lütfen telefona bakın."
+  },
+  "P-NET-ERROR": {
+    "channel": "phone",
+    "text": "Bağlantı kurulamadı. Biraz sonra yeniden deneyin."
   },
   "F-CHARGE-GAP": {
     "channel": "family",
@@ -3161,6 +3308,115 @@
     "channel": "family",
     "text": "Koruma boşluğu"
   },
+  "F-UI-DEVICE-CAT-WATCH": {
+    "channel": "family",
+    "text": "Saat"
+  },
+  "F-UI-DEVICE-CAT-PHONE": {
+    "channel": "family",
+    "text": "Telefon"
+  },
+  "F-UI-DEVICE-CAT-PENDANT": {
+    "channel": "family",
+    "text": "Kolye"
+  },
+  "F-UI-DEVICE-CAT-RING": {
+    "channel": "family",
+    "text": "Yüzük"
+  },
+  "F-UI-DEVICE-CAT-EARBUD": {
+    "channel": "family",
+    "text": "Kulaklık"
+  },
+  "F-UI-DEVICE-CAT-EARRING": {
+    "channel": "family",
+    "text": "Küpe"
+  },
+  "F-UI-DEVICE-CAT-HOME_UNIT": {
+    "channel": "family",
+    "text": "Ev ünitesi"
+  },
+  "F-UI-DEVICE-CAT-CLOUD": {
+    "channel": "family",
+    "text": "Sağlık uygulaması"
+  },
+  "F-UI-BODY-WRIST_LEFT": {
+    "channel": "family",
+    "text": "Sol bilek"
+  },
+  "F-UI-BODY-WRIST_RIGHT": {
+    "channel": "family",
+    "text": "Sağ bilek"
+  },
+  "F-UI-BODY-NECK": {
+    "channel": "family",
+    "text": "Boyun"
+  },
+  "F-UI-BODY-CHEST": {
+    "channel": "family",
+    "text": "Göğüs"
+  },
+  "F-UI-BODY-FINGER": {
+    "channel": "family",
+    "text": "Parmak"
+  },
+  "F-UI-BODY-EAR": {
+    "channel": "family",
+    "text": "Kulak"
+  },
+  "F-UI-BODY-POCKET": {
+    "channel": "family",
+    "text": "Cep"
+  },
+  "F-UI-BODY-HOME": {
+    "channel": "family",
+    "text": "Evde, sabit"
+  },
+  "F-UI-DEVICES-BODY": {
+    "channel": "family",
+    "text": "Nerede takılı"
+  },
+  "F-UI-DEVICES-NICKNAME": {
+    "channel": "family",
+    "text": "Takma ad"
+  },
+  "F-UI-DEVICES-VOICE-AUTO": {
+    "channel": "family",
+    "text": "Otomatik"
+  },
+  "F-UI-DEVICES-BATTERY": {
+    "channel": "family",
+    "text": "Pil %{pct}"
+  },
+  "F-UI-DEVICES-REMOVE-CONFIRM": {
+    "channel": "family",
+    "text": "{device} kaldırılacak: bağlantısı hemen kesilir ve korumaya sayılmaz. Yeniden kullanmak için yeniden eşleştirmeniz gerekir.",
+    "action": "Kaldır"
+  },
+  "F-UI-DEVICES-REMOVED": {
+    "channel": "family",
+    "text": "Cihaz kaldırıldı"
+  },
+  "F-UI-COVERAGE-CAP-MISSING": {
+    "channel": "family",
+    "text": "{cap} yok"
+  },
+  "F-UI-COVERAGE-INTENT-UNTIL": {
+    "channel": "family",
+    "text": "Şarj hatırlatmaları {time} saatine kadar susturuldu."
+  },
+  "F-UI-COVERAGE-INTENT-DEVICE": {
+    "channel": "family",
+    "text": "{device} şarj ediliyor ({min} dk hatırlatma yok)"
+  },
+  "F-UI-COVERAGE-PLAN-START": {
+    "channel": "family",
+    "text": "Başlangıç"
+  },
+  "F-UI-COVERAGE-PLAN-END": {
+    "channel": "family",
+    "text": "Bitiş"
+  },
   "O-TYPE-COVERAGE_GAP": {
     "channel": "console",
     "text": "Kapsama boşluğu"
@@ -3212,5 +3468,169 @@
   "O-UI-GAP-CONNECTION_LOST": {
     "channel": "console",
     "text": "Cihazlardan sinyal yok"
+  },
+  "O-UI-GAP-REASON": {
+    "channel": "console",
+    "text": "Boşluk nedeni: {reason}"
+  },
+  "O-UI-SCRIPT-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama boşluğu araması"
+  },
+  "O-UI-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama"
+  },
+  "O-UI-COVERAGE-REASON-WATCH_CHARGING": {
+    "channel": "console",
+    "text": "Saat şarjda"
+  },
+  "O-UI-COVERAGE-REASON-NO_ALARM_DEVICE_WORN": {
+    "channel": "console",
+    "text": "Alarm cihazı takılı değil"
+  },
+  "O-UI-COVERAGE-REASON-ALARM_DEVICE_OFFLINE": {
+    "channel": "console",
+    "text": "Alarm cihazı bağlı değil"
+  },
+  "O-UI-COVERAGE-REASON-PHONE_OFFLINE": {
+    "channel": "console",
+    "text": "Telefon bağlı değil"
+  },
+  "O-UI-COVERAGE-REASON-NIGHT_WINDOW": {
+    "channel": "console",
+    "text": "Uyku saatleri"
+  },
+  "O-UI-COVERAGE-REASON-ON_HOLD": {
+    "channel": "console",
+    "text": "Hastanede / seyahatte"
+  },
+  "O-UI-DEV-CAT-WATCH": {
+    "channel": "console",
+    "text": "Saat"
+  },
+  "O-UI-DEV-CAT-PHONE": {
+    "channel": "console",
+    "text": "Telefon"
+  },
+  "O-UI-DEV-CAT-PENDANT": {
+    "channel": "console",
+    "text": "Kolye"
+  },
+  "O-UI-DEV-CAT-RING": {
+    "channel": "console",
+    "text": "Yüzük"
+  },
+  "O-UI-DEV-CAT-EARBUD": {
+    "channel": "console",
+    "text": "Kulaklık"
+  },
+  "O-UI-DEV-CAT-EARRING": {
+    "channel": "console",
+    "text": "Küpe"
+  },
+  "O-UI-DEV-CAT-HOME_UNIT": {
+    "channel": "console",
+    "text": "Ev ünitesi"
+  },
+  "O-UI-DEV-CAT-CLOUD": {
+    "channel": "console",
+    "text": "Bulut kaynağı"
+  },
+  "O-UI-DEV-BATTERY": {
+    "channel": "console",
+    "text": "Pil %{pct}"
+  },
+  "O-UI-DEV-CHARGING": {
+    "channel": "console",
+    "text": "Şarjda"
+  },
+  "O-UI-DEV-WORN": {
+    "channel": "console",
+    "text": "Takılı"
+  },
+  "O-UI-DEV-NOT-WORN": {
+    "channel": "console",
+    "text": "Takılı değil"
+  },
+  "O-UI-DEV-ONLINE": {
+    "channel": "console",
+    "text": "Bağlı"
+  },
+  "O-UI-DEV-OFFLINE": {
+    "channel": "console",
+    "text": "Bağlı değil"
+  },
+  "O-UI-DEV-SEEN-NOW": {
+    "channel": "console",
+    "text": "az önce görüldü"
+  },
+  "O-UI-DEV-SEEN-MIN": {
+    "channel": "console",
+    "text": "{n} dk önce görüldü"
+  },
+  "O-UI-DEV-SEEN-HOUR": {
+    "channel": "console",
+    "text": "{n} sa önce görüldü"
+  },
+  "O-UI-DEV-SEEN-NEVER": {
+    "channel": "console",
+    "text": "Hiç görülmedi"
+  },
+  "O-UI-DEV-VOICE": {
+    "channel": "console",
+    "text": "Sesli arama {n}"
+  },
+  "O-UI-DEV-VOICE-MANUAL": {
+    "channel": "console",
+    "text": "Sesli arama {n} (elle)"
+  },
+  "O-UI-DEV-SOURCE": {
+    "channel": "console",
+    "text": "Olayı açtı"
+  },
+  "O-UI-DEV-CANCELLED": {
+    "channel": "console",
+    "text": "İptal etti"
+  },
+  "O-UI-DEV-NONE": {
+    "channel": "console",
+    "text": "Kayıtlı cihaz yok"
+  },
+  "O-UI-DEV-RING-ALL": {
+    "channel": "console",
+    "text": "Tümünü çaldır"
+  },
+  "O-UI-DEV-RING": {
+    "channel": "console",
+    "text": "Bu cihazı çaldır"
+  },
+  "O-UI-DEV-PROMPT": {
+    "channel": "console",
+    "text": "Soru gönder"
+  },
+  "O-UI-DEV-LOCATE": {
+    "channel": "console",
+    "text": "Konum iste"
+  },
+  "O-UI-DEV-SENT": {
+    "channel": "console",
+    "text": "{device}: gönderildi"
+  },
+  "O-UI-DEV-UNSUPPORTED": {
+    "channel": "console",
+    "text": "{device} bu komutu desteklemiyor"
+  },
+  "O-UI-DEV-NOT-DELIVERED": {
+    "channel": "console",
+    "text": "{device}: ulaştırılamadı"
+  },
+  "O-UI-SUP-COVERAGE": {
+    "channel": "console",
+    "text": "Filo kapsaması"
+  },
+  "O-UI-SUP-COVERAGE-TOTAL": {
+    "channel": "console",
+    "text": "Toplam {n} kişi"
   }
 }

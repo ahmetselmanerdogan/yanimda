@@ -281,7 +281,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   /**
    * Sessiz soru cevapsız. D-06 (T-070): kişi öğrenme modundaysa ve kural `learningMode.extraSilentAsks` veriyorsa
-   * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza ELDER bildirimi, kuralın tts kodu); o da
+   * operatöre düşmeden önce bir kez daha sessizce sorulur (cihaza PROMPT, kuralın tts kodu; T-090); o da
    * cevapsızsa yükseltilir. SOS/FALL'da sessiz soru yoktur, değişmez. Yükseltmeden önce otomatik sesli ön eleme
    * (T-072, `screenOrEscalate`).
    */
@@ -306,11 +306,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           topic: TOPICS.eventUpdated,
           payload: { eventId: u.ev.id, devicePromptUntil: u.ev.devicePromptUntil, reason: 'LEARNING_MODE_REASK' },
         });
-        if (rule.devicePrompt.tts)
-          await this.notify(u.tx, u.ev.protectedPersonId, [{ code: rule.devicePrompt.tts, audience: 'ELDER' }], {
-            dedupeBase: `learning-ask:${u.ev.id}`,
-            eventId: u.ev.id,
-          });
+        // T-090: soru cihaza PROMPT olarak gider (DevicePromptService, LEARNING_MODE_REASK güncellemesiyle yeni bitiş).
         await this.timers.schedule(u.ev.id, 'learning-ask-expire', win); // commit'ten önce (bkz. sınıf notu)
         return;
       }
@@ -839,9 +835,15 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   private async fuseLocation(s: Signal) {
     const f = fusionOf(this.pack);
     await this.withOpenEvent(s.protectedPersonId, async (u) => {
-      if (u.ev.priority > 2 || !s.location) return;
+      if (!s.location) return;
       const incoming: FusedLocation = { ...s.location, at: s.occurredAt };
-      if (!betterLocation(u.ev.location as FusedLocation | undefined, incoming, new Date(), f.gpsFreshSec)) return;
+      const current = u.ev.location as FusedLocation | undefined;
+      // T-089: operatörün "Konum iste" komutunun cevabı (LOCATION, payload {trigger: LOCATE, eventId}) bu olayın
+      // konumunu her öncelikte günceller (istenen taze konum; daha eski değilse). Diğer konumlar yalnız açık P1/P2'de.
+      const requested = s.payload?.trigger === 'LOCATE' && s.payload.eventId === u.ev.id;
+      if (requested) {
+        if (current?.at && Date.parse(incoming.at!) < Date.parse(current.at)) return;
+      } else if (u.ev.priority > 2 || !betterLocation(current, incoming, new Date(), f.gpsFreshSec)) return;
       u.ev.location = incoming;
       u.dirty = true;
       u.publishes.push({
@@ -849,6 +851,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         payload: {
           eventId: u.ev.id,
           reason: 'LOCATION_FUSED',
+          requested,
           locationSource: incoming.source ?? null,
           at: incoming.at,
         },

@@ -63,6 +63,14 @@ test('düzen ve üstlenme akışı', async ({ page }, info) => {
     const box = (await callBtn.boundingBox())!;
     expect(box.height).toBeGreaterThanOrEqual(44);
   }
+  // T-089 (S7.1): cihaz şeridi ve kapsama rozeti; olay bendeyken "Tümünü çaldır" ve cihaz başına komutlar.
+  if (v === 'tablet') await page.getByRole('button', { name: 'Kişi', exact: true }).click(); // çekmeceyi kapat
+  const devices = page.getByTestId('devices');
+  await expect(devices.getByTestId('coverage-level')).toHaveText('Kapsama: Tam');
+  await expect(devices.getByTestId('device-WATCH')).toContainText('Takılı');
+  await expect(devices.getByTestId('device-WATCH')).toContainText('Sesli arama 1');
+  await devices.getByRole('button', { name: 'Tümünü çaldır' }).click();
+  await expect(devices.getByRole('status')).toContainText('Saat: gönderildi');
   expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
   await axe(page);
 });

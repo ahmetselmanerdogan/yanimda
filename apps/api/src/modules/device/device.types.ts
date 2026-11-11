@@ -1,5 +1,7 @@
 import type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier, Signal } from '@yanimda/contracts';
 
+import type { PushOutcome } from './push.port';
+
 export type { DeviceCategory, DeviceKind, DeviceRole, DeviceTier } from '@yanimda/contracts';
 
 /**
@@ -30,9 +32,14 @@ export interface DeviceCapabilities {
 
 export interface PromptRequest {
   eventId: string;
+  /** Olay türü (FALL, INACTIVITY …): telefon kendi soru metnini buna göre seçer. */
+  kind: string;
   /** Mesaj kataloğu kodu (W-FALL-1 …); metin cihazda katalogdan okunur. */
   tts: string;
+  /** Gönderim anında kalan süre (sn). */
   windowSec: number;
+  /** Sorunun mutlak bitişi (ISO, sunucu saati): doğrulanmış düşmenin kısalan süresi dahil. */
+  until: string;
   silent: boolean;
 }
 
@@ -40,13 +47,18 @@ export interface RingRequest {
   eventId: string;
 }
 
+/** T-089 operatör komutları (S7.1, S8.3): konum iste (açık olay), cihaz testi (aylık deneme, S4.9). */
+export type DeviceCommand = { type: 'LOCATE'; eventId: string } | { type: 'TEST' };
+
 export interface DeviceAdapter {
   readonly kind: DeviceKind;
   capabilities(): DeviceCapabilities;
   /** Ham (şemaya uygun) sinyali kanonik biçime getirir. Girişi değiştirmez. Desteklenmeyen → UnsupportedSignalError. */
   normalize(raw: Signal): Signal;
-  promptUser(deviceId: string, req: PromptRequest): Promise<void>;
-  ring(deviceId: string, req: RingRequest): Promise<void>;
+  /** Sonuç push teslimidir (void: sonucu bilinmeyen / ağa çıkmayan uygulama, ör. simülatör = gönderildi). */
+  promptUser(deviceId: string, req: PromptRequest): Promise<PushOutcome | void>;
+  ring(deviceId: string, req: RingRequest): Promise<PushOutcome | void>;
+  command(deviceId: string, cmd: DeviceCommand): Promise<PushOutcome | void>;
 }
 
 /** Cihaz bu sinyali gönderemez / tür bilinmiyor / simülatör kapalı → 400. */

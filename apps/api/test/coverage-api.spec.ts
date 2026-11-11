@@ -127,6 +127,7 @@ describe('GET devices / coverage', () => {
         onBody: true,
         estimatedHoursLeft: 20,
         voiceOrder: 1,
+        voiceOrderManual: false,
       },
       expect.objectContaining({
         id: PHONE,
@@ -171,8 +172,18 @@ describe('GET devices / coverage', () => {
 describe('PATCH / DELETE device', () => {
   it('vücut konumu, takma ad, sesli arama sırası; geçersiz alan 400; operasyon düzenler, cihaz düzenleyemez', async () => {
     const s = await devices.patch(PHONE, { bodyLocation: 'POCKET', nickname: ' Cep ', voiceOrder: 1 }, req(ALICE));
-    expect(s).toMatchObject({ id: PHONE, bodyLocation: 'POCKET', nickname: 'Cep', voiceOrder: 1 });
-    expect((await persons.devices(PERSON, req(ALICE))).find((d) => d.id === WATCH)!.voiceOrder).toBe(2);
+    expect(s).toMatchObject({
+      id: PHONE,
+      bodyLocation: 'POCKET',
+      nickname: 'Cep',
+      voiceOrder: 1,
+      voiceOrderManual: true,
+    });
+    expect((await persons.devices(PERSON, req(ALICE))).find((d) => d.id === WATCH)).toMatchObject({
+      voiceOrder: 2,
+      voiceOrderManual: false,
+    });
+    expect((await devices.patch(PHONE, { voiceOrder: null }, req(ALICE))).voiceOrderManual).toBe(false);
     expect(await status(devices.patch(PHONE, { bodyLocation: 'KNEE' }, req(ALICE)))).toBe(400);
     expect(await status(devices.patch(PHONE, { voiceOrder: 9 }, req(ALICE)))).toBe(400);
     expect(await status(devices.patch(PHONE, { color: 'red' }, req(ALICE)))).toBe(400);

@@ -15,6 +15,8 @@ import {
   noneReason,
   planCheck,
   toProtectionState,
+  type VoiceCandidate,
+  voiceOrderOf,
 } from '../src/modules/event/coverage';
 import { DEFAULT_COVERAGE } from '../src/modules/event/rules.loader';
 
@@ -252,5 +254,61 @@ describe('18:00 planlı şarj kontrolü (S4.6)', () => {
     // %40 × 2 sa = 0,8 sa < 19:00'a 55 dk
     expect(codes(planCheck(facts(watch(40, 2)), null, base))).toEqual(['P-CHARGE-NOW', 'W-BAT-PLAN']);
     expect(planCheck(facts(watch(10)), null, { ...base, now: new Date('2026-11-09T14:00:00Z') })).toBeNull();
+  });
+});
+
+describe('Sesli arama sırası (S1.8): elle verilen > takılı > en son görülen; ses > ev ünitesi > telefon', () => {
+  type C = VoiceCandidate;
+  const v = (id: string, category: C['category'], o: Partial<C> = {}): C => ({
+    id,
+    category,
+    online: true,
+    onBody: category === 'PHONE' || category === 'HOME_UNIT' ? null : true,
+    charging: false,
+    seenAt: ago(1),
+    manual: null,
+    ...o,
+  });
+  const table: [string, C[], string[]][] = [
+    ['takılı saat > telefon', [v('phone', 'PHONE'), v('watch', 'WATCH')], ['watch', 'phone']],
+    // PR #50 hatası: kategori "takılı"dan önce geliyordu; şarjdaki saat telefonun önüne geçiyordu.
+    [
+      'şarjdaki saat telefondan sonra',
+      [v('watch', 'WATCH', { charging: true, onBody: false }), v('phone', 'PHONE')],
+      ['phone', 'watch'],
+    ],
+    [
+      'çıkarılmış saat telefondan sonra',
+      [v('watch', 'WATCH', { onBody: false }), v('phone', 'PHONE')],
+      ['phone', 'watch'],
+    ],
+    [
+      'çevrimdışı saat telefondan sonra',
+      [v('watch', 'WATCH', { online: false }), v('phone', 'PHONE')],
+      ['phone', 'watch'],
+    ],
+    [
+      'takılı iki cihaz: en son görülen önce',
+      [v('watch', 'WATCH', { seenAt: ago(5) }), v('pendant', 'PENDANT', { seenAt: ago(1) })],
+      ['pendant', 'watch'],
+    ],
+    [
+      'takılı > takılı bilgisi yok (kolye) > ev ünitesi > telefon',
+      [v('phone', 'PHONE'), v('home', 'HOME_UNIT'), v('pendant', 'PENDANT', { onBody: null }), v('watch', 'WATCH')],
+      ['watch', 'pendant', 'home', 'phone'],
+    ],
+    [
+      'kalanlar: giyilebilir > ev ünitesi > telefon',
+      [v('phone', 'PHONE', { online: false }), v('watch', 'WATCH', { charging: true, onBody: false })],
+      ['watch', 'phone'],
+    ],
+    [
+      'elle verilen sıra her şeyin önünde, kendi numarasıyla',
+      [v('watch', 'WATCH'), v('phone', 'PHONE', { manual: 2 }), v('home', 'HOME_UNIT', { manual: 1 })],
+      ['home', 'phone', 'watch'],
+    ],
+  ];
+  it.each(table)('%s', (_, list, expected) => {
+    expect(voiceOrderOf(list)).toEqual(expected);
   });
 });

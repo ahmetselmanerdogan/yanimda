@@ -61,7 +61,17 @@
           },
           "additionalProperties": false
         },
-        "awayFromHomeM": { "type": "integer", "minimum": 50, "maximum": 10000 }
+        "awayFromHomeM": { "type": "integer", "minimum": 50, "maximum": 10000 },
+        "operatorPrompt": {
+          "description": "T-089 operatörün \"Soru gönder\" komutu (olay türünün cihaz sorusu yoksa)",
+          "type": "object",
+          "required": ["windowSec", "tts"],
+          "properties": {
+            "windowSec": { "type": "integer", "minimum": 10, "maximum": 300 },
+            "tts": { "type": "string", "pattern": "^W-[A-Z0-9-]+$" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

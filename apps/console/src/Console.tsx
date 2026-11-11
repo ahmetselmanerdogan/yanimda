@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { DevicePanel } from './components/Devices';
 import { DispatchPanel } from './components/Dispatch';
 import { EventCard, type OperatorResult } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
@@ -456,6 +457,13 @@ export function Console({
           />
         ) : (
           <p className="muted pad">{t('O-UI-NO-SELECTION')}</p>
+        )}
+        {ev && <DevicePanel key={ev.id} api={api} event={ev} mine={mine} now={now} onError={(m) => setError(m)} />}
+        {ev?.type === 'COVERAGE_GAP' && (
+          <section className="script coverage-script" aria-labelledby="coverage-script-title">
+            <h2 id="coverage-script-title">{t('O-UI-SCRIPT-COVERAGE')}</h2>
+            <p>{t('O-SCRIPT-COVERAGE', scriptVars)}</p>
+          </section>
         )}
         {item && (ev?.state ?? item.state) === 'DISPATCH' && (
           <DispatchPanel key={item.eventId} api={api} eventId={item.eventId} />

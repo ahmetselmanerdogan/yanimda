@@ -606,6 +606,43 @@ export function planCheck(
   return { checkedOn: today, actions };
 }
 
+/** Sesli arama sırası adayı (yalnız sesli görüşmesi olan cihazlar). `manual`: aile/operatörün verdiği sıra. */
+export interface VoiceCandidate {
+  id: string;
+  category: DeviceCategory;
+  online: boolean;
+  onBody: boolean | null;
+  charging: boolean;
+  seenAt: string | null;
+  manual: number | null;
+}
+
+/**
+ * S1.8 sesli arama sırası (kimlikler, ilk aranacak önce). Elle verilenler önce, kendi numaralarıyla. Sonra:
+ * şu an takılı (çevrimiçi, şarjda değil) giyilebilirler → takılı bilgisi olmayan çevrimiçi giyilebilirler (takılı
+ * algılaması olmayan kolye) → ev ünitesi hoparlörü → telefon → kalanlar (şarjdaki, çıkarılmış, çevrimdışı; yine
+ * giyilebilir > ev ünitesi > telefon). Her grupta en son görülen önce. Şarjdaki / çıkarılmış saat telefonun önüne
+ * geçmez (PR #50 hatası: kategori "takılı"dan önce sıralanıyordu).
+ */
+export function voiceOrderOf(list: VoiceCandidate[]): string[] {
+  const cat = (c: VoiceCandidate) => (isWearable(c) ? 0 : c.category === 'HOME_UNIT' ? 1 : 2);
+  const group = (c: VoiceCandidate) => {
+    const usable = c.online && !c.charging;
+    if (usable && isWearable(c) && c.onBody === true) return 0;
+    if (usable && isWearable(c) && c.onBody === null) return 1;
+    if (usable && !isWearable(c)) return 2 + cat(c); // ev ünitesi 3, telefon 4
+    return 10 + cat(c);
+  };
+  const key = (c: VoiceCandidate) => [c.manual ?? 100, group(c), -(c.seenAt ? Date.parse(c.seenAt) : 0)];
+  return [...list]
+    .sort((a, b) => {
+      const [ka, kb] = [key(a), key(b)];
+      for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i]! - kb[i]!;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .map((c) => c.id);
+}
+
 /** Tahmini kalan saat (S4.2): pil % × katalogdaki pil ömrü; şarjdaysa veya bilinmiyorsa null. */
 export function estimatedHoursLeft(d: Pick<DeviceFact, 'batteryPct' | 'batteryLifeH' | 'charging'>): number | null {
   if (d.charging || d.batteryPct === null || !d.batteryLifeH) return null;

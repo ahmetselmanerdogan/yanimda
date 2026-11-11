@@ -1,4 +1,13 @@
-import type { ChainView, EventState, EventType, LadderView, StepAssessment, StepResult } from '@yanimda/contracts';
+import type {
+  ChainView,
+  CoverageView,
+  EventState,
+  EventType,
+  LadderView,
+  StepAssessment,
+  StepResult,
+  SupervisorCoverage,
+} from '@yanimda/contracts';
 
 export interface QueueItem {
   eventId: string;
@@ -36,6 +45,9 @@ export interface EventRecord {
   location?: { lat: number; lng: number } | null;
   /** Kaynak sinyal / zamanlayıcı kimlikleri (ör. `wellness:<id>` düzenli arama). */
   sourceSignalIds?: string[];
+  /** T-088: olayı bildiren cihazlar ve iptal eden cihaz (cihaz şeridinde rozet). */
+  sourceDeviceIds?: string[];
+  cancelledByDeviceId?: string;
   transitions: Transition[];
 }
 
@@ -412,6 +424,17 @@ export interface AdminCase {
   audit: AuditRow[];
 }
 
+/** T-089 operatörün cihaz komutu (`POST /v1/devices/{id}/commands`). */
+export type DeviceCommandType = 'RING' | 'PROMPT' | 'LOCATE' | 'TEST';
+export interface DeviceCommandResult {
+  type: DeviceCommandType;
+  eventId: string | null;
+  /** Cihaza ulaştı (doğrudan veya köprü telefon üzerinden). */
+  sent: boolean;
+  /** Teslim sonucu: sent, relayed, unsupported, no-token, unconfigured, retry … */
+  outcome: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -470,6 +493,15 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     conference: (callId: string, contactIndex = 1) =>
       req<CallView>('POST', `${tc(callId)}/conference`, { contactIndex }),
     hangup: (callId: string) => req<CallView>('POST', `${tc(callId)}/hangup`),
+    /** T-085/T-089: kişinin kapsaması ve cihaz kartları (olay ekranı cihaz şeridi). */
+    coverage: (personId: string) =>
+      req<CoverageView>('GET', `/protected-persons/${encodeURIComponent(personId)}/coverage`),
+    deviceCommand: (deviceId: string, type: DeviceCommandType, eventId?: string) =>
+      req<DeviceCommandResult>('POST', `/devices/${encodeURIComponent(deviceId)}/commands`, {
+        type,
+        ...(eventId ? { eventId } : {}),
+      }),
+    supervisorCoverage: () => req<SupervisorCoverage>('GET', '/supervisor/coverage'),
     dashboard: () => req<SupervisorDashboard>('GET', '/supervisor/dashboard'),
     setOperatorStatus: (sub: string, status: OperatorStatus) =>
       req<{ subject: string; status: OperatorStatus }>(

@@ -41,7 +41,7 @@ const SIMPLE: Partial<Record<Signal['kind'], EventType>> = {
  * Pil eşikleri kural paketinde (`battery`, T-086): warnPct → W-BAT-20, criticalPct → W-BAT-10 + F-BAT-10. Kod adları
  * katalogdaki tarihsel adlardır. Şarjdaki cihazın pil uyarısı gönderilmez.
  */
-export function decide(s: Pick<Signal, 'kind' | 'value' | 'device'>, ctx: DecideContext): Decision {
+export function decide(s: Pick<Signal, 'kind' | 'value' | 'device' | 'payload'>, ctx: DecideContext): Decision {
   const create = (type: EventType): Decision => {
     const rule = ruleFor(ctx.pack, type);
     if (!rule) return { action: 'none', reason: `kural yok: ${type}` };
@@ -90,6 +90,11 @@ export function decide(s: Pick<Signal, 'kind' | 'value' | 'device'>, ctx: Decide
       if (s.value <= b.warnPct) return { action: 'notify', notices: [{ code: 'W-BAT-20', audience: 'ELDER' }] };
       return { action: 'none', reason: 'pil yeterli' };
     }
+    case 'TEST':
+      // T-089: operatörün TEST komutuna cihazın cevabı (payload.trigger OPERATOR) yeni test olayı açmaz; yalnız kayıt
+      // (cihaz config'i lastTestAt). Kişinin kendi başlattığı test (düğme) TEST olayıdır.
+      if (s.payload?.trigger === 'OPERATOR') return { action: 'none', reason: 'operatör testi' };
+      return create('TEST');
     case 'HEARTBEAT':
     case 'HEART_RATE':
     case 'STEPS':

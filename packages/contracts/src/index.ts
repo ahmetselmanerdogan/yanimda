@@ -129,6 +129,8 @@ export interface DeviceSummary {
   onBody: boolean | null;
   estimatedHoursLeft: number | null;
   voiceOrder: number | null;
+  /** Sesli arama sırası aile / operatör tarafından elle verildi (PATCH voiceOrder); false: hesaplanan sıra. */
+  voiceOrderManual: boolean;
 }
 
 /** GET /protected-persons/{id}/coverage */

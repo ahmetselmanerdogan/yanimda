@@ -229,7 +229,7 @@ describe('Öğrenme modunda INACTIVITY: operatöre düşmeden önce 2. sessiz so
     return events.get(all[0]!.id);
   };
 
-  it('1. soru cevapsız → 2. sessiz soru (cihaza W-INACT-1); o da cevapsız → kuyruk', async () => {
+  it('1. soru cevapsız → 2. sessiz soru (cihaza PROMPT, T-090); o da cevapsız → kuyruk', async () => {
     const id = await person(new Date());
     await deliver(sig('INACTIVITY', { protectedPersonId: id }));
     const ev = await only();
@@ -238,7 +238,14 @@ describe('Öğrenme modunda INACTIVITY: operatöre düşmeden önce 2. sessiz so
     expect(again.state).toBe('DEVICE_PROMPT');
     expect(new Date(again.devicePromptUntil!).getTime()).toBeGreaterThan(Date.now() + 100_000);
     expect(timers.pendingIds()).toEqual([`${ev.id}.learning-ask-expire`]);
-    expect(await notices('W-INACT-1')).toEqual([expect.objectContaining({ audience: 'ELDER' })]);
+    // Soru bildirim (NOTICE) değil: event.updated LEARNING_MODE_REASK → DevicePromptService yeni bitişle PROMPT gönderir.
+    expect(await notices('W-INACT-1')).toEqual([]);
+    const updates = await h.rows<{ envelope: { payload: { reason?: string; devicePromptUntil?: string } } }>(
+      "SELECT envelope FROM event.outbox WHERE topic = 'event.updated' ORDER BY id",
+    );
+    expect(updates.map((u) => u.envelope.payload)).toContainEqual(
+      expect.objectContaining({ reason: 'LEARNING_MODE_REASK', devicePromptUntil: again.devicePromptUntil }),
+    );
 
     await timers.fire(ev.id, 'learning-ask-expire');
     const queued = await only();

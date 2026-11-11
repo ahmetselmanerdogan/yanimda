@@ -64,6 +64,8 @@ export interface LadderParams {
   unclaimedVoiceContact: { enabled: boolean; afterSec: number; phrase: string };
   /** S5.5: evden bu kadar uzaktaysa komşu ve anahtar sahibi atlanır. */
   awayFromHomeM: number;
+  /** T-089 (S7.1): operatörün "Soru gönder" komutu — olay türünün cihaz sorusu yoksa bu metin ve süre. */
+  operatorPrompt: { windowSec: number; tts: string };
 }
 /** docs/07 S3.3–S3.7 (T-088) sinyal birleştirme. */
 export interface FusionParams {
@@ -137,6 +139,7 @@ export const DEFAULT_LADDER: LadderParams = {
   unclaimedSupervisorSec: 90,
   unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
   awayFromHomeM: 200,
+  operatorPrompt: { windowSec: 60, tts: 'W-OP-PROMPT' },
 };
 export const DEFAULT_FUSION: FusionParams = {
   corroborateSec: 90,

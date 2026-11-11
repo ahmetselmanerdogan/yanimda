@@ -1,4 +1,4 @@
-import type { ChainStep, EventState, EventType, StepTarget } from '@yanimda/contracts';
+import type { ChainStep, CoverageView, EventState, EventType, StepTarget } from '@yanimda/contracts';
 
 import {
   type Api,
@@ -243,6 +243,12 @@ export class TrainingSim {
       this.end(c);
       return { ...c };
     },
+    // T-089 cihaz şeridi: tatbikat kişisinin sahte saati ve telefonu; komutlar hiçbir cihaza gitmez.
+    coverage: async () => trainingCoverage(Date.now()),
+    deviceCommand: async (_id, type, eventId) => ({ type, eventId: eventId ?? null, sent: true, outcome: 'sent' }),
+    supervisorCoverage: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     // Amir panosu eğitim modunda yok (T-074).
     dashboard: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
@@ -415,4 +421,49 @@ export function trainingBackend(): Backend {
   const sim = new TrainingSim();
   sim.start();
   return { api: sim.api, connect: (h) => sim.connect(h) };
+}
+
+/** Eğitim modu (T-089): tatbikat kişisinin cihazları — takılı saat ve telefon, tam kapsama. */
+function trainingCoverage(now: number): CoverageView {
+  const seen = new Date(now - 2 * 60_000).toISOString();
+  const base = {
+    bodyLocation: null,
+    nickname: null,
+    online: true,
+    lastSeenAt: seen,
+    charging: false,
+    chargingSince: null,
+    voiceOrderManual: false,
+  };
+  return {
+    level: 'FULL',
+    since: seen,
+    reasons: [],
+    capabilities: { sos: true, fall: true, voice: true, location: true },
+    devices: [
+      {
+        ...base,
+        id: 'training-watch',
+        kind: 'WEAROS_WATCH',
+        category: 'WATCH',
+        tier: 'A',
+        bodyLocation: 'WRIST_LEFT',
+        batteryPct: 64,
+        onBody: true,
+        estimatedHoursLeft: 25.6,
+        voiceOrder: 1,
+      },
+      {
+        ...base,
+        id: 'training-phone',
+        kind: 'ANDROID_PHONE',
+        category: 'PHONE',
+        tier: 'A',
+        batteryPct: 81,
+        onBody: null,
+        estimatedHoursLeft: null,
+        voiceOrder: 2,
+      },
+    ],
+  };
 }

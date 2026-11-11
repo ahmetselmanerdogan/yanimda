@@ -222,6 +222,7 @@ describe('S5.2 / S5.4 süre tablosu (kural paketi)', () => {
       unclaimedSupervisorSec: 90,
       unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
       awayFromHomeM: 200,
+      operatorPrompt: { windowSec: 60, tts: 'W-OP-PROMPT' }, // T-089 operatörün "Soru gönder" komutu
     });
     expect(fusionOf(pack)).toMatchObject({ corroborateSec: 90, corroboratedPromptSec: 30, crossCancelFollowUp: true });
     expect(ruleFor(pack, 'SOS')!.silenceIsEmergencySec).toBe(20);
@@ -499,6 +500,7 @@ describe('saf kurallar', () => {
     onBody: category === 'PHONE' ? null : true,
     estimatedHoursLeft: null,
     voiceOrder: category === 'RING' ? null : category === 'PHONE' ? 3 : 1,
+    voiceOrderManual: false,
     ...o,
   });
 
