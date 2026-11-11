@@ -49,7 +49,6 @@
       "description": "docs/07 S5 (T-087) ulaşılamama merdiveni",
       "type": "object",
       "properties": {
-        "offlineSkipMin": { "type": "integer", "minimum": 1, "maximum": 120 },
         "autoAnswerSec": { "type": "integer", "minimum": 0, "maximum": 60 },
         "unclaimedSupervisorSec": { "type": "integer", "minimum": 10, "maximum": 600 },
         "unclaimedVoiceContact": {

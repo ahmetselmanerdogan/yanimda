@@ -12,14 +12,13 @@ numbers: { emergency: '112', social: '183', health: '182' }
 # 112'yi asla kendisi aramaz ve P1 olayı kendisi kapatmaz (S5.8).
 call112DeadlineSec: { SOS: 180, FALL: 300, INACTIVITY: 1200 }
 # docs/07 S5.1–S5.5 (T-087) ulaşılamama merdiveni.
-#  offlineSkipMin: aramadan önce cihaz son bu kadar dakikada görülmediyse adım "çevrimdışı — atlandı" (S3.2 A sınıfı 15)
+#  Çevrimdışı atlama (S5.1) kapsamanın çevrimiçi kuralını kullanır (coverage.onlineMin: A 15 dk, B 30 dk; köprü).
 #  autoAnswerSec: P1'de sesli cihaz bu sürede kendiliğinden cevaplar (yanınızdayız aramasında asla); 20 sn sessiz
 #  kalan otomatik cevaplı arama "cevap yok" değil olası acil durumdur (kuralın silenceIsEmergencySec'i)
 #  unclaimedSupervisorSec: kuyrukta üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED)
 #  unclaimedVoiceContact: üstlenilmeyen P1'de 1. yakına sesli mesaj (S5.3; sahip kararı, varsayılan kapalı)
 #  awayFromHomeM: kişi evden bu kadar uzaktaysa komşu ve anahtar sahibi adımları atlanır (S5.5)
 ladder:
-  offlineSkipMin: 15
   autoAnswerSec: 10
   unclaimedSupervisorSec: 90
   unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: V-NO-OPERATOR }
