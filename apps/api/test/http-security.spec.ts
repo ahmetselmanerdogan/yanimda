@@ -7,6 +7,7 @@ import { requestId, securityHeaders } from '../src/common/http-security';
 import { ProblemFilter } from '../src/common/problem.filter';
 import { alarmBatch, RateLimiter, rateLimitInterceptor } from '../src/common/rate-limit';
 import { setSecurityEventSink } from '../src/common/security-events';
+import { FamilyMembersController, ProfileController } from '../src/modules/profile/profile.controller';
 
 /** T-081 (ASVS 14.3.3, 14.4.x, 8.2.1, 7.1.3, 7.2.x, 11.1.4): güvenlik başlıkları, korelasyon kimliği, olay log'u, hız sınırı. */
 
@@ -151,5 +152,14 @@ describe('Hız sınırı', () => {
     await expect(sig.intercept(ctx(dev), handler)).rejects.toMatchObject({ status: 429 });
     const sos = { ...dev, body: [{ kind: 'SOS' }] };
     expect(await lastValueFrom(await sig.intercept(ctx(sos), handler))).toBe('ok');
+  });
+});
+
+describe('Hız sınırı uçları', () => {
+  it('aile üyesi daveti ve kabulü sınırlı (kod tahmini, davet bombalama)', () => {
+    const meta = (fn: unknown) =>
+      Reflect.getMetadata('yanimda:rate-limit', fn as object) as { name: string; by: string };
+    expect(meta(FamilyMembersController.prototype.accept)).toMatchObject({ name: 'member-accept', by: 'user' });
+    expect(meta(ProfileController.prototype.memberInvite)).toMatchObject({ name: 'member-invite', by: 'param:id' });
   });
 });

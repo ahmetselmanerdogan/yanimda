@@ -1,8 +1,13 @@
 import type { Country, SubscriptionView } from './flow';
+import type { MemberView } from './members';
 
 /** API çağrıları (aynı kök: next.config rewrite `/v1/*`). Hata → ApiError(status). Gövdede kişisel veri log'lanmaz. */
 export class ApiError extends Error {
-  constructor(readonly status: number) {
+  /** `code`: sunucunun problem+json katalog kodu (varsa, örn. F-MEMBER-CODE-USED). */
+  constructor(
+    readonly status: number,
+    readonly code?: string,
+  ) {
     super(`HTTP ${status}`);
   }
 }
@@ -13,7 +18,11 @@ async function call<T>(method: string, path: string, body?: unknown, headers: Re
     headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  if (!r.ok) throw new ApiError(r.status);
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => null)) as { code?: unknown } | null;
+    throw new ApiError(r.status, typeof problem?.code === 'string' ? problem.code : undefined);
+  }
+  if (r.status === 204) return undefined as T;
   return (await r.json()) as T;
 }
 
@@ -75,6 +84,25 @@ export const api = {
       'POST',
       `/protected-persons/${personId}/subscription/checkout`,
       billing ? { billing } : {},
+      bearer(at),
+    ),
+  // T-040 aile üyeleri (C-02, C-04)
+  members: (at: string, personId: string) =>
+    call<{ items: MemberView[] }>('GET', `/protected-persons/${personId}/members`, undefined, bearer(at)),
+  createMemberInvite: (at: string, personId: string, relation: string | null) =>
+    call<{ code: string; expiresAt: string; relation: string | null }>(
+      'POST',
+      `/protected-persons/${personId}/members/invite`,
+      { relation },
+      bearer(at),
+    ),
+  removeMember: (at: string, personId: string, memberId: string) =>
+    call<void>('DELETE', `/protected-persons/${personId}/members/${memberId}`, undefined, bearer(at)),
+  acceptMemberInvite: (at: string, code: string) =>
+    call<{ protectedPersonId: string; memberId: string; role: 'MEMBER' }>(
+      'POST',
+      '/family/members/accept',
+      { code },
       bearer(at),
     ),
 };

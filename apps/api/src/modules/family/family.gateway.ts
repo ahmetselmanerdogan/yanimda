@@ -170,6 +170,9 @@ export class FamilyGateway implements OnApplicationBootstrap, OnApplicationShutd
       if (!base) return;
       for (const c of targets) {
         if (!c.persons.has(base.protectedPersonId)) continue;
+        // Üyelik bağlantı açıkken kalkmış olabilir (T-040: sahip çıkardı / ayrıldı): teslimden önce yeniden doğrula.
+        c.persons = new Set(await this.family.personsOf(c.user!.sub));
+        if (!c.persons.has(base.protectedPersonId)) continue;
         // Geri bildirim alanları kişiye özel: kapanmış olayda yeniden hesapla.
         const view = base.state === 'CLOSED' ? ((await this.family.view(eventId, c.user!.sub)) ?? base) : base;
         this.send(c, { type: 'event', event: view });

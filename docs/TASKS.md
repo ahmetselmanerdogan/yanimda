@@ -45,7 +45,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [ ] T-037 Gelen arama ve otomatik cevap (A-10)
 
 ## Epik 4 · Eşlikçi Android + profil (S4)
-- [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti açık
+- [x] T-040 profile: protected_person, contacts, medical (şifreli), invite (C-02, C-03, C-04) — SMS gönderimi T-053, aile ekranları T-061; aile üyesi (MEMBER) daveti ve yönetimi 0028 (`members/invite`, `family/members/accept`)
 - [x] T-041 /v1/devices/enroll, cihaz token, /config — aile "cihazı kaldır" T-020'ye kadar yönetici token'ıyla
 - [x] T-042 phone: davet → 6 ekran kurulum (B-01, B-02) — yerel repo yanimda-android; setup-state + F-PERM; 5 yaşlı kullanıcı testi ve assetlinks/Play sayfası (T-060) açık
 - [x] T-043 phone: köprü ve tampon (B-03) — /companions saat kaydı, telefon token'ıyla köprü; gerçek saatle BLE denemesi yanimda-wear ile açık

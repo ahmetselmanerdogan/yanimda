@@ -20,6 +20,7 @@ import { EventService } from '../event/event.service';
 import { learningOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { type Actor, listContacts, replaceContacts } from './contacts';
 import { GEOCODER, type Geocoder } from './geocoder';
+import { acceptMemberInvite, createMemberInvite, listMembers, removeMember } from './members';
 
 export const FIELD_CIPHER = Symbol('FIELD_CIPHER');
 
@@ -284,6 +285,33 @@ export class ProfileService {
       data: { expiresAt: r.expiresAt },
     });
     return { ...r, smsText: t('S-INVITE', 'tr', { code: r.code }) };
+  }
+
+  // ---- aile üyeleri (C-02, C-04) ----
+
+  /** POST /v1/protected-persons/{id}/members/invite — yalnız OWNER (veya yönetici); MEMBER 403, erişimsiz 404. */
+  async createMemberInvite(actor: Actor, id: string, body: unknown, now = new Date()) {
+    const { role } = await this.access(actor, id);
+    if (actor.kind === 'FAMILY' && role !== 'OWNER')
+      throw new ForbiddenException({ message: t('F-MEMBER-OWNER-ONLY', 'tr'), code: 'F-MEMBER-OWNER-ONLY' });
+    return createMemberInvite(this.db, actor, id, body, now);
+  }
+
+  /** POST /v1/family/members/accept — davet kodunu giren aile hesabı MEMBER olur. */
+  acceptMemberInvite(actor: Actor, body: unknown, now = new Date()) {
+    return acceptMemberInvite(this.db, actor, body, now);
+  }
+
+  /** GET /v1/protected-persons/{id}/members — OWNER ve MEMBER görür. */
+  async members(actor: Actor, id: string) {
+    await this.access(actor, id);
+    return listMembers(this.db, actor, id);
+  }
+
+  /** DELETE /v1/protected-persons/{id}/members/{memberId} — OWNER herkesi, MEMBER yalnız kendini; son sahip kalır. */
+  async removeMember(actor: Actor, id: string, memberId: string) {
+    const { role } = await this.access(actor, id);
+    await removeMember(this.db, actor, role, id, memberId);
   }
 
   // ---- test çağrısı (C-05, T-063) ----

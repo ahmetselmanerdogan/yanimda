@@ -1,21 +1,28 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { Members } from '@/components/Members';
 import { api, ApiError } from '@/lib/api';
 import { openCheckout } from '@/lib/checkout';
 import { cancellable, errorCode, needsPayment, statusLine, type SubscriptionView } from '@/lib/flow';
 import { t } from '@/lib/i18n';
+import type { MemberRole } from '@/lib/members';
 import { accessToken, login, logout } from '@/lib/oidc';
 
 interface Item {
   personId: string;
   name: string;
   owner: boolean;
+  myRole: MemberRole | null;
   sub: SubscriptionView | null;
 }
 
-/** "Aboneliğim": durum, tek tık iptal (koruma hemen kapanır), ödemeyi tamamla. Giriş: consumers realm PKCE. */
+/**
+ * "Aboneliğim": durum, tek tık iptal (koruma hemen kapanır), ödemeyi tamamla; kişi başına "Aile üyeleri" (T-040).
+ * Giriş: consumers realm PKCE.
+ */
 export function Account() {
   const [token, setToken] = useState<string | null>(null);
   const [items, setItems] = useState<Item[] | null>(null);
@@ -34,6 +41,7 @@ export function Account() {
             personId: p.id,
             name: p.displayName,
             owner: p.myRole === 'OWNER',
+            myRole: p.myRole === 'OWNER' || p.myRole === 'MEMBER' ? p.myRole : null,
             sub: await api.subscription(at, p.id).catch(() => null),
           })),
         ),
@@ -159,11 +167,24 @@ export function Account() {
                 </button>
               </div>
             )}
+            <Members
+              token={token}
+              personId={it.personId}
+              myRole={it.myRole}
+              onLeft={() => {
+                setItems((xs) => xs?.filter((x) => x.personId !== it.personId) ?? null);
+                setNotice('F-WEB-MEMBERS-REMOVED');
+              }}
+              onUnauthorized={() => setToken(null)}
+            />
           </section>
         );
       })}
       <div id="iyzipay-checkout-form" className="responsive" ref={box} />
       <div className="row">
+        <Link href="/hesap/davet" className="button secondary">
+          {t('F-WEB-MEMBERS-HAVE-CODE')}
+        </Link>
         <button type="button" className="secondary" onClick={logout}>
           {t('F-WEB-LOGOUT')}
         </button>

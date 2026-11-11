@@ -2007,6 +2007,130 @@
     "channel": "family",
     "text": "Lütfen alanları kontrol edin."
   },
+  "F-WEB-MEMBERS": {
+    "channel": "family",
+    "text": "Aile üyeleri"
+  },
+  "F-WEB-MEMBERS-HINT": {
+    "channel": "family",
+    "text": "Aile üyeleri olayları ve bildirimleri görür. Güvenlik ayarlarını yalnız hesap sahibi değiştirir."
+  },
+  "F-WEB-MEMBERS-ROLE-OWNER": {
+    "channel": "family",
+    "text": "Hesap sahibi"
+  },
+  "F-WEB-MEMBERS-ROLE-MEMBER": {
+    "channel": "family",
+    "text": "Aile üyesi"
+  },
+  "F-WEB-MEMBERS-ME": {
+    "channel": "family",
+    "text": "Siz"
+  },
+  "F-WEB-MEMBERS-SINCE": {
+    "channel": "family",
+    "text": "Eklenme: {date}"
+  },
+  "F-WEB-MEMBERS-RELATION": {
+    "channel": "family",
+    "text": "Yakınlığı (isteğe bağlı, örn. Oğlu)"
+  },
+  "F-WEB-MEMBERS-INVITE": {
+    "channel": "family",
+    "text": "Davet kodu oluştur"
+  },
+  "F-WEB-MEMBERS-CODE": {
+    "channel": "family",
+    "text": "Davet kodu: {code}"
+  },
+  "F-WEB-MEMBERS-CODE-HINT": {
+    "channel": "family",
+    "text": "Kodu davet ettiğiniz kişiye iletin. {date} tarihine kadar geçerli, bir kez kullanılır."
+  },
+  "F-WEB-MEMBERS-REMOVE": {
+    "channel": "family",
+    "text": "Çıkar"
+  },
+  "F-WEB-MEMBERS-REMOVE-LABEL": {
+    "channel": "family",
+    "text": "{who} üyeliğini kaldır"
+  },
+  "F-WEB-MEMBERS-REMOVE-CONFIRM": {
+    "channel": "family",
+    "text": "Bu üyelik kaldırılsın mı? Bu hesap artık olayları görmez ve bildirim almaz."
+  },
+  "F-WEB-MEMBERS-LEAVE": {
+    "channel": "family",
+    "text": "Üyelikten ayrıl"
+  },
+  "F-WEB-MEMBERS-LEAVE-CONFIRM": {
+    "channel": "family",
+    "text": "Üyelikten ayrılmak istiyor musunuz? Artık bu kişinin olaylarını görmez, bildirim almazsınız."
+  },
+  "F-WEB-MEMBERS-REMOVED": {
+    "channel": "family",
+    "text": "Üyelik kaldırıldı."
+  },
+  "F-WEB-MEMBERS-HAVE-CODE": {
+    "channel": "family",
+    "text": "Aile davet kodum var"
+  },
+  "F-WEB-MEMBERS-ACCEPT-TITLE": {
+    "channel": "family",
+    "text": "Aile davetini kabul et"
+  },
+  "F-WEB-MEMBERS-ACCEPT-CODE": {
+    "channel": "family",
+    "text": "Davet kodu"
+  },
+  "F-WEB-MEMBERS-ACCEPT-HINT": {
+    "channel": "family",
+    "text": "Hesap sahibinin size ilettiği 10 karakterlik kod (örn. 7KQ2M-9XD4R)."
+  },
+  "F-WEB-MEMBERS-ACCEPT": {
+    "channel": "family",
+    "text": "Daveti kabul et"
+  },
+  "F-WEB-MEMBERS-ACCEPTED": {
+    "channel": "family",
+    "text": "Davet kabul edildi. Artık aile üyesisiniz."
+  },
+  "F-WEB-MEMBERS-TO-ACCOUNT": {
+    "channel": "family",
+    "text": "Hesabıma dön"
+  },
+  "F-MEMBER-CODE-INVALID": {
+    "channel": "family",
+    "text": "Davet kodu geçersiz. Kodu kontrol edin."
+  },
+  "F-MEMBER-CODE-EXPIRED": {
+    "channel": "family",
+    "text": "Davet kodunun süresi doldu. Hesap sahibinden yeni kod isteyin."
+  },
+  "F-MEMBER-CODE-USED": {
+    "channel": "family",
+    "text": "Bu davet kodu daha önce kullanıldı. Hesap sahibinden yeni kod isteyin."
+  },
+  "F-MEMBER-ALREADY": {
+    "channel": "family",
+    "text": "Bu kişinin aile üyeleri arasında zaten varsınız."
+  },
+  "F-MEMBER-LIMIT": {
+    "channel": "family",
+    "text": "Aile üyesi sınırına ulaşıldı. Yeni üye için önce bir üyeliği kaldırın."
+  },
+  "F-MEMBER-INVITE-LIMIT": {
+    "channel": "family",
+    "text": "Açık davet sınırına ulaşıldı. Önceki kodlar kullanılınca ya da süresi dolunca yeni kod oluşturabilirsiniz."
+  },
+  "F-MEMBER-LAST-OWNER": {
+    "channel": "family",
+    "text": "Son hesap sahibi çıkarılamaz."
+  },
+  "F-MEMBER-OWNER-ONLY": {
+    "channel": "family",
+    "text": "Bunu yalnız hesap sahibi yapabilir."
+  },
   "F-WEB-REQUIRED": {
     "channel": "family",
     "text": "Zorunlu alan"
