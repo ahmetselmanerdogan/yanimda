@@ -134,11 +134,14 @@ describe('Saat çıkarıldı (WATCH_OFF) bekleme akışı', () => {
 });
 
 describe('Pil bildirimleri (olay yok)', () => {
+  // 18:00'den sonra (kişinin saati) aynı pil sinyali 18:00 planlı şarj kontrolünü de tetikler (T-086, S4.6:
+  // P-CHARGE-NOW / W-BAT-PLAN); burada yalnız sinyal anındaki eşik bildirimleri sayılır — test günün saatinden bağımsız.
+  const PLAN_CODES = new Set(['P-CHARGE-NOW', 'W-BAT-PLAN', 'F-BAT-PLAN']);
   it('BATTERY 20 → kişiye W-BAT-20; BATTERY 10 → kişiye W-BAT-10 + aileye F-BAT-10', async () => {
     await deliver(sig('BATTERY', { value: 20 }));
     await deliver(sig('BATTERY', { value: 10 }));
     expect(await events.all()).toEqual([]);
-    expect((await notices()).map((n) => `${n.code}/${n.audience}`)).toEqual([
+    expect((await notices()).filter((n) => !PLAN_CODES.has(n.code)).map((n) => `${n.code}/${n.audience}`)).toEqual([
       'W-BAT-20/ELDER',
       'W-BAT-10/ELDER',
       'F-BAT-10/FAMILY',
@@ -151,7 +154,7 @@ describe('Pil bildirimleri (olay yok)', () => {
     await deliver(s);
     const keys = (
       await h.rows<{ k: string }>(
-        "SELECT envelope->'payload'->>'dedupeKey' AS k FROM event.outbox WHERE topic = 'notify.requested'",
+        "SELECT envelope->'payload'->>'dedupeKey' AS k FROM event.outbox WHERE topic = 'notify.requested' AND envelope->'payload'->>'dedupeKey' LIKE 'signal:%'",
       )
     ).map((r) => r.k);
     expect(keys).toHaveLength(4);
