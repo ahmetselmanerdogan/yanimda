@@ -222,6 +222,7 @@ describe('S5.2 / S5.4 süre tablosu (kural paketi)', () => {
       unclaimedSupervisorSec: 90,
       unclaimedVoiceContact: { enabled: false, afterSec: 180, phrase: 'V-NO-OPERATOR' },
       awayFromHomeM: 200,
+      operatorPrompt: { windowSec: 60, tts: 'W-INACT-1' }, // T-089 operatörün "Soru gönder" komutu
     });
     expect(fusionOf(pack)).toMatchObject({ corroborateSec: 90, corroboratedPromptSec: 30, crossCancelFollowUp: true });
     expect(ruleFor(pack, 'SOS')!.silenceIsEmergencySec).toBe(20);

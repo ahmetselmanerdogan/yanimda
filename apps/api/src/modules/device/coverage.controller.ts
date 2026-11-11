@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   type CanActivate,
+  ConflictException,
   Controller,
   Delete,
   type ExecutionContext,
@@ -12,6 +13,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -20,16 +22,19 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { DeviceSummary } from '@yanimda/contracts';
-import { and, eq, isNull } from 'drizzle-orm';
+import type { DeviceSummary, EventType } from '@yanimda/contracts';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
 import { auditLog, device } from '../../db/schema';
 import { isBodyLocation } from '../event/coverage.service';
 import { ProtectionService } from '../event/protection.service';
+import { ladderOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
 import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { DeviceService } from './device.service';
+import type { PromptRequest } from './device.types';
 import { EnrollmentService } from './enrollment.service';
 
 /**
@@ -86,7 +91,7 @@ export class CoverageAccessGuard implements CanActivate {
 }
 
 type PersonOp = 'read' | 'plan';
-type DeviceOp = 'patch' | 'delete' | 'intent';
+type DeviceOp = 'patch' | 'delete' | 'intent' | 'command';
 
 /** Yetki kuralları (erişimi olmayan kişi / cihaz 404, rolü yetmeyen 403). */
 @Injectable()
@@ -122,6 +127,8 @@ export class CoverageAccess {
     if (!d) throw new NotFoundException('Cihaz bulunamadı');
     switch (a.kind) {
       case 'ADMIN':
+        // Cihaz komutu denetime operatör kimliğiyle yazılır: paylaşılan x-admin-token komut gönderemez.
+        if (op === 'command' && !a.sub) throw new ForbiddenException('Cihaz komutu operatör kimliği ister');
         break;
       case 'OPS':
         if (op === 'intent') throw new ForbiddenException('Yetki yok');
@@ -133,6 +140,7 @@ export class CoverageAccess {
         break;
       case 'FAMILY':
         if (!(await this.protection.canFamilySee(a.sub, d.personId))) throw new NotFoundException('Cihaz bulunamadı');
+        if (op === 'command') throw new ForbiddenException('Cihaz komutunu operatör gönderir');
     }
     return d.personId;
   }
@@ -182,12 +190,19 @@ export class CoverageController {
 @UseGuards(CoverageAccessGuard)
 export class DeviceManageController {
   private readonly log = new Logger('Devices');
+  private readonly devices: DeviceService;
+  private readonly rules: RulesProvider;
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(EnrollmentService) private readonly enrollment: EnrollmentService,
     @Inject(ProtectionService) private readonly protection: ProtectionService,
     @Inject(CoverageAccess) private readonly access: CoverageAccess,
-  ) {}
+    @Optional() @Inject(DeviceService) devices?: DeviceService,
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+  ) {
+    this.devices = devices ?? new DeviceService(db);
+    this.rules = rules ?? staticRules(loadRulePack());
+  }
 
   /** PATCH /v1/devices/{id} — vücut konumu, takma ad, sesli arama sırası (aile / operasyon). */
   @Patch(':id')
@@ -242,6 +257,77 @@ export class DeviceManageController {
     const r = await this.protection.coverage.chargingIntent(personId, b.minutes as number | undefined, a.kind);
     return { until: r.until };
   }
+
+  /**
+   * POST /v1/devices/{id}/commands — T-089 (S7.1, S8.3) operatör komutu: RING (çaldır), PROMPT (soru gönder), LOCATE
+   * (konum iste) yalnız kişinin açık olayı varken (olay kimliği push'ta gider); TEST (cihaz testi) her zaman. Yalnız
+   * operasyon (OPERATOR / SUPERVISOR, OIDC ADMIN); her komut denetime yazılır. 202 { type, eventId, sent } — sent false:
+   * cihaz bu komutu desteklemiyor (ör. konum yok).
+   */
+  @Post(':id/commands')
+  @HttpCode(202)
+  async command(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+    const a = actorOf(req);
+    const personId = await this.access.device(a, id, 'command');
+    const { type, eventId: asked } = parseCommand(body);
+    const [open] = (
+      (await this.db.execute(sql`
+        SELECT id::text AS id, type FROM event.event
+        WHERE protected_person_id = ${personId} AND state <> 'CLOSED'
+        ORDER BY created_at DESC LIMIT 1`)) as unknown as { rows: { id: string; type: string }[] }
+    ).rows;
+    if (type !== 'TEST' && !open) throw new ConflictException('Kişinin açık olayı yok');
+    if (asked !== undefined && asked !== open?.id) throw new ConflictException('Olay kişinin açık olayı değil');
+    const deviceId = id.toLowerCase();
+    let sent: boolean;
+    if (type === 'RING') sent = await this.devices.ring(deviceId, { eventId: open!.id });
+    else if (type === 'PROMPT') sent = await this.devices.promptUser(deviceId, this.operatorPrompt(open!));
+    else if (type === 'LOCATE') sent = await this.devices.command(deviceId, { type, eventId: open!.id });
+    else sent = await this.devices.command(deviceId, { type });
+    await this.db.insert(auditLog).values({
+      actorKind: actorKindOf(a),
+      actorId: subOf(a),
+      action: 'device.command',
+      entityType: 'device',
+      entityId: deviceId,
+      data: { type, eventId: open?.id ?? null, sent },
+    });
+    this.log.log(`Cihaz komutu ${type} (gönderildi=${sent})`);
+    return { type, eventId: open?.id ?? null, sent };
+  }
+
+  /** Operatörün sorusu: olay türünün cihaz sorusu (metin, süre), yoksa kural paketi `ladder.operatorPrompt`. */
+  private operatorPrompt(ev: { id: string; type: string }): PromptRequest {
+    const pack = this.rules.current();
+    const dp = ruleFor(pack, ev.type as EventType)?.devicePrompt;
+    const op = ladderOf(pack).operatorPrompt;
+    const windowSec = dp?.enabled && dp.tts ? (dp.windowSec ?? op.windowSec) : op.windowSec;
+    return {
+      eventId: ev.id,
+      kind: ev.type,
+      tts: dp?.enabled && dp.tts ? dp.tts : op.tts,
+      windowSec,
+      until: new Date(Date.now() + windowSec * 1000).toISOString(),
+      silent: false, // operatör soruyu sesli ister
+    };
+  }
+}
+
+const COMMANDS = ['RING', 'PROMPT', 'LOCATE', 'TEST'] as const;
+type CommandType = (typeof COMMANDS)[number];
+function parseCommand(body: unknown): { type: CommandType; eventId?: string } {
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    throw new BadRequestException('Nesne bekleniyor');
+  const b = body as Record<string, unknown>;
+  const unknownKeys = Object.keys(b).filter((k) => k !== 'type' && k !== 'eventId');
+  if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
+  if (!COMMANDS.includes(b.type as CommandType)) throw new BadRequestException(`type: ${COMMANDS.join(' | ')}`);
+  if (b.eventId !== undefined && (typeof b.eventId !== 'string' || !UUID.test(b.eventId)))
+    throw new BadRequestException('eventId geçersiz');
+  return {
+    type: b.type as CommandType,
+    ...(b.eventId !== undefined ? { eventId: (b.eventId as string).toLowerCase() } : {}),
+  };
 }
 
 const actorKindOf = (a: CoverageActor) => (a.kind === 'DEVICE' ? 'USER' : a.kind === 'FAMILY' ? 'FAMILY' : 'OPERATOR');

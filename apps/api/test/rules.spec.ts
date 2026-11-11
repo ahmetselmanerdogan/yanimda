@@ -103,6 +103,19 @@ describe('RulesService', () => {
     await expect(rules.reload()).rejects.toMatchObject({ status: 400 });
   });
 
+  it('T-089 operatör sorusu saat kanalında bir katalog kodu olmalı (P-* / olmayan kod 400)', async () => {
+    const rules = new RulesService(h.db, { dir });
+    await rules.init();
+    for (const tts of ['W-YOK-1', 'P-CHARGE-NOW']) {
+      edit((doc) => {
+        doc.version = BASE + 1;
+        (doc.ladder as { operatorPrompt: { tts: string } }).operatorPrompt.tts = tts;
+      });
+      await expect(rules.reload()).rejects.toMatchObject({ status: 400 });
+    }
+    expect(rules.current().ladder?.operatorPrompt).toEqual({ windowSec: 60, tts: 'W-INACT-1' });
+  });
+
   it('diğer API örneği yeni sürümü veritabanından alır (refresh)', async () => {
     const a = new RulesService(h.db, { dir });
     const b = new RulesService(h.db, { dir });

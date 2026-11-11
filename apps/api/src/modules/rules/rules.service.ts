@@ -152,6 +152,9 @@ export class RulesService implements RulesProvider {
       if (phrase && catalogs.tr[phrase]?.channel !== 'voice')
         throw new BadRequestException(`Ön eleme sorusu mesaj kataloğunda (voice) yok: ${phrase}`);
     }
+    const opPrompt = pack.ladder?.operatorPrompt?.tts;
+    if (opPrompt && catalogs.tr[opPrompt]?.channel !== 'watch')
+      throw new BadRequestException(`Operatör sorusu mesaj kataloğunda (watch) yok: ${opPrompt}`);
     return pack;
   }
 }
