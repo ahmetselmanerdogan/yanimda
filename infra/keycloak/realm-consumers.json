@@ -12,7 +12,7 @@
   "ssoSessionIdleTimeout": 2592000,
   "ssoSessionMaxLifespan": 7776000,
   "offlineSessionIdleTimeout": 7776000,
-  "passwordPolicy": "length(8) and notUsername",
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(3)",
   "internationalizationEnabled": true,
   "supportedLocales": ["tr"],
   "defaultLocale": "tr",
@@ -134,5 +134,10 @@
         }
       }
     ]
-  }
+  },
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "eventsListeners": ["email"],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false
 }

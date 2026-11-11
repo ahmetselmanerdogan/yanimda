@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 
 import { safeError } from './safe-error';
+import { recordSecurityEvent } from './security-events';
 
 const log = new Logger('ProblemFilter');
 
@@ -24,7 +25,8 @@ export function isTransient(e: unknown): boolean {
 @Catch()
 export class ProblemFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
-    const res = host.switchToHttp().getResponse();
+    const http = host.switchToHttp();
+    const res = http.getResponse();
     let status: number;
     let detail: unknown;
     let code: string | undefined;
@@ -45,6 +47,8 @@ export class ProblemFilter implements ExceptionFilter {
       detail = 'Internal error';
     }
     if (status === HttpStatus.SERVICE_UNAVAILABLE) res.setHeader('Retry-After', '2');
+    // T-081: 400/401/403/422/429 güvenlik olayı (rota şablonu + istek kimliği; PII yok).
+    recordSecurityEvent(status, typeof http.getRequest === 'function' ? http.getRequest() : undefined);
     res
       .status(status)
       .type('application/problem+json')

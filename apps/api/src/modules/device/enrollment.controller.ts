@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { RateLimit } from '../../common/rate-limit';
 import { AdminGuard } from '../identity/oidc.guard';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
 import { type DevicePrincipal, EnrollmentService, etagMatches } from './enrollment.service';
@@ -34,6 +35,7 @@ export class EnrollmentController {
 
   /** POST /v1/devices/enroll — davet kodu + cihaz bilgisi → cihaz token'ı. Yeni 201, yeniden deneme 200. */
   @Post('enroll')
+  @RateLimit({ name: 'enroll', limit: 20, windowSec: 600, by: 'ip' })
   async enroll(@Body() body: unknown, @Ip() ip: string, @Res({ passthrough: true }) res: Res304) {
     const r = await this.enrollment.enroll(body, ip);
     res.status(r.created ? 201 : 200);
@@ -42,6 +44,7 @@ export class EnrollmentController {
 
   /** POST /v1/devices/{id}/token — geçerli token ile yeni token (bitişe 30 günden az kala). */
   @Post(':id/token')
+  @RateLimit({ name: 'device-token', limit: 30, windowSec: 3600, by: 'param:id' })
   @HttpCode(200)
   @UseGuards(DeviceTokenGuard)
   token(@Param('id') id: string, @Req() req: DeviceRequest) {

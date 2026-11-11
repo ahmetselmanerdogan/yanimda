@@ -85,6 +85,17 @@ groups:
         annotations:
           summary: '{{ $labels.channel }} bildirim hata oranı {{ $value | humanizePercentage }}'
 
+  # T-081 (ASVS 11.1.8, 7.2.x): 401/403/429 artışı → kimlik bilgisi deneme, tarama veya istemci hatası.
+  - name: yanimda-security
+    rules:
+      - alert: SecurityEventsSpike
+        expr: sum by (status) (increase(yanimda_security_events_total{status=~"401|403|429"}[10m])) > 200
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Son 10 dk'da {{ $value }} adet {{ $labels.status }} yanıtı (rota ayrıntısı Grafana'da)
+          runbook: docs/security/tehdit-modeli.md (İzleme)
+
   - name: yanimda-infra
     rules:
       - alert: ApiInstanceDown

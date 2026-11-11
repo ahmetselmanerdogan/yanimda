@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
+import { configureHttpSecurity } from './common/http-security';
 import { ProblemFilter } from './common/problem.filter';
 
 async function bootstrap() {
@@ -11,6 +12,7 @@ async function bootstrap() {
     logger: ['log', 'warn', 'error'],
     rawBody: true, // T-060: ödeme webhook imzası ham gövde üzerinden
   });
+  configureHttpSecurity(app); // T-081: güvenlik başlıkları, korelasyon kimliği, trust proxy
   app.setGlobalPrefix('v1');
   app.useGlobalFilters(new ProblemFilter());
   app.enableShutdownHooks();

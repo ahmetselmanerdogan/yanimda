@@ -20,6 +20,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { RateLimit } from '../../common/rate-limit';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
 import { AdminTokenGuard } from '../rules/admin-token.guard';
@@ -114,6 +115,7 @@ export class ProfileController {
 
   /** POST /v1/protected-persons/{id}/test-sos — TEST olayı (C-05). `Idempotency-Key` aynı isteği tekrarlar. */
   @Post(':id/test-sos')
+  @RateLimit({ name: 'test-sos', limit: 6, windowSec: 3600, by: 'param:id' })
   @HttpCode(202)
   testSos(@Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Req() req: ActorRequest) {
     return this.profile.testSos(actorOf(req), id, key);
@@ -126,12 +128,14 @@ export class ProfileController {
 
   /** POST /v1/protected-persons/{id}/invite → { code, expiresAt, smsText } (6 hane, 15 dk, tek kullanım). */
   @Post(':id/invite')
+  @RateLimit({ name: 'device-invite', limit: 10, windowSec: 3600, by: 'param:id' })
   invite(@Param('id') id: string, @Req() req: ActorRequest) {
     return this.profile.invite(actorOf(req), id);
   }
 
   /** POST /v1/protected-persons/{id}/members/invite → { code, expiresAt, relation } (72 sa, tek kullanım; OWNER). */
   @Post(':id/members/invite')
+  @RateLimit({ name: 'member-invite', limit: 10, windowSec: 3600, by: 'param:id' })
   memberInvite(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
     return this.profile.createMemberInvite(actorOf(req), id, body ?? {});
   }
@@ -155,6 +159,7 @@ export class FamilyMembersController {
   constructor(@Inject(ProfileService) private readonly profile: ProfileService) {}
 
   @Post('accept')
+  @RateLimit({ name: 'member-accept', limit: 10, windowSec: 3600, by: 'user' })
   accept(@Body() body: unknown, @Req() req: ActorRequest) {
     return this.profile.acceptMemberInvite(actorOf(req), body);
   }

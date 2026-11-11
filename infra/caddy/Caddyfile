@@ -44,8 +44,11 @@ api.{$DOMAIN} {
 }
 
 # Konsol: statik dosyalar + aynı kökenden /v1 (REST + WebSocket /v1/ws/queue) → CORS gerekmez.
+# T-081 CSP (ASVS 14.4.3): satır içi betik yok (Vite derlemesi); stil özniteliği (React style) için yalnız
+# style-src 'unsafe-inline'. Keycloak (auth.) giriş/yenileme; Twilio Voice SDK sinyal (wss) ve zil sesleri.
 console.{$DOMAIN} {
 	import security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://console.{$DOMAIN} https://auth.{$DOMAIN} https://*.twilio.com wss://*.twilio.com; media-src 'self' blob: https://sdk.twilio.com https://media.twiliocdn.com; frame-src https://auth.{$DOMAIN}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://auth.{$DOMAIN}; frame-ancestors 'none'"
 	encode zstd gzip
 	handle /v1/* {
 		import api_upstream
@@ -58,6 +61,8 @@ console.{$DOMAIN} {
 # Aile web (isteğe bağlı compose profili). Çalışmıyorsa 502 döner.
 aile.{$DOMAIN} {
 	import security_headers
+	# Next.js satır içi betik üretir (nonce'suz tam CSP kırar); en az: çerçeveleme, eklenti ve base yok.
+	header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
 	encode zstd gzip
 	handle /v1/* {
 		import api_upstream

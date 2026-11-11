@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { validate as isUuid } from 'uuid';
 
+import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { type CallView, TelephonyService, type VoiceToken, WEBHOOK_KINDS, type WebhookKind } from './telephony.service';
 
@@ -33,6 +34,7 @@ export class CpaasWebhookController {
   constructor(@Inject(TelephonyService) private readonly telephony: TelephonyService) {}
 
   @Post(':kind')
+  @RateLimit(WEBHOOK_LIMIT)
   @HttpCode(200)
   async webhook(
     @Param('kind') kind: string,
