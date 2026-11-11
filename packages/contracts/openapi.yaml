@@ -495,6 +495,13 @@ paths:
         ilk sonuç OPERATOR_ASSIGNED → CONTACT_CHAIN; REACHED + assessment OK → CONFIRMED_OK (kalan adımlar
         SKIPPED/resolved); REACHED + EMERGENCY → CONFIRMED_EMERGENCY (112 dışı adımlar SKIPPED/emergency);
         CALL_112 REACHED → DISPATCH; CALL_112 ulaşılamadı → yeni CALL_112 adımı.
+        T-087 (docs/07 S5): SILENT = otomatik cevaplı cihaz araması sessiz kaldı (yalnız sesli cihaz adımında; aksi 400)
+        → "cevap yok" değil olası acil durum (event.updated reason POSSIBLE_EMERGENCY; işitme/konuşma güçlüğünde
+        yalnız ulaşılamadı). OFFLINE_SKIPPED yalnız sistemce yazılır (400). Her sonuçtan sonra (ve üstlenmede) sıradaki
+        adım uygulanamıyorsa sistem atlar: çevrimdışı cihaz (son 15 dk görülmedi → OFFLINE_SKIPPED,
+        reason O-RES-SKIPPED_OFFLINE), işitme/konuşma güçlüğünde ilk cihaz denemesinden sonraki cihaz adımları
+        (O-SKIP-IMPAIRED), evden 200 m'den uzakta komşu/anahtar sahibi (O-SKIP-AWAY), anahtar sahibi yok
+        (O-SKIP-NO-KEY-HOLDER). Sistem 112'yi, komşuyu, anahtar sahibini aramaz; P1'i kapatmaz.
       operationId: stepResult
       security: [{ operatorToken: [] }]
       parameters: [{ $ref: '#/components/parameters/EventId' }, { $ref: '#/components/parameters/StepN' }]
@@ -506,7 +513,7 @@ paths:
               type: object
               required: [result]
               properties:
-                result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+                result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED, SILENT] }
                 assessment: { enum: [OK, EMERGENCY], description: Yalnız REACHED ile }
                 note: { type: string, maxLength: 2000 }
                 reason: { type: string, maxLength: 500, description: SKIPPED için zorunlu }
@@ -1067,6 +1074,16 @@ paths:
                   priority: { type: integer, minimum: 1, maximum: 5, description: CONTACT sırası (CALL_CONTACT:n) }
                   displayName: { type: string, maxLength: 100 }
                   phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
+                  hasKey:
+                    {
+                      type: boolean,
+                      description: 'T-087 (docs/07 S5.6) anahtar sahibi; yalnız CONTACT/NEIGHBOR (aksi 400)',
+                    }
+                  arrivalMin: { type: [integer, 'null'], minimum: 1, maximum: 600, description: Eve varma süresi (dk) }
+                  reachableHours:
+                    type: [string, 'null']
+                    pattern: '^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$'
+                    description: Ulaşılabilir saatler (kişinin saat diliminde, gece yarısını geçebilir); yoksa her zaman
       responses:
         '200':
           {
@@ -1235,10 +1252,12 @@ paths:
       summary: Kalıcı amir uyarıları (open=1 → görülmemişler), en yeni önce
       description: |
         Her supervisor.alert (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL / OPEN / ESCALATE, O-CLOSE-NO-112,
-        O-CLOSE-UNREACHABLE-NO-112, O-QUEUE-UNCLAIMED,
+        O-CLOSE-UNREACHABLE-NO-112, O-QUEUE-UNCLAIMED, O-P1-UNCLAIMED,
         O-WELLNESS-MISSED) çekirdek şeritten kaydedilir; tekrar teslim tekilleştirilir. O-QUEUE-UNCLAIMED: kuyrukta
         önceliğin üstlenme hedefi (P1 10 sn, P2 30 sn, P3 120 sn, P4 600 sn) aşılınca kuyruğa her girişte bir kez.
-        WS `alert` yalnız SUPERVISOR/ADMIN'e (O-QUEUE-UNCLAIMED herkese).
+        O-P1-UNCLAIMED (T-087, docs/07 S5.3): gerçek P1 kuyruğa girişten ladder.unclaimedSupervisorSec (90 sn) sonra
+        hâlâ üstlenilmemiş → amir çağrılır (web push), kuyruğa her girişte bir kez.
+        WS `alert` yalnız SUPERVISOR/ADMIN'e (O-QUEUE-UNCLAIMED ve O-P1-UNCLAIMED herkese).
       operationId: listSupervisorAlerts
       security: [{ operatorToken: [] }]
       parameters: [{ name: open, in: query, schema: { type: string, enum: ['1', 'true'] } }]
@@ -2231,9 +2250,16 @@ components:
             type: object
             required: [event, chain]
             properties:
-              event: { type: object, description: 'Olay kaydı: durum, geçişler, lockUntil' }
+              event:
+                type: object
+                description: |
+                  Olay kaydı: durum, geçişler, lockUntil. T-088 (docs/07 S8.2): sourceDeviceIds (olayı bildiren
+                  farklı cihazlar, ilk eleman alarmı açan), corroboratedAt (iki farklı cihaz 90 sn içinde düşme),
+                  cancelledByDeviceId (cihaz sorusunu "iyiyim" ile kapatan cihaz). location açık P1/P2'de en taze
+                  ve en doğru kaynaktan yeniden birleştirilir (S3.7).
               chain: { oneOf: [{ $ref: '#/components/schemas/ChainView' }, { type: 'null' }] }
               calls: { type: array, items: { $ref: '#/components/schemas/CallView' } }
+              ladder: { $ref: '#/components/schemas/LadderView' }
     DeviceToken:
       description: Cihaz token'ı (HS256 JWT, 1 yıl)
       content:
@@ -2414,6 +2440,20 @@ components:
         dailySummary: { type: boolean, description: Akşam F-DAILY bildirimi (C-07; varsayılan açık) }
         locationSharing:
           { type: boolean, description: 'Aile uygulaması son konumu görür (T-061, C-09; varsayılan açık)' }
+        hearingSpeechImpaired:
+          type: boolean
+          description: T-087 (docs/07 S5.9) işitme/konuşma güçlüğü — otomatik cevap ulaşılamadı sayılır, yakınlara erken geçilir
+        holdMode:
+          description: |
+            S4.10 "hastanede / seyahatte" modu (until gelecekte, en çok 180 gün); null kapatır. Bu sürede kapsama
+            uyarıları durur (T-085/T-086); SOS ve düşme her zaman çalışır.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [kind, until]
+              properties:
+                kind: { enum: [HOSPITAL, TRAVEL] }
+                until: { type: string, format: date-time }
     PersonView:
       type: object
       required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
@@ -2445,6 +2485,15 @@ components:
         myRole: { enum: [OWNER, MEMBER, null] }
         dailySummary: { type: boolean }
         locationSharing: { type: boolean }
+        hearingSpeechImpaired: { type: boolean }
+        holdMode:
+          description: Süresi geçmişse null
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                kind: { enum: [HOSPITAL, TRAVEL] }
+                until: { type: string, format: date-time }
         medical:
           type: object
           description: Yalnız var/yok ve rıza zamanı; içerik geri okunmaz.
@@ -2530,6 +2579,9 @@ components:
         priority: { type: integer }
         displayName: { type: [string, 'null'] }
         phoneLast2: { type: string, pattern: '^\d{2}$' }
+        hasKey: { type: boolean, description: T-087 anahtar sahibi }
+        arrivalMin: { type: [integer, 'null'] }
+        reachableHours: { type: [string, 'null'] }
     Problem:
       type: object
       properties:
@@ -2613,21 +2665,59 @@ components:
       properties:
         n: { type: integer }
         kind:
-          { type: string, description: 'CALL_WATCH, CALL_PHONE, CALL_CONTACT, CALL_NEIGHBOR, CALL_112, NOTIFY_FAMILY' }
-        target: { enum: [WATCH, ELDER_PHONE, CONTACT, NEIGHBOR, EMERGENCY, FAMILY] }
+          type: string
+          description: |
+            CALL_WATCH (1. sesli cihaz), CALL_PHONE, CALL_REDIAL (en iyi cihaza yeniden; T-087), CALL_CONTACT,
+            CALL_KEY_HOLDER (anahtarı olan, varma süresi en kısa yakın; T-087), CALL_NEIGHBOR, CALL_112, NOTIFY_FAMILY
+        target: { enum: [WATCH, ELDER_PHONE, VOICE_DEVICE, CONTACT, KEY_HOLDER, NEIGHBOR, EMERGENCY, FAMILY] }
         contactIndex: { type: integer }
         label: { type: string, description: Katalog kodu (O-STEP-*) }
         script: { type: string, description: Katalog kodu (O-SCRIPT-*) }
         timeoutSec: { type: integer }
         required: { type: boolean }
+        autoAnswerSec:
+          {
+            type: integer,
+            description: 'T-087: P1 sesli cihaz adımında cihaz bu sürede kendiliğinden cevaplar (10 sn)',
+          }
         calledAt: { type: string, format: date-time }
-        result: { enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED] }
+        result:
+          enum: [REACHED, NO_ANSWER, BUSY, WRONG_NUMBER, SKIPPED, SILENT, OFFLINE_SKIPPED]
+          description: SILENT otomatik cevap + ses yok (olası acil); OFFLINE_SKIPPED sistem atladı (cihaz 15 dk görülmedi)
         assessment: { enum: [OK, EMERGENCY] }
         note: { type: string }
         reason: { type: string }
         operatorId: { type: string }
         completedAt: { type: string, format: date-time }
         scriptReadAt: { type: string, format: date-time }
+    LadderView:
+      type: object
+      description: T-087/T-088 (docs/07 S5, S3.3) konsol olay ekranı merdiven özeti
+      required:
+        [
+          call112DeadlineAt,
+          call112DeadlineSec,
+          corroborated,
+          sourceDeviceCount,
+          cancelledByDeviceId,
+          possibleEmergency,
+          hearingSpeechImpaired,
+          platformSosFlow,
+        ]
+      properties:
+        call112DeadlineAt:
+          type: [string, 'null']
+          format: date-time
+          description: Kuyruğa düşüş + call112DeadlineSec (SOS 180, düşme 300, hareketsizlik 1200); test/diğer türlerde null
+        call112DeadlineSec: { type: [integer, 'null'] }
+        corroborated: { type: boolean, description: İki farklı cihaz 90 sn içinde düşme bildirdi }
+        sourceDeviceCount: { type: integer, description: Olayı bildiren farklı cihaz sayısı ("2 cihaz") }
+        cancelledByDeviceId: { type: [string, 'null'] }
+        possibleEmergency: { type: boolean, description: Otomatik cevaplı arama sessiz kaldı (SILENT) }
+        hearingSpeechImpaired: { type: boolean }
+        platformSosFlow:
+          type: boolean
+          description: Kaynak kendi SOS akışını çalıştırdı (sinyal payload.platformSosFlow) → O-SCRIPT-APPLE-112
     DispatchView:
       type: object
       properties:
