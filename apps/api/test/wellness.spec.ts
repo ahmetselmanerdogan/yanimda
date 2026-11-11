@@ -231,10 +231,14 @@ describe('plan ve dönemler', () => {
       new Date('2026-11-11T05:00:00Z'),
     );
     await bus.deliver('signal.received', { payload: sig('SOS', { protectedPersonId: 'baska-kisi' }) } as never);
-    await wellness.sweep(new Date('2026-11-11T09:01:00Z'));
+    // Kişiye özel yayılma kaydırması (0–60 dk, kimlik özetinden) sabit saati kırılgan yapar: süre dönemden okunur.
+    const [due] = await wellness.checks({ personId: id, status: ['SCHEDULED'] });
+    const dueAt = new Date(due!.dueAt).getTime();
+    const until = new Date(due!.windowUntil).getTime();
+    await wellness.sweep(new Date(dueAt + 60_000)); // ilk yarı + kuyrukta P1 → ertelenir
     expect(await wellness.checks({ personId: id, status: ['IN_PROGRESS'] })).toEqual([]);
     expect((await wellness.checks({ personId: id, status: ['SCHEDULED'] })).length).toBe(1);
-    await wellness.sweep(new Date('2026-11-11T09:35:00Z')); // ikinci yarı (≤ 09:30'dan sonra): yine başlar
+    await wellness.sweep(new Date(until - 5 * 60_000)); // ikinci yarı: yine başlar
     expect((await wellness.checks({ personId: id, status: ['IN_PROGRESS'] })).length).toBe(1);
   });
 
