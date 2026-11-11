@@ -224,10 +224,13 @@ export function ClosePanel(p: {
   allowed: CloseOutcome[];
   initialNote: string;
   busy: boolean;
-  onSubmit(outcome: CloseOutcome, note: string, followUpAfterHours?: number): void;
+  /** Acil teyitli ama 112 adımı ulaşılmadı: "112 zincir dışında arandı" sorulur (aranmadıysa DISPATCH yok). */
+  ask112?: boolean;
+  onSubmit(outcome: CloseOutcome, note: string, followUpAfterHours?: number, notified112?: boolean): void;
   onCancel(): void;
 }) {
   const choices = OUTCOMES.filter((o) => p.allowed.includes(o));
+  const [notified112, setNotified112] = useState(false);
   const [outcome, setOutcome] = useState<CloseOutcome | null>(choices.length === 1 ? choices[0]! : null);
   const [note, setNote] = useState(p.initialNote);
   const [followUp, setFollowUp] = useState(false);
@@ -246,7 +249,13 @@ export function ClosePanel(p: {
         aria-labelledby="close-title"
         onSubmit={(e) => {
           e.preventDefault();
-          if (outcome && (!plan || hoursOk)) p.onSubmit(outcome, note.trim(), plan ? hours : undefined);
+          if (outcome && (!plan || hoursOk))
+            p.onSubmit(
+              outcome,
+              note.trim(),
+              plan ? hours : undefined,
+              p.ask112 && outcome === 'EMERGENCY' ? notified112 : undefined,
+            );
         }}
       >
         <h2 id="close-title">{t('O-UI-CLOSE')}</h2>
@@ -281,6 +290,12 @@ export function ClosePanel(p: {
           )}
         </div>
         {forced && <p className="muted small">{t('O-UI-FOLLOWUP-REQUIRED')}</p>}
+        {p.ask112 && outcome === 'EMERGENCY' && (
+          <label className="radio">
+            <input type="checkbox" checked={notified112} onChange={(e) => setNotified112(e.target.checked)} />
+            {t('O-UI-CLOSE-NOTIFIED-112')}
+          </label>
+        )}
         {plan && hoursOk && <p className="muted small">{t('O-UI-FOLLOWUP', { hours })}</p>}
         <div className="row end">
           <button type="button" onClick={p.onCancel}>

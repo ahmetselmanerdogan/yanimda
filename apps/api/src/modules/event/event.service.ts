@@ -112,7 +112,7 @@ export interface OperatorCtx {
   transition(to: EventState, note?: string): void;
   publish(topic: string, payload: unknown): void;
   /** Kapat; followUpAfterHours: takip araması (EMERGENCY'de zorunlu, verilmezse kural varsayılanı). */
-  finish(outcome: string, note?: string, followUpAfterHours?: number): Promise<void>;
+  finish(outcome: string, note?: string, followUpAfterHours?: number, notified112?: boolean): Promise<void>;
 }
 
 const pgCode = (e: unknown) =>
@@ -817,7 +817,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         rulesVersion: this.pack.version,
         transition: (to, note) => this.transition(u, to, 'OPERATOR', operatorId, note),
         publish: (topic, payload) => u.publishes.push({ topic, payload }),
-        finish: (outcome, note, hours) => this.finish(u, operatorId, outcome, note, hours),
+        finish: (outcome, note, hours, notified112) => this.finish(u, operatorId, outcome, note, hours, notified112),
       };
       return { value: await fn(ctx) };
     });
@@ -840,7 +840,19 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    * E-07 kapatma: bulunulan duruma göre CONFIRMED_* / DISPATCH üzerinden CLOSED. Takip araması (T-024): EMERGENCY'de
    * zorunlu (verilmezse kuralın followUpAfterHours'u, o da yoksa 24 saat); diğer sonuçlarda istenirse.
    */
-  private async finish(u: Uow, operatorId: string, outcome: string, note?: string, followUpAfterHours?: number) {
+  /**
+   * Kapanış. Acil teyitli olay yalnız 112 gerçekten arandıysa DISPATCH üzerinden kapanır (zincirde 112 adımı ulaşıldı
+   * → zaten DISPATCH; zincir dışında arandıysa `notified112`). 112 aranmadan acil kapanış (aile kendi götürdü vb.)
+   * DISPATCH'siz: sahte 112 süreci ve aileye "ambulans yolda" gitmez; audit `event.closed_without_112` + amir uyarısı.
+   */
+  private async finish(
+    u: Uow,
+    operatorId: string,
+    outcome: string,
+    note?: string,
+    followUpAfterHours?: number,
+    notified112 = false,
+  ) {
     if (!CLOSE_OUTCOMES.has(outcome)) throw new BadRequestException('Geçersiz sonuç');
     if (
       followUpAfterHours !== undefined &&
@@ -867,7 +879,28 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       default:
         throw new ConflictException('Olay kapatılamaz');
     }
-    if (u.ev.state === 'CONFIRMED_EMERGENCY') op('DISPATCH');
+    if (u.ev.state === 'CONFIRMED_EMERGENCY') {
+      if (notified112) op('DISPATCH', '112 arandı (zincir dışında)');
+      else {
+        await this.repo.insertAudit(u.tx, {
+          actorKind: 'OPERATOR',
+          actorId: operatorId,
+          action: 'event.closed_without_112',
+          entityId: u.ev.id,
+          data: { type: u.ev.type },
+        });
+        if (!u.ev.isTest) {
+          const alert: SupervisorAlert = {
+            code: 'O-CLOSE-NO-112',
+            eventId: u.ev.id,
+            eventType: u.ev.type,
+            operatorId,
+            at: new Date().toISOString(),
+          };
+          u.publishes.push({ topic: TOPICS.supervisorAlert, payload: alert });
+        }
+      }
+    }
     u.ev.lockUntil = undefined;
     this.close(u, outcome, note ?? '', 'OPERATOR', operatorId);
     const hours = emergency

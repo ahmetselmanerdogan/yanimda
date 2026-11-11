@@ -362,11 +362,12 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     escalate: (id: string, reason: string) => req<EventWithChain>('POST', `${ev(id)}/escalate-112`, { reason }),
     dispatchScript: (id: string) => req<DispatchScript>('GET', `${ev(id)}/script?kind=dispatch112`),
     personCard: (id: string) => req<PersonCard | null>('GET', `${ev(id)}/person`),
-    close: (id: string, outcome: CloseOutcome, note?: string, followUpAfterHours?: number) =>
+    close: (id: string, outcome: CloseOutcome, note?: string, followUpAfterHours?: number, notified112?: boolean) =>
       req<void>('POST', `${ev(id)}/close`, {
         outcome,
         ...(note ? { note } : {}),
         ...(followUpAfterHours ? { followUpAfterHours } : {}),
+        ...(notified112 !== undefined ? { notified112 } : {}),
       }),
     telephonyToken: () => req<VoiceToken>('GET', '/telephony/token'),
     telephonyConfig: () => req<TelephonyConfig>('GET', '/telephony/config'),

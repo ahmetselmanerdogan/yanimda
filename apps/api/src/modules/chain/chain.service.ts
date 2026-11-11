@@ -221,19 +221,27 @@ export class ChainService {
 
   /** E-07 kapatma: bekleyen adımlar SKIPPED(reason=closed), olay kapanır. */
   async close(id: string, operatorId: string, body: unknown, now?: Date): Promise<EventWithChain> {
-    const b = (body ?? {}) as { outcome?: unknown; note?: unknown; followUpAfterHours?: unknown };
+    const b = (body ?? {}) as {
+      outcome?: unknown;
+      note?: unknown;
+      followUpAfterHours?: unknown;
+      notified112?: unknown;
+    };
     const note = text(b.note, NOTE_MAX, 'note');
     if (typeof b.outcome !== 'string') throw new BadRequestException('Sonuç zorunlu');
     const outcome = b.outcome;
     if (b.followUpAfterHours !== undefined && b.followUpAfterHours !== null && typeof b.followUpAfterHours !== 'number')
       throw new BadRequestException('followUpAfterHours sayı olmalı');
     const hours = typeof b.followUpAfterHours === 'number' ? b.followUpAfterHours : undefined;
+    if (b.notified112 !== undefined && typeof b.notified112 !== 'boolean')
+      throw new BadRequestException('notified112 true/false');
+    const notified112 = b.notified112 === true;
     return this.events.operate(
       id,
       operatorId,
       async (c) => {
         const run = await this.repo.run(c.ev.id, c.tx);
-        await c.finish(outcome, note, hours);
+        await c.finish(outcome, note, hours, notified112);
         if (run) await this.skipPending(c, run, operatorId, 'closed');
         return this.result(c, run);
       },

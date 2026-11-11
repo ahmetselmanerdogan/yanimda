@@ -491,6 +491,12 @@ paths:
                   minimum: 1
                   maximum: 168
                   description: Takip araması (T-024). EMERGENCY'de zorunlu; verilmezse kuralın followUpAfterHours'u (24).
+                notified112:
+                  type: boolean
+                  description: |
+                    Acil teyitli ama zincirde 112 adımı ulaşılmamışsa: 112 zincir dışında (masa hattı vb.) arandı mı.
+                    true → DISPATCH ve 112 süreci açılır; false / yok → doğrudan CLOSED, audit event.closed_without_112,
+                    amire O-CLOSE-NO-112 (sahte 112 süreci ve aileye "ambulans yolda" gitmez).
       responses:
         '204': { description: Closed }
         '400': { $ref: '#/components/responses/Problem' }

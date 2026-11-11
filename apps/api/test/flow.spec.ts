@@ -57,8 +57,7 @@ describe('FALL akışı', () => {
       'ESCALATED',
       'OPERATOR_QUEUE',
       'OPERATOR_ASSIGNED',
-      'CONFIRMED_EMERGENCY',
-      'DISPATCH',
+      'CONFIRMED_EMERGENCY', // 112 zincirde ulaşılmadı ve notified112 yok → DISPATCH'siz kapanış
       'CLOSED',
     ]);
   });
