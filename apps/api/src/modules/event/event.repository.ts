@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { EventState, EventType, Signal } from '@yanimda/contracts';
-import { and, arrayContains, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { validate as isUuid } from 'uuid';
 
 import { DB, type Db, type Tx } from '../../db/client';
@@ -42,6 +42,8 @@ export interface EventRecord {
   corroboratedAt?: string;
   /** Cihaz sorusunu "iyiyim" ile kapatan cihaz. */
   cancelledByDeviceId?: string;
+  /** T-092 (S6.4): P2 değer kombinasyonu aynı öncelikte kuyruğun başına. */
+  headOfQueue?: boolean;
   transitions: TransitionRecord[];
 }
 
@@ -58,6 +60,8 @@ export interface QueueItem {
   lockedBy: string | null;
   lockUntil: string | null;
   isTest: boolean;
+  /** T-092: aynı öncelikte önce (P2 değer kombinasyonu). */
+  headOfQueue: boolean;
   person: { displayName: string; age: number | null } | null;
 }
 
@@ -81,6 +85,7 @@ interface QueueRow {
   operator_id: string | null;
   lock_until: Date | string | null;
   is_test: boolean;
+  head_of_queue: boolean;
   display_name: string | null;
   birth_year: number | null;
   total?: number;
@@ -98,6 +103,7 @@ function toQueueItem(r: QueueRow, now: Date): QueueItem {
     lockedBy: r.operator_id,
     lockUntil: isoOrNull(r.lock_until),
     isTest: r.is_test,
+    headOfQueue: !!r.head_of_queue,
     person:
       r.display_name === null
         ? null
@@ -131,6 +137,7 @@ function toRecord(r: EventRow, transitions: TransitionRecord[] = []): EventRecor
     sourceDeviceIds: r.sourceDeviceIds,
     corroboratedAt: iso(r.corroboratedAt),
     cancelledByDeviceId: r.cancelledByDeviceId ?? undefined,
+    ...(r.headOfQueue ? { headOfQueue: true } : {}),
     transitions,
   };
 }
@@ -155,6 +162,7 @@ function toRow(e: EventRecord) {
     sourceDeviceIds: e.sourceDeviceIds,
     corroboratedAt: date(e.corroboratedAt),
     cancelledByDeviceId: e.cancelledByDeviceId ?? null,
+    headOfQueue: e.headOfQueue ?? false,
   };
 }
 
@@ -258,18 +266,18 @@ export class EventRepository {
       .select()
       .from(event)
       .where(inArray(event.state, QUEUE_STATES))
-      .orderBy(asc(event.priority), asc(event.createdAt));
+      .orderBy(asc(event.priority), desc(event.headOfQueue), asc(event.createdAt));
     return rows.map((r) => toRecord(r));
   }
 
   private queueSql(where: ReturnType<typeof sql>, page?: { limit: number; offset: number }) {
     return sql`
       SELECT e.id::text AS id, e.type, e.priority, e.state, e.created_at, e.escalated_at, e.operator_id, e.lock_until,
-             e.is_test, p.display_name, p.birth_year, count(*) OVER ()::int AS total
+             e.is_test, e.head_of_queue, p.display_name, p.birth_year, count(*) OVER ()::int AS total
       FROM ${event} e
       LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
       WHERE ${where}
-      ORDER BY e.priority ASC, e.created_at ASC, e.id ASC
+      ORDER BY e.priority ASC, e.head_of_queue DESC, e.created_at ASC, e.id ASC
       ${page ? sql`LIMIT ${page.limit} OFFSET ${page.offset}` : sql``}`;
   }
 

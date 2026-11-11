@@ -115,6 +115,49 @@ export interface CoverageNoneParams {
   welfareDroppedH: number;
   welfareNoMovementH: number;
 }
+/**
+ * T-092 (docs/07 S6, S8.4) değer kuralları. Bayrakla kapalı (`enabled: false`); yazılı mevzuat görüşü olmadan
+ * açılmaz. VITALS_ENABLED ortam değişkeni (true / false) verilirse paketin yerine geçer (vitalsEnabled).
+ */
+export interface VitalsParams {
+  enabled: boolean;
+  learnDays: number;
+  minValidDays: number;
+  baselineDays: number;
+  validDaySamples: number;
+  sustainedMin: number;
+  comboMin: number;
+  cooldownH: number;
+  worsenPct: number;
+  maxChecksPerWeek: number;
+  claimSlaMin: number;
+  unreachableMin: number;
+  agreeMin: number;
+  preconditions: {
+    wornMin: number;
+    batteryPct: number;
+    stillSteps: number;
+    stillMin: number;
+    minSamples: number;
+    maxGapMin: number;
+    hrMin: number;
+    hrMax: number;
+  };
+  hr: {
+    low: number;
+    belowSleepBaseline: number;
+    highResting: number;
+    deviationPct: number;
+    deviationMin: number;
+    agreePct: number;
+  };
+  spo2: { low: number; lowCopd: number; apartMin: number; comboHr: number; agreePts: number };
+  skinTemp: { deltaC: number; nights: number };
+  retention: { rawDays: number; summaryMonths: number };
+  view: { windowMin: number; bucketMin: number };
+  trendCode: string;
+}
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
 export interface RulePack {
   country: string;
   version: number;
@@ -129,6 +172,8 @@ export interface RulePack {
   battery?: BatteryParams;
   charging?: ChargingParams;
   coverageNone?: Partial<CoverageNoneParams> & Pick<CoverageNoneParams, 'remindMin' | 'familyMin' | 'eventMin'>;
+  /** T-092 değer kuralları (bayrakla kapalı). */
+  vitals?: DeepPartial<VitalsParams> & { enabled: boolean };
   rules: Rule[];
 }
 
@@ -193,6 +238,64 @@ export const coverageNoneOf = (pack: RulePack): CoverageNoneParams => ({
   ...DEFAULT_COVERAGE_NONE,
   ...pack.coverageNone,
 });
+
+/** Paket alan vermezse kullanılan değerler (tr.yaml ile aynı). Varsayılan KAPALI. */
+export const DEFAULT_VITALS: VitalsParams = {
+  enabled: false,
+  learnDays: 14,
+  minValidDays: 7,
+  baselineDays: 28,
+  validDaySamples: 30,
+  sustainedMin: 10,
+  comboMin: 5,
+  cooldownH: 24,
+  worsenPct: 20,
+  maxChecksPerWeek: 2,
+  claimSlaMin: 15,
+  unreachableMin: 10,
+  agreeMin: 5,
+  preconditions: {
+    wornMin: 5,
+    batteryPct: 10,
+    stillSteps: 20,
+    stillMin: 5,
+    minSamples: 3,
+    maxGapMin: 5,
+    hrMin: 25,
+    hrMax: 250,
+  },
+  hr: { low: 40, belowSleepBaseline: 10, highResting: 130, deviationPct: 30, deviationMin: 30, agreePct: 10 },
+  spo2: { low: 88, lowCopd: 85, apartMin: 10, comboHr: 120, agreePts: 3 },
+  skinTemp: { deltaC: 1.0, nights: 2 },
+  retention: { rawDays: 30, summaryMonths: 13 },
+  view: { windowMin: 120, bucketMin: 5 },
+  trendCode: 'F-VITAL-TREND',
+};
+export function vitalsOf(pack: RulePack): VitalsParams {
+  const v = pack.vitals;
+  if (!v) return DEFAULT_VITALS;
+  const d = DEFAULT_VITALS;
+  return {
+    ...d,
+    ...v,
+    preconditions: { ...d.preconditions, ...v.preconditions },
+    hr: { ...d.hr, ...v.hr },
+    spo2: { ...d.spo2, ...v.spo2 },
+    skinTemp: { ...d.skinTemp, ...v.skinTemp },
+    retention: { ...d.retention, ...v.retention },
+    view: { ...d.view, ...v.view },
+  } as VitalsParams;
+}
+/**
+ * Değer kuralları açık mı: VITALS_ENABLED ('true' / 'false') verilmişse o, yoksa paketin `vitals.enabled`'ı.
+ * Varsayılan kapalı (mevzuat görüşü bekler; docs/07 S6 giriş, S9, S10.2).
+ */
+export function vitalsEnabled(pack: RulePack, env: NodeJS.ProcessEnv = process.env): boolean {
+  const e = env.VITALS_ENABLED?.trim().toLowerCase();
+  if (e === 'true') return true;
+  if (e === 'false') return false;
+  return pack.vitals?.enabled === true;
+}
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {
