@@ -3708,5 +3708,241 @@
   "O-UI-SUP-COVERAGE-TOTAL": {
     "channel": "console",
     "text": "Toplam {n} kişi"
+  },
+  "F-COVERAGE-CHRONIC": {
+    "channel": "family",
+    "text": "{name} son {days} günde {n} kez uzun süre korumasız kaldı. Birlikte bir plan yapalım: kişiye özel bekleme süresi, kolyeye geçiş veya bakıcı hatırlatması. Ekibimiz sizi arayacak."
+  },
+  "O-UI-FOLLOWUP-COVERAGE_CHRONIC": {
+    "channel": "console",
+    "text": "Kronik kapsama boşluğu: aileyle plan yapın (kişiye özel tolerans, kolyeye geçiş, bakıcı hatırlatması)"
+  },
+  "O-UI-DEV-VIA-PHONE": {
+    "channel": "console",
+    "text": "telefon üzerinden"
+  },
+  "O-UI-BODY-WRIST_LEFT": {
+    "channel": "console",
+    "text": "sol bilek"
+  },
+  "O-UI-BODY-WRIST_RIGHT": {
+    "channel": "console",
+    "text": "sağ bilek"
+  },
+  "O-UI-BODY-NECK": {
+    "channel": "console",
+    "text": "boyun"
+  },
+  "O-UI-BODY-CHEST": {
+    "channel": "console",
+    "text": "göğüs"
+  },
+  "O-UI-BODY-FINGER": {
+    "channel": "console",
+    "text": "parmak"
+  },
+  "O-UI-BODY-EAR": {
+    "channel": "console",
+    "text": "kulak"
+  },
+  "O-UI-BODY-POCKET": {
+    "channel": "console",
+    "text": "cep"
+  },
+  "O-UI-BODY-HOME": {
+    "channel": "console",
+    "text": "ev"
+  },
+  "O-UI-LOCATION": {
+    "channel": "console",
+    "text": "Konum: {age}, {source}"
+  },
+  "O-UI-LOC-AGE-NOW": {
+    "channel": "console",
+    "text": "az önce"
+  },
+  "O-UI-LOC-AGE-MIN": {
+    "channel": "console",
+    "text": "{n} dk önce"
+  },
+  "O-UI-LOC-AGE-HOUR": {
+    "channel": "console",
+    "text": "{n} sa önce"
+  },
+  "O-UI-LOC-SRC-GPS": {
+    "channel": "console",
+    "text": "GPS"
+  },
+  "O-UI-LOC-SRC-NETWORK": {
+    "channel": "console",
+    "text": "ağ konumu"
+  },
+  "O-UI-LOC-SRC-PHONE": {
+    "channel": "console",
+    "text": "telefon konumu"
+  },
+  "O-UI-LOC-SRC-UNKNOWN": {
+    "channel": "console",
+    "text": "kaynak bilinmiyor"
+  },
+  "O-UI-SAME-ADDRESS": {
+    "channel": "console",
+    "text": "Aynı adreste ikinci kişi: {name} — ilk ulaşılacak kişi olabilir"
+  },
+  "O-UI-SAME-ADDRESS-EVENT": {
+    "channel": "console",
+    "text": "Açık olayını aç"
+  },
+  "O-UI-SUP-COVERAGE-BOARD": {
+    "channel": "console",
+    "text": "Kapsama panosu"
+  },
+  "O-UI-SUP-EMPTY": {
+    "channel": "console",
+    "text": "Kayıt yok"
+  },
+  "O-UI-SUP-NONE-AWAKE": {
+    "channel": "console",
+    "text": "Uyanıkken kapsama YOK (20 dk ve üstü)"
+  },
+  "O-UI-SUP-NONE-ROW": {
+    "channel": "console",
+    "text": "{name}: {n} dk"
+  },
+  "O-UI-SUP-CHRONIC": {
+    "channel": "console",
+    "text": "Kronik boşluk (son 7 gün, uyanık zamanın %80’inden azı korunan)"
+  },
+  "O-UI-SUP-CHRONIC-ROW": {
+    "channel": "console",
+    "text": "{name}: korunan {pct}"
+  },
+  "O-UI-SUP-CHRONIC-PLAN": {
+    "channel": "console",
+    "text": "plan bekliyor (P3 açılmıyor)"
+  },
+  "O-UI-SUP-TOLERANCE": {
+    "channel": "console",
+    "text": "tolerans {n} dk"
+  },
+  "O-UI-SUP-BRIDGES": {
+    "channel": "console",
+    "text": "Çevrimdışı telefon köprüleri"
+  },
+  "O-UI-SUP-BRIDGE-ROW": {
+    "channel": "console",
+    "text": "{name}: telefon {seen} görüldü, üzerinden {n} cihaz bağlı"
+  },
+  "O-UI-SUP-UNREACHABLE": {
+    "channel": "console",
+    "text": "Ulaşılamama oranı (merdiven adımı, P1/P2)"
+  },
+  "O-UI-SUP-DAYS": {
+    "channel": "console",
+    "text": "Son {n} gün"
+  },
+  "O-UI-SUP-COL-STEP": {
+    "channel": "console",
+    "text": "Adım"
+  },
+  "O-UI-SUP-COL-ATTEMPTS": {
+    "channel": "console",
+    "text": "Deneme"
+  },
+  "O-UI-SUP-COL-UNREACHED": {
+    "channel": "console",
+    "text": "Ulaşılamadı"
+  },
+  "O-UI-SUP-COL-STALLED": {
+    "channel": "console",
+    "text": "Burada takıldı"
+  },
+  "O-UI-SUP-UNCLAIMED-P1": {
+    "channel": "console",
+    "text": "90 sn üstlenilmeyen P1 (son 7 gün)"
+  },
+  "O-UI-SUP-NOT-ACKED": {
+    "channel": "console",
+    "text": "görülmedi"
+  },
+  "O-UI-SUP-DISPATCH-112": {
+    "channel": "console",
+    "text": "Hareketsizlik / yerinde kontrol 112 bildirimleri (son 7 gün)"
+  },
+  "O-UI-ADM-TAB-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama ve cihazlar"
+  },
+  "O-UI-ADM-COV-PERSON-DAY": {
+    "channel": "console",
+    "text": "Kişi-gün kapsama yüzdesi (uyanık zaman)"
+  },
+  "O-UI-ADM-COV-SUMMARY": {
+    "channel": "console",
+    "text": "Ortalama {avg}, ortanca {median}; %80 altı {below} ({n} kişi-gün)"
+  },
+  "O-UI-ADM-COV-FALSE-ALARM": {
+    "channel": "console",
+    "text": "Model ve sürüm başına yanlış alarm"
+  },
+  "O-UI-ADM-COL-MODEL": {
+    "channel": "console",
+    "text": "Model"
+  },
+  "O-UI-ADM-COL-VERSION": {
+    "channel": "console",
+    "text": "Sürüm"
+  },
+  "O-UI-ADM-COL-EVENTS": {
+    "channel": "console",
+    "text": "Olay"
+  },
+  "O-UI-ADM-COL-RATE": {
+    "channel": "console",
+    "text": "Oran"
+  },
+  "O-UI-ADM-COV-LATENCY": {
+    "channel": "console",
+    "text": "Sinyal gecikmesi (sınıf ve adaptör)"
+  },
+  "O-UI-ADM-COL-TIER": {
+    "channel": "console",
+    "text": "Sınıf"
+  },
+  "O-UI-ADM-COL-ADAPTER": {
+    "channel": "console",
+    "text": "Adaptör"
+  },
+  "O-UI-ADM-COL-SIGNALS": {
+    "channel": "console",
+    "text": "Sinyal"
+  },
+  "O-UI-ADM-COL-P95": {
+    "channel": "console",
+    "text": "p95"
+  },
+  "O-UI-ADM-COV-CHARGING": {
+    "channel": "console",
+    "text": "Şarj uyumu"
+  },
+  "O-UI-ADM-COV-CHARGING-ROW": {
+    "channel": "console",
+    "text": "{n} şarj; yeniden takma ortanca {median} dk, p90 {p90} dk; ilk hatırlatmadan önce {early}"
+  },
+  "O-UI-ADM-COV-EVENTS": {
+    "channel": "console",
+    "text": "100 kişi-gün başına olay"
+  },
+  "O-UI-ADM-COV-BATTERY": {
+    "channel": "console",
+    "text": "Model başına pil sağlığı (günlük düşüş ortancası)"
+  },
+  "O-UI-ADM-COL-DEVICES": {
+    "channel": "console",
+    "text": "Cihaz"
+  },
+  "O-UI-ADM-COL-DRAIN": {
+    "channel": "console",
+    "text": "Günlük düşüş"
   }
 }
