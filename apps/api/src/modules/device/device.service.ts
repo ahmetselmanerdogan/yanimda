@@ -9,7 +9,7 @@ import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
 import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
-import type { DeviceAdapter, PromptRequest, RingRequest } from './device.types';
+import { type DeviceAdapter, type PromptRequest, type RingRequest, UnsupportedSignalError } from './device.types';
 import { PUSH, type PushPort, RecordingPush } from './push.port';
 
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
@@ -52,14 +52,20 @@ export class DeviceService {
 
   /**
    * Partiyi kanonik hâle getirir: her sinyal kendi cihaz türünün adaptöründen geçer ve sunucu `source`
-   * alanını doldurur. Bir sinyal desteklenmiyorsa UnsupportedSignalError (çağıran tüm partiyi reddeder).
+   * alanını doldurur. Sinyal başına sonuç: desteklenmeyen sinyal (UnsupportedSignalError) yalnız kendisi için
+   * `null` döner; partinin geri kalanı etkilenmez (D-01: SOS, yanındaki desteklenmeyen sinyal yüzünden kaybolmaz).
    */
-  async prepare(batch: Signal[]): Promise<Signal[]> {
+  async prepareEach(batch: Signal[]): Promise<(Signal | null)[]> {
     const kinds = await this.kindsOf(batch.map((s) => s.deviceId));
     return batch.map((raw) => {
-      const adapter = this.registry.for(kinds.get(raw.deviceId) ?? null);
-      const s = adapter.normalize(raw);
-      return { ...s, source: { kind: adapter.kind, role: adapter.capabilities().role } };
+      try {
+        const adapter = this.registry.for(kinds.get(raw.deviceId) ?? null);
+        const s = adapter.normalize(raw);
+        return { ...s, source: { kind: adapter.kind, role: adapter.capabilities().role } };
+      } catch (e) {
+        if (e instanceof UnsupportedSignalError) return null;
+        throw e;
+      }
     });
   }
 

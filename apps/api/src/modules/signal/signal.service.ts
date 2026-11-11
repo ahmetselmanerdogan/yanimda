@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { type KafkaEnvelope, type Signal, TOPICS } from '@yanimda/contracts';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -13,18 +20,31 @@ import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { device, signal } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
-import { UnsupportedSignalError } from '../device/device.types';
 import { IdempotencyStore } from './idempotency.store';
+import { AUTH_REJECT_REASONS, rejectedEntry, type RejectedSignal, type SignalRejectReason } from './signal-reject';
 
 export interface AcceptResult {
   accepted: number;
   duplicates: number;
+  /** Reddedilen sinyaller (partideki sıra + sabit kod). Cihaz yalnız bunları kalıcı hata sayar. */
+  rejected: RejectedSignal[];
+}
+
+/** Log için: neden → adet (PII yok). */
+function summary(rs: RejectedSignal[]): string {
+  const m = new Map<string, number>();
+  for (const r of rs) m.set(r.reason, (m.get(r.reason) ?? 0) + 1);
+  return [...m].map(([k, n]) => `${k}=${n}`).join(', ');
 }
 
 /**
  * D-01 Sinyal alımı (T-010): şema doğrulama → Redis idempotency → TEK transaction:
  * signal.signal + event.outbox (signal.received) + cihaz durumu. Teslimat OutboxWorker'dadır.
  *
+ * Sinyal başına kabul: şemaya uymayan, cihaz türünün desteklemediği veya token yetkisi dışındaki sinyal yalnız
+ * kendisi reddedilir (`rejected`); partinin geri kalanı yazılır — SOS, yanındaki geçersiz/desteklenmeyen sinyal
+ * veya iptal edilmiş saatin sinyali yüzünden kaybolmaz. Yazılabilecek tek sinyal yoksa 400 (yetki retti varsa
+ * 403), Problem gövdesinde `rejected`.
  * Parti sırayla işlenir (sinyal sırası korunur). Herhangi bir yazım hatası 503 döner; cihaz partiyi yeniden
  * gönderir, önceden yazılanlar duplicate sayılır (kayıp yok, çift yok). Log'larda PII yok: yalnız kind/sayı.
  */
@@ -46,23 +66,35 @@ export class SignalService {
     this.validate = ajv.compile(JSON.parse(readFileSync(schemaPath, 'utf8')));
   }
 
-  async accept(batch: unknown[]): Promise<AcceptResult> {
+  /**
+   * @param denied Yetki denetiminin (CompanionService.authorizeBatch) reddettiği sıralar → neden.
+   */
+  async accept(batch: unknown[], denied: ReadonlyMap<number, SignalRejectReason> = new Map()): Promise<AcceptResult> {
     if (!Array.isArray(batch) || batch.length === 0) throw new BadRequestException('Boş sinyal listesi');
-    // Önce tüm parti doğrulanır: geçersiz bir sinyal varsa hiçbir şey yazılmaz.
-    batch.forEach((raw, i) => {
-      if (!this.validate(raw)) {
-        const err = this.validate.errors?.[0];
-        throw new BadRequestException(`Sinyal #${i} şemaya uymuyor: ${err?.instancePath || '/'} ${err?.message ?? ''}`);
-      }
+    const rejected: RejectedSignal[] = [];
+    const candidates: { index: number; signal: Signal }[] = [];
+    batch.forEach((raw, index) => {
+      const deny = denied.get(index);
+      if (deny) rejected.push(rejectedEntry(index, raw, deny));
+      else if (!this.validate(raw)) rejected.push(rejectedEntry(index, raw, 'SCHEMA_INVALID'));
+      else candidates.push({ index, signal: raw as Signal });
     });
 
-    // T-015: her sinyal cihaz türünün adaptöründen geçer (normalize + source). Desteklenmeyen → tüm parti 400.
-    let prepared: Signal[];
-    try {
-      prepared = await this.devices.prepare(batch as Signal[]);
-    } catch (e) {
-      if (e instanceof UnsupportedSignalError) throw new BadRequestException(e.message);
-      throw e;
+    // T-015: her sinyal cihaz türünün adaptöründen geçer (normalize + source). Desteklenmeyen → yalnız o sinyal.
+    const prepared: Signal[] = [];
+    const normalized = candidates.length ? await this.devices.prepareEach(candidates.map((c) => c.signal)) : [];
+    normalized.forEach((s, i) => {
+      if (s) prepared.push(s);
+      else rejected.push(rejectedEntry(candidates[i].index, candidates[i].signal, 'UNSUPPORTED_SIGNAL'));
+    });
+    rejected.sort((a, b) => a.index - b.index);
+    if (rejected.length)
+      this.log.warn(`Partide ${rejected.length}/${batch.length} sinyal reddedildi (${summary(rejected)})`);
+    if (!prepared.length) {
+      const body = { message: 'Partide kabul edilebilir sinyal yok', rejected };
+      throw rejected.some((r) => AUTH_REJECT_REASONS.has(r.reason))
+        ? new ForbiddenException(body)
+        : new BadRequestException(body);
     }
 
     let accepted = 0;
@@ -94,7 +126,7 @@ export class SignalService {
       else duplicates++;
     }
     if (accepted) this.outbox.notifyCommitted();
-    return { accepted, duplicates };
+    return { accepted, duplicates, rejected };
   }
 
   /** Tek transaction. Veritabanında zaten varsa (Redis anahtarı kaybolmuşsa) false döner, outbox'a yazmaz. */

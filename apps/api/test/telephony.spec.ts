@@ -266,6 +266,87 @@ describe('sahte CPaaS ile tam akış', () => {
   });
 });
 
+describe('asılı arama (webhook gelmedi / arama öncesi çökme)', () => {
+  /** Satırı geçmişe çeker: `status`, son değişim `updatedSecAgo`, başlangıç `createdSecAgo` saniye önce. */
+  const age = (callId: string, status: string, updatedSecAgo: number, createdSecAgo = updatedSecAgo) =>
+    h.rows(
+      `UPDATE telephony.call SET status = $2, answered = false, suggested_result = NULL,
+         updated_at = now() - make_interval(secs => $3), created_at = now() - make_interval(secs => $4) WHERE id = $1`,
+      [callId, status, updatedSecAgo, createdSecAgo],
+    );
+
+  it('"Ara": 2 dk’dan eski queued satır asılı sayılır → kapatılır (stale, audit) ve yeniden aranır', async () => {
+    const id = await claimed();
+    await chain.call(id, 1, 'op-1');
+    await fake.settled;
+    const [first] = await callsOf(id);
+    await age(first!.id, 'queued', 90);
+    await chain.call(id, 1, 'op-1');
+    expect(await callsOf(id)).toHaveLength(1); // 90 sn: hâlâ kuruluyor sayılır, yeni arama yok
+
+    await age(first!.id, 'queued', 121);
+    await chain.call(id, 1, 'op-1');
+    await fake.settled;
+    const calls = await callsOf(id);
+    expect(calls.map((c) => [c.status, c.error, c.suggestedResult])).toEqual([
+      ['failed', 'stale', null],
+      ['completed', null, 'REACHED'],
+    ]);
+    expect(
+      await h.rows("SELECT data FROM audit.log WHERE action = 'telephony.call.stale' AND entity_id = $1", [id]),
+    ).toEqual([{ data: { callId: first!.id, from: 'queued' } }]);
+  });
+
+  it('tarama: eski queued/ringing ve en uzun süreyi aşan in-progress kapanır; tazeler dokunulmaz', async () => {
+    const id = await claimed();
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      await chain.call(id, 1, 'op-1');
+      await fake.settled;
+      ids.push((await callsOf(id)).at(-1)!.id);
+    }
+    await age(ids[0]!, 'queued', 600);
+    await age(ids[1]!, 'ringing', 300);
+    await age(ids[2]!, 'ringing', 30);
+    await age(ids[3]!, 'in-progress', 600, 3 * 3600); // 3 saat > CALL_MAX_DURATION_SEC (2 saat)
+    await age(ids[4]!, 'in-progress', 3000, 3600); // 1 saat: süren uzun görüşme
+    expect(await tel.sweepStale()).toBe(3);
+    expect(await tel.sweepStale()).toBe(0);
+    const st = new Map((await callsOf(id)).map((c) => [c.id, [c.status, c.error]]));
+    expect(ids.map((i) => st.get(i))).toEqual([
+      ['failed', 'stale'],
+      ['failed', 'stale'],
+      ['ringing', null],
+      ['failed', 'stale'],
+      ['in-progress', null],
+    ]);
+    const audits = await h.rows<{ data: { from: string } }>(
+      "SELECT data FROM audit.log WHERE action = 'telephony.call.stale' AND entity_id = $1 ORDER BY id",
+      [id],
+    );
+    expect(audits.map((a) => a.data.from).sort()).toEqual(['in-progress', 'queued', 'ringing']);
+    // Geç gelen webhook son durumu geri almaz.
+    await tel.webhook('status', ids[0]!, { CallStatus: 'in-progress' });
+    expect((await callsOf(id)).find((c) => c.id === ids[0])!.status).toBe('failed');
+  });
+
+  it('eşikler ortamdan (CALL_SETUP_STALE_SEC, CALL_MAX_DURATION_SEC)', async () => {
+    tel = new TelephonyService(h.db, h.outbox, fake, store, {
+      ...ENV,
+      CALL_SETUP_STALE_SEC: '30',
+      CALL_MAX_DURATION_SEC: '600',
+    });
+    chain = new ChainService(h.db, h.events(new InMemoryTimers()), loadProcedures(), tel);
+    const id = await claimed();
+    await chain.call(id, 1, 'op-1');
+    await fake.settled;
+    const [c] = await callsOf(id);
+    await age(c!.id, 'in-progress', 60, 700);
+    expect(tel.staleness).toEqual({ setupSec: 30, maxSec: 600 });
+    expect(await tel.sweepStale()).toBe(1);
+  });
+});
+
 describe('Twilio sağlayıcısı', () => {
   const calls: { url: string; init: RequestInit }[] = [];
   const http = (async (url: string, init: RequestInit) => {

@@ -13,7 +13,7 @@ import { ONLINE_WINDOW_SEC, type OperatorStatus } from '../metrics/supervisor.se
 import { type CpaasProvider, EMPTY_TWIML, xml } from './cpaas';
 import { formatTrNational, normalizePhone } from './numbers';
 import type { RecordingStore } from './recording-store';
-import { CPAAS, RECORDINGS, TELEPHONY_ENV, TelephonyService } from './telephony.service';
+import { CPAAS, liveCallSql, RECORDINGS, TELEPHONY_ENV, TelephonyService } from './telephony.service';
 import { clientIdentity } from './voice-token';
 
 export type InboundKind = 'call' | 'status' | 'dial' | 'agent' | 'wait' | 'leave' | 'recording';
@@ -253,7 +253,7 @@ export class InboundService {
       EXISTS (SELECT 1 FROM telephony.inbound_call i
               WHERE i.operator_id = ${op} AND i.status IN ('ringing', 'connected') AND i.id <> ${r.id})
       OR EXISTS (SELECT 1 FROM telephony.call c
-                 WHERE c.operator_id = ${op} AND c.status IN ('queued', 'ringing', 'in-progress')))`;
+                 WHERE c.operator_id = ${op} AND ${liveCallSql(now, this.tel.staleness)}))`;
     const rows = async <T>(s: SQL) => ((await q.execute(s)) as unknown as { rows: T[] }).rows;
 
     if (!this.tel.softphone) {

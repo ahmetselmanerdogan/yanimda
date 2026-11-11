@@ -16,7 +16,14 @@ export interface BullTimersOptions {
   backupGraceMs?: number;
   attempts?: number;
   concurrency?: number;
+  /**
+   * Çalışmakta olan ('active') iş için gelen yeniden kurulum, iş bitince uygulanır. Bu süreçteki işçi bitişi anında
+   * bildirir; iş başka bir API örneğinde çalışıyorsa bu aralıkla yoklanır (ms).
+   */
+  deferPollMs?: number;
 }
+
+type AddResult = 'added' | 'exists' | 'deferred';
 
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
   p.catch(() => undefined); // zaman aşımından sonra gelen ret işlenmemiş kalmasın
@@ -34,6 +41,12 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
  *  1. Kurulum anında Redis yoksa → iş yerel zamanlayıcıyla aynı sürede tetiklenir.
  *  2. Kurulduktan sonra Redis çökerse → süreç içi yedek (süre + backupGraceMs) tetikler.
  *     BullMQ işi başarıyla biterse yedek iptal edilir. İşleyiciler durum kontrolüyle çift tetiklemeye dayanıklıdır.
+ *
+ * Kendini yeniden kuran işleyici (denetim bulgusu; ör. 'dispatch-check'): işleyici çalışırken iş Redis'te 'active'
+ * durumdadır ve aynı kimlikle `queue.add` sessizce no-op olur. Bu yüzden 'active' işe gelen kurulum bekletilir
+ * (`deferred`) ve iş tamamlanınca/başarısız olunca eski iş silinip yenisi kurulur (gecikme ilk istekten sayılır).
+ * Yerel yedek de yeni kuruluma aittir: eski işin 'completed' olayı onu silmez. Bekleyen ('delayed'/'waiting') iş
+ * yeniden kurulursa anlam aynıdır: ilki kalır.
  */
 export class BullTimers implements Timers {
   private readonly log = new Logger('Timers');
@@ -44,11 +57,15 @@ export class BullTimers implements Timers {
   private readonly conns: Redis[] = [];
   private readonly addTimeoutMs: number;
   private readonly backupGraceMs: number;
+  private readonly deferPollMs: number;
+  /** 'active' iş bitince kurulacak işler: iş kimliği → iş + mutlak süre + yoklama zamanlayıcısı. */
+  private readonly deferred = new Map<string, { job: TimerJob; dueAt: number; poll: NodeJS.Timeout }>();
   private lastErrLog = 0;
 
   constructor(private readonly opts: BullTimersOptions) {
     this.addTimeoutMs = opts.addTimeoutMs ?? 2000;
     this.backupGraceMs = opts.backupGraceMs ?? 15_000;
+    this.deferPollMs = opts.deferPollMs ?? 1000;
     this.queue = new Queue(opts.queueName ?? 'timers', {
       connection: this.conn(),
       prefix: opts.prefix,
@@ -88,10 +105,15 @@ export class BullTimers implements Timers {
       concurrency: this.opts.concurrency ?? 10,
     });
     this.worker.on('error', (e) => this.logErr('işçi', e));
-    this.worker.on('completed', (job) => this.clearBackup(job.id!));
-    this.worker.on('failed', (job, e) =>
-      this.log.warn(`Zamanlayıcı ${job?.name} başarısız (deneme ${job?.attemptsMade}): ${safeError(e)}`),
-    );
+    this.worker.on('completed', (job) => {
+      // Bekleyen yeniden kurulum varsa yedek ONA aittir (schedule yeniledi): silinmez, yeni iş kurulur.
+      if (this.deferred.has(job.id!)) void this.flushDeferred(job.id!);
+      else this.clearBackup(job.id!);
+    });
+    this.worker.on('failed', (job, e) => {
+      this.log.warn(`Zamanlayıcı ${job?.name} başarısız (deneme ${job?.attemptsMade}): ${safeError(e)}`);
+      if (job?.id && this.deferred.has(job.id)) void this.flushDeferred(job.id);
+    });
   }
 
   async schedule(eventId: string, kind: TimerKind, delayMs: number, data?: Record<string, unknown>): Promise<void> {
@@ -100,8 +122,12 @@ export class BullTimers implements Timers {
     const job: TimerJob = { eventId, kind, ...(data ? { data } : {}) };
     const t0 = Date.now();
     try {
-      await withTimeout(this.add(id, job, delayMs), this.addTimeoutMs);
-      if (!this.backups.has(id)) this.setBackup(id, job, delayMs + this.backupGraceMs);
+      const r = await withTimeout(this.add(id, job, delayMs, t0 + delayMs), this.addTimeoutMs);
+      if (r === 'deferred') {
+        // Eski iş zaten çalışıyor; onun yedeği artık gereksiz, yeni kurulumun yedeği kurulur.
+        this.clearBackup(id);
+        this.setBackup(id, job, delayMs + this.backupGraceMs);
+      } else if (!this.backups.has(id)) this.setBackup(id, job, delayMs + this.backupGraceMs);
     } catch (e) {
       this.log.error(`Zamanlayıcı Redis'e yazılamadı (${kind}), yerel yedek kuruldu: ${safeError(e)}`);
       this.clearBackup(id);
@@ -109,16 +135,46 @@ export class BullTimers implements Timers {
     }
   }
 
-  private async add(id: string, job: TimerJob, delayMs: number) {
-    // Tamamlanmış/başarısız eski iş aynı kimliği tutuyorsa yenisi kurulamaz → önce temizle.
+  private async add(id: string, job: TimerJob, delayMs: number, dueAt: number): Promise<AddResult> {
+    if (this.deferred.has(id)) return 'exists'; // bekleyen yeniden kurulum = bekleyen iş: ilki kalır
     const old = await this.queue.getJob(id);
-    if (old && ['completed', 'failed'].includes(await old.getState())) await old.remove();
+    const state = old ? await old.getState() : undefined;
+    if (state === 'active') {
+      // Aynı kimlikle add no-op olurdu (iş kaybı). İş bitince kurulur: yerel işçi olayı veya yoklama.
+      const poll = setTimeout(() => void this.flushDeferred(id), this.deferPollMs);
+      poll.unref();
+      this.deferred.set(id, { job, dueAt, poll });
+      return 'deferred';
+    }
+    // Tamamlanmış/başarısız eski iş aynı kimliği tutuyorsa yenisi kurulamaz → önce temizle.
+    if (old && (state === 'completed' || state === 'failed')) await old.remove();
+    else if (old && state !== 'unknown') return 'exists'; // delayed/waiting: mevcut iş kalır (idempotent kurulum)
     await this.queue.add(job.kind, job, { jobId: id, delay: Math.max(0, Math.round(delayMs)) });
+    return 'added';
+  }
+
+  /** Bekletilen kurulumu uygular; iş hâlâ çalışıyorsa yeniden bekletir. Redis yoksa yerel yedek kalan süreye çekilir. */
+  private async flushDeferred(id: string): Promise<void> {
+    const d = this.deferred.get(id);
+    if (!d) return;
+    clearTimeout(d.poll);
+    this.deferred.delete(id);
+    const delayMs = Math.max(0, d.dueAt - Date.now());
+    try {
+      const r = await withTimeout(this.add(id, d.job, delayMs, d.dueAt), this.addTimeoutMs);
+      if (r !== 'deferred' && !this.backups.has(id)) this.setBackup(id, d.job, delayMs + this.backupGraceMs);
+    } catch (e) {
+      this.log.error(`Zamanlayıcı Redis'e yazılamadı (${d.job.kind}), yerel yedek kuruldu: ${safeError(e)}`);
+      this.clearBackup(id);
+      this.setBackup(id, d.job, Math.max(0, d.dueAt - Date.now()));
+    }
   }
 
   async cancel(eventId: string, kind: TimerKind): Promise<void> {
     const id = timerJobId(eventId, kind);
     this.clearBackup(id);
+    clearTimeout(this.deferred.get(id)?.poll);
+    this.deferred.delete(id);
     try {
       const job = await withTimeout(this.queue.getJob(id), this.addTimeoutMs);
       await job?.remove();
@@ -137,8 +193,11 @@ export class BullTimers implements Timers {
   async close(): Promise<void> {
     for (const t of this.backups.values()) clearTimeout(t);
     this.backups.clear();
-    await this.worker?.close().catch(() => undefined);
-    await this.queue.close().catch(() => undefined);
+    for (const d of this.deferred.values()) clearTimeout(d.poll);
+    this.deferred.clear();
+    // Redis yokken BullMQ kapanışı asılı kalabilir: kapanış (SIGTERM) beklemesin.
+    await withTimeout(this.worker?.close() ?? Promise.resolve(), 5000).catch(() => undefined);
+    await withTimeout(this.queue.close(), 5000).catch(() => undefined);
     for (const c of this.conns) c.disconnect();
   }
 

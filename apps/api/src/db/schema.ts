@@ -57,7 +57,10 @@ export const outbox = eventSchema.table('outbox', {
   envelope: jsonb('envelope').notNull(),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   processedAt: timestamptz('processed_at'),
+  /** Kalıcı (geçici olmayan) teslim hataları; maxAttempts'a ulaşınca DLQ. */
   attempts: integer('attempts').notNull().default(0),
+  /** 0029: geçici altyapı hataları (bağlantı/failover/zaman aşımı); ayrı ve çok daha yüksek sınır (~1 saat). */
+  transientAttempts: integer('transient_attempts').notNull().default(0),
   nextAttemptAt: timestamptz('next_attempt_at').notNull().defaultNow(),
   lastError: text('last_error'),
 });

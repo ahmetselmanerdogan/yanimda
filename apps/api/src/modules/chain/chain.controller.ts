@@ -46,7 +46,8 @@ export class ChainController {
   @HttpCode(200)
   updateDispatch(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
     const u = userOf(req);
-    const kind = u.roles.includes('SUPERVISOR') ? 'SUPERVISOR' : 'OPERATOR';
+    // Amir/yönetici her süreci, operatör yalnız yürüttüğü olayınkini günceller (DispatchService.update).
+    const kind = u.roles.includes('ADMIN') ? 'ADMIN' : u.roles.includes('SUPERVISOR') ? 'SUPERVISOR' : 'OPERATOR';
     return this.dispatch.update(id, { kind, id: u.sub }, body);
   }
 

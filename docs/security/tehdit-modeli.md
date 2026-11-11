@@ -30,7 +30,7 @@ etkisi: yok / bölüm X güncellendi" yazılır.
 | # | Sınır | Tehdit | Örnek senaryo | Önlem (repoda) | Kalan risk / iş |
 | --- | --- | --- | --- | --- | --- |
 | S1 | 1 | **Kimlik sahteciliği** | Ele geçirilmiş / tahmin edilen eşleştirme kodu ile sahte cihaz kaydı → sahte SOS | 6 haneli kod 15 dk, tek kullanım; IP başına hata sayacı; `POST /devices/enroll` hız sınırı (IP, 20/10 dk); `TRUST_PROXY` ile gerçek IP | Dağıtık saldırgan (G-1): sızma testinde doğrulanacak |
-| S2 | 1 | Kimlik sahteciliği | Bir cihazın token'ıyla başka kişinin sinyalini göndermek | `assertOwnBatch` + köprü denetimi (`CompanionService`) → 403 | — |
+| S2 | 1 | Kimlik sahteciliği | Bir cihazın token'ıyla başka kişinin sinyalini göndermek | `CompanionService.authorizeBatch` (kişi/cihaz + köprü denetimi, sinyal başına): yetkisiz sinyal yazılmaz, `rejected` içinde döner; partide yetkili sinyal yoksa 403 | — |
 | S3 | 3 | Kimlik sahteciliği | Operatör parolası oltalaması | MFA (TOTP) zorunlu, `bruteForceProtected`, parola ≥ 12 | WebAuthn (v2) |
 | S4 | 4 | Kimlik sahteciliği | Sahte CPaaS webhook'u ile arama sonucunu "cevaplandı" göstermek | Twilio imza doğrulaması; webhook hız sınırı | Zaman damgasız imza → tekrar oynatma (G-17) |
 | T1 | 1 | **Kurcalama** | Sinyal içeriğinin (konum, tür) yolda değişmesi | TLS (Caddy ACME, HSTS); şema doğrulaması | Mobil sertifika sabitleme (G-14) |

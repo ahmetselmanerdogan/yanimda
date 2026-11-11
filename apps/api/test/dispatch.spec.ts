@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { bus } from '../src/common/bus';
 import { InMemoryTimers } from '../src/common/timers/memory-timers';
+import { ChainController } from '../src/modules/chain/chain.controller';
 import { ChainService } from '../src/modules/chain/chain.service';
 import { DispatchService } from '../src/modules/chain/dispatch.service';
 import { loadProcedures } from '../src/modules/chain/procedures';
@@ -125,6 +126,40 @@ describe('112 süreci', () => {
     expect(await status(dispatch.update('01960000-0000-7000-8000-00000000ffff', op, { status: 'ON_SCENE' }))).toBe(404);
     await dispatch.update(id, op, { status: 'CANCELLED', note: 'aile özel araçla götürdü' });
     expect(await dispatch.list({ open: true })).toEqual([]);
+  });
+
+  it('yetki: başka operatör 403 (O-DISPATCH-NOT-OWNER), değişiklik yazılmaz; amir/yönetici her süreci günceller', async () => {
+    const id = await dispatched();
+    const other = { kind: 'OPERATOR' as const, id: 'op-2' };
+    await expect(dispatch.update(id, other, { status: 'ON_SCENE' })).rejects.toMatchObject({
+      status: 403,
+      response: { code: 'O-DISPATCH-NOT-OWNER' },
+    });
+    expect((await dispatch.get(id))!.status).toBe('NOTIFIED');
+    // Olay kapandıktan sonra da yalnız olayı yürüten operatör (ve amir).
+    await chain.close(id, OP, { outcome: 'EMERGENCY', note: 'ambulans çağrıldı', followUpAfterHours: 24 });
+    expect(await status(dispatch.update(id, other, { note: 'x' }))).toBe(403);
+    expect((await dispatch.update(id, op, { status: 'EN_ROUTE' })).status).toBe('EN_ROUTE');
+    expect((await dispatch.update(id, { kind: 'SUPERVISOR', id: 'sup-1' }, { status: 'ON_SCENE' })).status).toBe(
+      'ON_SCENE',
+    );
+    expect((await dispatch.update(id, { kind: 'ADMIN', id: 'adm-1' }, { status: 'COMPLETED' })).status).toBe(
+      'COMPLETED',
+    );
+    // Yok olan süreç önce 404 (kimin olduğu sızmaz).
+    expect(await status(dispatch.update('01960000-0000-7000-8000-00000000ffff', other, {}))).toBe(404);
+  });
+
+  it('denetleyici: rol → aktör türü (ADMIN > SUPERVISOR > OPERATOR)', async () => {
+    const id = await dispatched();
+    const ctl = new ChainController(chain, dispatch);
+    const req = (sub: string, roles: string[]) => ({ user: { sub, roles } }) as never;
+    expect(await status(ctl.updateDispatch(id, req('op-2', ['OPERATOR']), { note: 'x' }))).toBe(403);
+    expect(await status(ctl.updateDispatch(id, req('sup-1', ['SUPERVISOR']), { note: 'x' }))).toBe(200);
+    expect(await status(ctl.updateDispatch(id, req('adm-1', ['ADMIN', 'SUPERVISOR']), { note: 'y' }))).toBe(200);
+    expect(await status(ctl.updateDispatch(id, req(OP, ['OPERATOR']), { note: 'z' }))).toBe(200);
+    const actors = (await dispatch.get(id))!.timeline.map((t) => t.actorKind);
+    expect(actors).toEqual(expect.arrayContaining(['SUPERVISOR', 'ADMIN', 'OPERATOR']));
   });
 
   it('112 aranmadan acil kapanış: süreç yok, aileye 112 bildirimi yok, amire O-CLOSE-NO-112 (bulgu)', async () => {

@@ -18,6 +18,7 @@ import { DB, type Db } from '../../db/client';
 import { device } from '../../db/schema';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
+import type { SignalRejectReason } from '../signal/signal-reject';
 import { type DevicePrincipal, EnrollmentService, type TokenResponse } from './enrollment.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -52,7 +53,8 @@ const setupKey = (deviceId: string) => `device:setup:${deviceId}`;
  * Telefon ↔ saat bağı (B-03) ve kurulum ilerlemesi (B-02, T-042):
  * - Telefon, eşleşik saatini aynı kişiye kaydeder (`POST /devices/{telefon}/companions`); saatte kod yazılmaz.
  * - Telefon token'ı aynı kişinin etkin saat(ler)inin sinyallerini köprüleyebilir (saat cihaz kimliğiyle; adaptör
- *   WEAROS_WATCH). Başka kişi, iptal edilmiş saat veya telefon olmayan token → 403, hiçbir şey yazılmaz.
+ *   WEAROS_WATCH). Başka kişi, iptal edilmiş saat veya telefon olmayan token → o sinyal reddedilir (yazılmaz);
+ *   partinin geri kalanı yazılır. Partide kabul edilebilir sinyal yoksa 403.
  * - Kurulum durumu Redis'te (kalıcı şema gerekmez; aile ekranı için anlık görüntü). Kurulum eksik izinle bittiyse
  *   aileye F-PERM (gün başına aynı eksik kümesi için bir kez).
  * Log'da kişi/cihaz kimliği, token yok.
@@ -133,35 +135,43 @@ export class CompanionService {
   // MARK: Köprü yetkisi
 
   /**
-   * Token'lı partinin izni (signal.controller): her sinyal token'ın kişisine ait olmalı; deviceId token'ın cihazı
-   * değilse token telefon olmalı ve cihaz aynı kişinin etkin saati olmalı. Değilse tüm parti 403.
+   * Token'lı partinin izni (signal.controller), sinyal başına: her sinyal token'ın kişisine ait olmalı; deviceId
+   * token'ın cihazı değilse token telefon olmalı ve cihaz aynı kişinin etkin saati olmalı. Uymayan sinyalin sırası
+   * nedeniyle döner; SignalService yalnız onu reddeder (D-01: telefonun SOS'u, aynı partideki az önce iptal edilmiş
+   * saatin HEARTBEAT'i yüzünden kaybolmaz). Partide kabul edilebilir sinyal kalmazsa SignalService 403 döner.
+   * Reddedilen sinyal hiç yazılmaz; kabul edilenler zaten token'ın yetkisinde — sinyal başına ret yetki açmaz.
    */
-  async assertBatchAllowed(p: DevicePrincipal | undefined, batch: unknown): Promise<void> {
-    if (!p || !Array.isArray(batch)) return;
-    const foreign = new Set<string>();
-    for (const s of batch as { deviceId?: unknown; protectedPersonId?: unknown }[]) {
-      if (s?.protectedPersonId !== p.protectedPersonId)
-        throw new ForbiddenException('Sinyal token sahibi cihaza ait değil');
-      if (s.deviceId === p.deviceId) continue;
-      if (typeof s.deviceId !== 'string' || !UUID.test(s.deviceId) || s.deviceId !== s.deviceId.toLowerCase())
-        throw new ForbiddenException('Sinyal token sahibi cihaza ait değil');
-      foreign.add(s.deviceId);
-    }
-    if (!foreign.size) return;
-    if (!PHONE_KINDS.includes(p.kind)) throw new ForbiddenException('Sinyal token sahibi cihaza ait değil');
-    const ids = [...foreign];
+  async authorizeBatch(p: DevicePrincipal | undefined, batch: unknown): Promise<Map<number, SignalRejectReason>> {
+    const denied = new Map<number, SignalRejectReason>();
+    if (!p || !Array.isArray(batch)) return denied;
+    const bridged = new Map<number, string>();
+    (batch as ({ deviceId?: unknown; protectedPersonId?: unknown } | null)[]).forEach((s, i) => {
+      if (s?.protectedPersonId !== p.protectedPersonId) denied.set(i, 'PERSON_MISMATCH');
+      else if (s.deviceId === p.deviceId) return;
+      else if (
+        !PHONE_KINDS.includes(p.kind) ||
+        typeof s.deviceId !== 'string' ||
+        !UUID.test(s.deviceId) ||
+        s.deviceId !== s.deviceId.toLowerCase()
+      )
+        denied.set(i, 'DEVICE_MISMATCH');
+      else bridged.set(i, s.deviceId);
+    });
+    if (!bridged.size) return denied;
     const rows = await this.db
-      .select({ id: device.id })
+      .select({ id: sql<string>`${device.id}::text` })
       .from(device)
       .where(
         and(
-          inArray(sql`${device.id}::text`, ids),
+          inArray(sql`${device.id}::text`, [...new Set(bridged.values())]),
           eq(device.protectedPersonId, p.protectedPersonId),
           eq(device.kind, 'WEAROS_WATCH'),
           isNull(device.revokedAt),
         ),
       );
-    if (rows.length !== ids.length) throw new ForbiddenException('Köprülenen cihaz bu kişinin etkin saati değil');
+    const active = new Set(rows.map((r) => r.id));
+    for (const [i, id] of bridged) if (!active.has(id)) denied.set(i, 'DEVICE_NOT_BRIDGED');
+    return denied;
   }
 
   // MARK: Kurulum durumu

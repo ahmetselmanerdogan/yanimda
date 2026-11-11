@@ -6,12 +6,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleDestroy,
+  type OnModuleInit,
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { type ChainStep, TOPICS } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { OutboxBus } from '../../common/outbox';
@@ -72,6 +74,39 @@ const RANK: Record<CallStatus, number> = {
   canceled: 3,
 };
 const ACTIVE: CallStatus[] = ['queued', 'ringing', 'in-progress'];
+
+const int = (v: string | undefined, d: number) =>
+  v !== undefined && v !== '' && Number.isFinite(+v) && +v > 0 ? +v : d;
+
+/**
+ * Asılı arama eşikleri (denetim bulgusu): satır `queued` yazılıp süreç arama öncesi öldüyse ya da sağlayıcının durum
+ * webhook'ları hiç gelmediyse satır sonsuza dek "aktif" kalıyordu — "Ara" yeniden aramıyor, operatör gelen SOS
+ * aramalarında meşgul sayılıyordu. `queued`/`ringing` son durum değişiminden `CALL_SETUP_STALE_SEC` (120) sonra,
+ * `in-progress` başlangıçtan `CALL_MAX_DURATION_SEC` (7200) sonra bitmiş sayılır (tarama `failed`/`stale` yazar).
+ */
+export interface CallStaleness {
+  setupSec: number;
+  maxSec: number;
+}
+export function callStalenessFromEnv(env: NodeJS.ProcessEnv = process.env): CallStaleness {
+  return { setupSec: int(env.CALL_SETUP_STALE_SEC, 120), maxSec: int(env.CALL_MAX_DURATION_SEC, 7200) };
+}
+export function isStaleCall(
+  r: { status: string; createdAt: Date; updatedAt: Date },
+  now: Date,
+  s: CallStaleness,
+): boolean {
+  if (r.status === 'queued' || r.status === 'ringing') return now.getTime() - r.updatedAt.getTime() > s.setupSec * 1000;
+  if (r.status === 'in-progress') return now.getTime() - r.createdAt.getTime() > s.maxSec * 1000;
+  return false;
+}
+/** Ham SQL (takma ad `c` = telephony.call): aktif ve asılı olmayan arama. Gelen arama "meşgul" denetimi kullanır. */
+export function liveCallSql(now: Date, s: CallStaleness): SQL {
+  const setup = new Date(now.getTime() - s.setupSec * 1000).toISOString();
+  const max = new Date(now.getTime() - s.maxSec * 1000).toISOString();
+  return sql`((c.status IN ('queued', 'ringing') AND c.updated_at >= ${setup}::timestamptz)
+    OR (c.status = 'in-progress' AND c.created_at >= ${max}::timestamptz))`;
+}
 /** Adım hedefi → rehber rolü. 112 (EMERGENCY) masa sabit hattından elle (T-052); aile bildirimi arama değil. */
 const ROLE_OF: Partial<Record<ChainStep['target'], ContactRole>> = {
   WATCH: 'WATCH',
@@ -125,8 +160,9 @@ export function suggestionFor(status: CallStatus, answered: boolean): SuggestedR
  * Numara yalnız arama anında okunur; log'a, audit'e ve call satırına yazılmaz.
  */
 @Injectable()
-export class TelephonyService {
+export class TelephonyService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Telephony');
+  private timer?: NodeJS.Timeout;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -138,6 +174,58 @@ export class TelephonyService {
 
   get enabled() {
     return !!this.provider;
+  }
+
+  get staleness(): CallStaleness {
+    return callStalenessFromEnv(this.env);
+  }
+
+  onModuleInit() {
+    const every = Number(this.env.CALL_SWEEP_MS ?? 60_000);
+    if (!this.provider || !(every > 0)) return;
+    this.timer = setInterval(
+      () => void this.sweepStale().catch((e) => this.log.warn(`Asılı arama taraması: ${safeError(e)}`)),
+      every,
+    );
+    this.timer.unref();
+  }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Asılı aramaları (bkz. CallStaleness) `failed` + error `stale` olarak kapatır; öneri yok (operatör sonucu kendisi
+   * girer), audit `telephony.call.stale`, konsola `event.updated`. Geç gelen webhook son durumu geri almaz.
+   */
+  async sweepStale(now = new Date()): Promise<number> {
+    const s = this.staleness;
+    const setup = new Date(now.getTime() - s.setupSec * 1000);
+    const max = new Date(now.getTime() - s.maxSec * 1000);
+    const rows = await this.db
+      .select({ id: call.id })
+      .from(call)
+      .where(
+        or(
+          and(inArray(call.status, ['queued', 'ringing']), lt(call.updatedAt, setup)),
+          and(eq(call.status, 'in-progress'), lt(call.createdAt, max)),
+        ),
+      );
+    let n = 0;
+    for (const { id } of rows) {
+      let marked = false;
+      await this.update(
+        id,
+        (r) => {
+          if (!isStaleCall(r, now, s)) return r;
+          marked = true;
+          return { ...r, status: 'failed', suggestedResult: null, error: 'stale' };
+        },
+        (r) => ({ action: 'telephony.call.stale', data: { callId: r.id, from: r.status } }),
+      );
+      if (marked) n++;
+    }
+    if (n) this.log.warn(`${n} asılı arama kapatıldı (webhook gelmedi veya arama başlatılamadı)`);
+    return n;
   }
 
   /** Webhook kök adresi (sağlayıcının erişebildiği, imzada kullanılan). */
@@ -362,7 +450,21 @@ export class TelephonyService {
       .where(and(eq(call.eventId, p.eventId), eq(call.stepN, p.step.n)))
       .orderBy(desc(call.createdAt))
       .limit(1);
-    if (last && ACTIVE.includes(last.status as CallStatus)) return { callId: last.id, fresh: false };
+    if (last && ACTIVE.includes(last.status as CallStatus)) {
+      if (!isStaleCall(last, new Date(), this.staleness)) return { callId: last.id, fresh: false };
+      // Asılı satır (arama öncesi çökme / webhook gelmedi): kapatılır, yeniden aranır.
+      await tx
+        .update(call)
+        .set({ status: 'failed', suggestedResult: null, held: false, error: 'stale', updatedAt: new Date() })
+        .where(eq(call.id, last.id));
+      await tx.insert(auditLog).values({
+        actorKind: 'SYSTEM',
+        action: 'telephony.call.stale',
+        entityType: 'event',
+        entityId: p.eventId,
+        data: { callId: last.id, from: last.status },
+      });
+    }
     const id = uuidv7();
     await tx.insert(call).values({
       id,
@@ -469,7 +571,11 @@ export class TelephonyService {
     return EMPTY_TWIML;
   }
 
-  private async update(callId: string, fn: (r: typeof call.$inferSelect) => typeof call.$inferSelect): Promise<void> {
+  private async update(
+    callId: string,
+    fn: (r: typeof call.$inferSelect) => typeof call.$inferSelect,
+    extraAudit?: (r: typeof call.$inferSelect) => { action: string; data: Record<string, unknown> },
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
       const [r] = await tx.select().from(call).where(eq(call.id, callId)).for('update');
       if (!r) return;
@@ -496,6 +602,12 @@ export class TelephonyService {
           entityId: r.eventId,
           data: { callId, status: n.status, suggested: n.suggestedResult },
         });
+      if (extraAudit) {
+        const a = extraAudit(r);
+        await tx
+          .insert(auditLog)
+          .values({ actorKind: 'SYSTEM', action: a.action, entityType: 'event', entityId: r.eventId, data: a.data });
+      }
       await this.outbox.publish(
         TOPICS.eventUpdated,
         {
