@@ -82,15 +82,26 @@ describe('prosedür şablonu', () => {
     buildSteps(ruleFor(pack, type)!, test, proc).map((s) => (s.contactIndex ? `${s.kind}:${s.contactIndex}` : s.kind));
 
   it.each([
-    // T-087 (docs/07 S5.2, S5.4): sesli cihaz → telefon → en iyi cihaza yeniden → yakınlar → anahtar sahibi → 112
+    // T-087 (docs/07 S5.2, S5.4): 1. / 2. sesli cihaz → telefon → en iyi cihaza yeniden → yakınlar → anahtar sahibi →
+    // 112 (2. sesli cihaz adımı kişinin ikinci sesli cihazı yoksa üstlenmede plandan çıkar)
     [
       'SOS',
-      ['CALL_WATCH', 'CALL_PHONE', 'CALL_REDIAL', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_KEY_HOLDER', 'CALL_112'],
+      [
+        'CALL_WATCH',
+        'CALL_VOICE_2:2',
+        'CALL_PHONE',
+        'CALL_REDIAL',
+        'CALL_CONTACT:1',
+        'CALL_CONTACT:2',
+        'CALL_KEY_HOLDER',
+        'CALL_112',
+      ],
     ],
     [
       'FALL',
       [
         'CALL_WATCH',
+        'CALL_VOICE_2:2',
         'CALL_PHONE',
         'CALL_REDIAL',
         'CALL_CONTACT:1',
@@ -111,6 +122,8 @@ describe('prosedür şablonu', () => {
     ['CALLBACK', ['CALL_PHONE']],
     ['TEST', ['CALL_WATCH', 'CALL_PHONE']],
     ['FOLLOW_UP', ['CALL_PHONE', 'CALL_CONTACT:1']],
+    // T-087 (S5.4) yerinde kontrol: telefon → yakınlar → anahtar sahibi ziyareti; 112 yalnız operatör kararıyla
+    ['WELFARE_CHECK', ['CALL_PHONE', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_KEY_HOLDER']],
   ] as const)('%s: adım sayısı ve sırası', (type, expected) => {
     expect(kinds(type)).toEqual(expected);
   });
@@ -118,17 +131,27 @@ describe('prosedür şablonu', () => {
   it('kural paketindeki her tip için şablon var; süreler pakette, etiket/metin katalogda', () => {
     for (const r of pack.rules) expect(buildSteps(r, false, proc).length).toBe(r.chain.length);
     const fall = buildSteps(ruleFor(pack, 'FALL')!, false, proc);
-    expect(fall.map((s) => s.timeoutSec)).toEqual([20, 20, 15, 25, 25, 25, 25, 0]);
+    expect(fall.map((s) => s.timeoutSec)).toEqual([20, 20, 20, 15, 25, 25, 25, 25, 0]);
     expect(fall[0]).toMatchObject({ n: 1, label: 'O-STEP-WATCH', script: 'O-SCRIPT-ELDER', target: 'WATCH' });
-    expect(fall[2]).toMatchObject({ n: 3, kind: 'CALL_REDIAL', target: 'VOICE_DEVICE', label: 'O-STEP-REDIAL' });
-    expect(fall[3]).toMatchObject({ n: 4, contactIndex: 1, label: 'O-STEP-CONTACT' });
-    expect(fall[5]).toMatchObject({ kind: 'CALL_KEY_HOLDER', target: 'KEY_HOLDER', required: false });
-    expect(fall[6]).toMatchObject({ kind: 'CALL_NEIGHBOR', required: false });
+    expect(fall[1]).toMatchObject({ n: 2, kind: 'CALL_VOICE_2', target: 'WATCH', contactIndex: 2, required: false });
+    expect(fall[3]).toMatchObject({ n: 4, kind: 'CALL_REDIAL', target: 'VOICE_DEVICE', label: 'O-STEP-REDIAL' });
+    expect(fall[4]).toMatchObject({ n: 5, contactIndex: 1, label: 'O-STEP-CONTACT' });
+    expect(fall[6]).toMatchObject({ kind: 'CALL_KEY_HOLDER', target: 'KEY_HOLDER', required: false });
+    expect(fall[7]).toMatchObject({ kind: 'CALL_NEIGHBOR', required: false });
+    // Yerinde kontrolde kural metni kişi / yakın adımlarında; anahtar sahibi kendi metnini ("gidip bakar mısınız") korur.
+    const welfare = buildSteps(ruleFor(pack, 'WELFARE_CHECK')!, false, proc);
+    expect(welfare.map((s) => s.script)).toEqual([
+      'O-SCRIPT-WELFARE',
+      'O-SCRIPT-WELFARE',
+      'O-SCRIPT-WELFARE',
+      'O-SCRIPT-KEY-HOLDER',
+    ]);
   });
 
   it('test olayında 112 yok', () => {
     expect(kinds('SOS', true)).toEqual([
       'CALL_WATCH',
+      'CALL_VOICE_2:2',
       'CALL_PHONE',
       'CALL_REDIAL',
       'CALL_CONTACT:1',

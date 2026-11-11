@@ -609,7 +609,7 @@ export async function deviceSummaries(
           SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
                  coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.voice_order, d.last_seen_at,
                  d.battery_pct, d.charging, d.charging_since, d.on_wrist, d.connectivity, m.capabilities,
-                 m.battery_life_h
+                 m.battery_life_h, right(d.voice_number, 2) AS voice_last2
           FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
           WHERE d.protected_person_id = ${personId}::uuid AND d.revoked_at IS NULL AND d.retired_at IS NULL
           ORDER BY d.created_at, d.id`)) as unknown as { rows: DeviceRow[] }
@@ -652,6 +652,7 @@ export async function deviceSummaries(
         estimatedHoursLeft: estimatedHoursLeft(f),
         voiceOrder: null as number | null,
         voiceOrderManual: false as boolean,
+        voiceNumberLast2: r?.voice_last2 ?? null,
       } satisfies DeviceSummary,
     };
   });
@@ -692,6 +693,8 @@ interface DeviceRow {
   connectivity: string | null;
   capabilities: Record<string, { available?: boolean }> | null;
   battery_life_h: number | null;
+  /** Cihaza özel numaranın son iki hanesi (numaranın kendisi okunmaz). */
+  voice_last2: string | null;
 }
 
 const planWindowOf = (p: typeof chargingPlan.$inferSelect): PlanWindow => ({

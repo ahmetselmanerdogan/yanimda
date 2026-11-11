@@ -18,6 +18,7 @@ export const SKIP = {
   away: 'O-SKIP-AWAY',
   impaired: 'O-SKIP-IMPAIRED',
   noKeyHolder: 'O-SKIP-NO-KEY-HOLDER',
+  noSecondVoice: 'O-SKIP-NO-VOICE-2',
 } as const;
 
 /**
@@ -64,6 +65,16 @@ export interface AutoSkip {
   reason: string;
 }
 
+/**
+ * S5.2 sesli giyilebilirler (saat, sesli kolye) sesli arama sırasında (S1.8). Saat adımı `contactIndex` ile kaçıncı
+ * sesli giyilebilirin arandığını taşır: CALL_WATCH 1. sesli cihaz, CALL_VOICE_2:2 ikincisi.
+ */
+export const voiceWearables = (devices: DeviceSummary[]) =>
+  devices.filter((d) => voiceTargetOf(d) === 'WATCH').sort((a, b) => a.voiceOrder! - b.voiceOrder!);
+/** Saat adımının sırası (0: 1. sesli cihaz). */
+export const wearableIndex = (step: Pick<ChainStep, 'target' | 'contactIndex'>) =>
+  step.target === 'WATCH' ? Math.max(0, (step.contactIndex ?? 1) - 1) : 0;
+
 const devicesFor = (target: StepTarget, devices: DeviceSummary[]) =>
   devices.filter((d) => {
     const v = voiceTargetOf(d);
@@ -86,6 +97,15 @@ export function autoSkip(step: ChainStep, done: ChainStep[], ctx: LadderContext)
   if (!isDeviceStep(step)) return null;
   if (ctx.impaired && done.some((s) => isDeviceStep(s) && s.result && s.result !== 'OFFLINE_SKIPPED'))
     return { result: 'SKIPPED', reason: SKIP.impaired };
+  const i = wearableIndex(step);
+  if (i > 0) {
+    // S5.2 2. sesli cihaz: yoksa (sonradan kaldırıldı) atlanır; varsa ama çevrimiçi ikinci sesli giyilebilir yoksa
+    // "çevrimdışı — atlandı" (1. adım çevrimiçi olanı aradı).
+    const wearables = voiceWearables(ctx.devices);
+    if (wearables.length <= i) return { result: 'SKIPPED', reason: SKIP.noSecondVoice };
+    if (wearables.filter((d) => d.online).length <= i) return { result: 'OFFLINE_SKIPPED', reason: SKIP.offline };
+    return null;
+  }
   const own = devicesFor(step.target, ctx.devices);
   if (own.length && !own.some((d) => d.online)) return { result: 'OFFLINE_SKIPPED', reason: SKIP.offline };
   return null;
@@ -102,6 +122,46 @@ export function bestVoiceTarget(ctx: LadderContext, preferDeviceId?: string | nu
   if (preferred) return voiceTargetOf(preferred)!;
   online.sort((a, b) => Number(a.charging) - Number(b.charging) || a.voiceOrder! - b.voiceOrder!);
   return online[0] ? voiceTargetOf(online[0])! : undefined;
+}
+
+/**
+ * S5.2 adımın arayacağı cihaz (kendi numarası varsa ondan aranır; yoksa rehberdeki rol numarası):
+ *  - saat adımı: çevrimiçi sesli giyilebilirlerden sırası gelen (1. adımda doğrulayan cihaz öne alınır)
+ *  - telefon adımı: çevrimiçi telefon, yoksa bilinen telefon
+ *  - en iyi cihaza yeniden: bestVoiceTarget ile aynı seçim
+ * Bilinen cihaz yoksa undefined.
+ */
+export function deviceForStep(
+  step: Pick<ChainStep, 'target' | 'contactIndex'>,
+  ctx: Pick<LadderContext, 'devices'>,
+  preferDeviceId?: string | null,
+): DeviceSummary | undefined {
+  if (step.target === 'WATCH') {
+    const online = voiceWearables(ctx.devices).filter((d) => d.online);
+    const i = wearableIndex(step);
+    const preferred = online.find((d) => d.id === preferDeviceId);
+    const order = preferred ? [preferred, ...online.filter((d) => d !== preferred)] : online;
+    return order[i];
+  }
+  if (step.target === 'ELDER_PHONE') {
+    const phones = ctx.devices.filter((d) => voiceTargetOf(d) === 'ELDER_PHONE');
+    return phones.find((d) => d.online) ?? phones[0];
+  }
+  if (step.target !== 'VOICE_DEVICE') return undefined;
+  const online = ctx.devices.filter((d) => d.online && voiceTargetOf(d));
+  const preferred = online.find((d) => d.id === preferDeviceId);
+  if (preferred) return preferred;
+  return [...online].sort((a, b) => Number(a.charging) - Number(b.charging) || a.voiceOrder! - b.voiceOrder!)[0];
+}
+
+/**
+ * S5.2 "2. sesli cihaz (varsa)": kişinin ikinci sesli giyilebilir cihazı bilinmiyorsa (çevrimiçi / çevrimdışı) o
+ * adım plana hiç girmez. Numaralar yeniden verilir.
+ */
+export function dropMissingVoiceSteps(steps: ChainStep[], devices: DeviceSummary[]): ChainStep[] {
+  const n = voiceWearables(devices).length;
+  const kept = steps.filter((s) => wearableIndex(s) === 0 || wearableIndex(s) < n);
+  return kept.length === steps.length ? steps : kept.map((s, i) => ({ ...s, n: steps[0]!.n + i }));
 }
 
 /**

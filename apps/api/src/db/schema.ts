@@ -123,6 +123,8 @@ export const device = deviceSchema.table('device', {
   // T-086 (0030): şarj durumu (sinyal alımında yazılır).
   charging: boolean('charging').notNull().default(false),
   chargingSince: timestamptz('charging_since'),
+  /** 0033 (T-087, S5.2): cihaza özel sesli arama numarası (E.164); yalnız arama anında okunur, log'a yazılmaz. */
+  voiceNumber: text('voice_number'),
 });
 
 /** T-085 (0030) cihaz modeli kataloğu: yetenekler, pil ömrü. Kimlik bugün cihaz türüyle aynı. */
@@ -327,6 +329,8 @@ export const call = telephonySchema.table('call', {
   providerLegId: text('provider_leg_id'),
   conference: boolean('conference').notNull().default(false),
   held: boolean('held').notNull().default(false),
+  /** 0033 (T-087): cihaz numarasıyla arandıysa aranan cihaz (rehber satırı yok). */
+  deviceId: uuid('device_id'),
   parties: integer('parties').notNull().default(0),
   error: text('error'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),

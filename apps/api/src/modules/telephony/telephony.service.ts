@@ -13,13 +13,13 @@ import {
 } from '@nestjs/common';
 import { type ChainStep, TOPICS } from '@yanimda/contracts';
 import { t } from '@yanimda/messages';
-import { and, asc, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, call, contact, event, protectedPerson } from '../../db/schema';
+import { auditLog, call, contact, device, event, protectedPerson } from '../../db/schema';
 import { type ContactInput, type ContactRole, pickKeyHolder, replaceContacts } from '../profile/contacts';
 import { conferenceTwiml, type CpaasProvider, EMPTY_TWIML, sayTwiml, type WebhookUrls } from './cpaas';
 import type { RecordingStore } from './recording-store';
@@ -445,6 +445,16 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
     return c ?? null;
   }
 
+  /** T-087 (S5.2): cihaza özel sesli arama numarası (etkin cihaz); yoksa null. Log'a yazılmaz. */
+  private async deviceNumberOf(q: Pick<Db, 'select'>, deviceId: string): Promise<string | null> {
+    if (!/^[0-9a-f-]{36}$/i.test(deviceId)) return null;
+    const [d] = await q
+      .select({ n: device.voiceNumber })
+      .from(device)
+      .where(and(eq(device.id, deviceId), isNull(device.revokedAt)));
+    return d?.n ?? null;
+  }
+
   /** T-087 (S5.6): anahtarı olan, şu an ulaşılabilir, eve en çabuk varan yakın/komşu. */
   private async keyHolderFor(q: Db | Tx, personId: string) {
     const rows = await q
@@ -466,11 +476,20 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
    */
   async prepare(
     tx: Tx,
-    p: { eventId: string; personId: string; step: ChainStep; operatorId: string; voice?: 'WATCH' | 'ELDER_PHONE' },
+    p: {
+      eventId: string;
+      personId: string;
+      step: ChainStep;
+      operatorId: string;
+      voice?: 'WATCH' | 'ELDER_PHONE';
+      /** T-087 (S5.2): aranacak cihaz; kendi numarası (device.voice_number) varsa ondan aranır. */
+      deviceId?: string;
+    },
   ): Promise<{ callId: string; fresh: boolean } | null> {
     if (!this.provider) return null;
-    const c = await this.contactFor(tx, p.personId, p.step, p.voice);
-    if (!c) return null;
+    const own = p.deviceId ? await this.deviceNumberOf(tx, p.deviceId) : null;
+    const c = own ? null : await this.contactFor(tx, p.personId, p.step, p.voice);
+    if (!c && !own) return null;
     const [last] = await tx
       .select()
       .from(call)
@@ -498,7 +517,8 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
       eventId: p.eventId,
       stepN: p.step.n,
       operatorId: p.operatorId,
-      contactId: c.id,
+      contactId: c?.id ?? null,
+      deviceId: own ? p.deviceId : null,
       provider: this.provider.name,
     });
     await tx.insert(auditLog).values({
@@ -507,7 +527,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
       action: 'telephony.call.started',
       entityType: 'event',
       entityId: p.eventId,
-      data: { callId: id, step: p.step.n, role: c.role },
+      data: { callId: id, step: p.step.n, role: c?.role ?? 'DEVICE' },
     });
     return { callId: id, fresh: true };
   }
@@ -520,11 +540,15 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
     try {
       const agent = this.agentFor(row.operatorId);
       if (!agent) throw new Error('Operatör hattı tanımlı değil (CPAAS_AGENT_NUMBER)');
-      const [c] = row.contactId ? await this.db.select().from(contact).where(eq(contact.id, row.contactId)) : [];
-      if (!c) throw new Error('Numara bulunamadı');
+      const to = row.deviceId
+        ? await this.deviceNumberOf(this.db, row.deviceId)
+        : row.contactId
+          ? ((await this.db.select().from(contact).where(eq(contact.id, row.contactId)))[0]?.phoneE164 ?? null)
+          : null;
+      if (!to) throw new Error('Numara bulunamadı');
       const { providerCallId } = await this.provider.call({
         callId,
-        to: c.phoneE164,
+        to,
         agent,
         timeoutSec,
         urls: this.urls(callId),

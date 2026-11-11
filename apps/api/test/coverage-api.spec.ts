@@ -128,6 +128,7 @@ describe('GET devices / coverage', () => {
         estimatedHoursLeft: 20,
         voiceOrder: 1,
         voiceOrderManual: false,
+        voiceNumberLast2: null,
       },
       expect.objectContaining({
         id: PHONE,
@@ -193,6 +194,25 @@ describe('PATCH / DELETE device', () => {
     expect(
       await status(devices.patch(PHONE, { nickname: 'x' }, req({ kind: 'DEVICE', personId: PERSON, deviceId: PHONE }))),
     ).toBe(403);
+  });
+
+  it('T-087 (S5.2) cihaza özel sesli arama numarası: yalnız operasyon, E.164; kartta ve denetimde numara yok', async () => {
+    const s = await devices.patch(WATCH, { voiceNumber: '+905550001234' }, req(OP));
+    expect(s.voiceNumberLast2).toBe('34');
+    expect(JSON.stringify(s)).not.toContain('5550001234');
+    const [row] = await h.rows<{ voice_number: string }>('SELECT voice_number FROM device.device WHERE id = $1', [
+      WATCH,
+    ]);
+    expect(row!.voice_number).toBe('+905550001234');
+    const audits = await h.rows<{ data: unknown }>(
+      "SELECT data FROM audit.log WHERE action = 'device.updated' AND entity_id = $1",
+      [WATCH],
+    );
+    expect(audits.at(-1)!.data).toEqual({ fields: ['voiceNumber'] });
+    expect(JSON.stringify(audits)).not.toContain('5550001234');
+    expect(await status(devices.patch(WATCH, { voiceNumber: '+905550001234' }, req(ALICE)))).toBe(403);
+    expect(await status(devices.patch(WATCH, { voiceNumber: '05550001234' }, req(OP)))).toBe(400);
+    expect((await devices.patch(WATCH, { voiceNumber: null }, req(SUP))).voiceNumberLast2).toBeNull();
   });
 
   it('kayıp/çalıntı: token iptal (401), cihaz emekli, kapsama hemen yeniden hesaplanır', async () => {

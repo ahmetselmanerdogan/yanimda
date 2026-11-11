@@ -30,9 +30,10 @@ import { type CallView, TelephonyService } from '../telephony/telephony.service'
 import { ChainRepository, currentStep, type Run, view } from './chain.repository';
 import {
   autoSkip,
-  bestVoiceTarget,
   call112Deadline,
+  deviceForStep,
   distanceM,
+  dropMissingVoiceSteps,
   isDeviceStep,
   type LadderContext,
   orderForCorroboration,
@@ -161,17 +162,22 @@ export class ChainService {
           await this.repo.updateStep(c.tx, run.id, step);
         }
         if (c.ev.state === 'OPERATOR_ASSIGNED') c.transition('CONTACT_CHAIN');
-        // T-087: "en iyi cihaza yeniden" — doğrulayan veya sesli arama sırasında ilk çevrimiçi sesli cihaz.
-        const voice =
-          step.target === 'VOICE_DEVICE' && this.telephony?.enabled
-            ? bestVoiceTarget(await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
+        // T-087 (S5.2): sesli cihaz adımı sırası gelen cihazı kendi numarasından arar (1. / 2. sesli cihaz, telefon);
+        // "en iyi cihaza yeniden" doğrulayan veya sesli arama sırasında ilk çevrimiçi sesli cihaz. Cihazın numarası
+        // yoksa rehberdeki rol numarası (saat / telefon; rehberde tek saat numarası olduğundan 2. cihaz kendi
+        // numarası olmadan CPaaS'la aranmaz).
+        const dev =
+          isDeviceStep(step) && this.telephony?.enabled
+            ? deviceForStep(step, await this.ladderContext(c.tx, c.ev, c.now), corroboratorOf(c.ev))
             : undefined;
+        const voice = step.target === 'VOICE_DEVICE' && dev ? (voiceTargetOf(dev) ?? undefined) : undefined;
         const p = await this.telephony?.prepare(c.tx, {
           eventId: c.ev.id,
           personId: c.ev.protectedPersonId,
           step,
           operatorId,
           ...(voice ? { voice } : {}),
+          ...(dev ? { deviceId: dev.id } : {}),
         });
         if (p) plan = { ...p, timeoutSec: step.timeoutSec };
         return this.result(c, run);
@@ -458,14 +464,14 @@ export class ChainService {
   private async plan(c: OperatorCtx): Promise<ChainStep[]> {
     if (!c.rule) return [];
     const { autoAnswerSec } = ladderOf(this.rules.current());
-    let steps = buildSteps(c.rule, c.ev.isTest, this.proc);
+    const devices = await deviceSummaries(c.tx, this.rules.current(), c.ev.protectedPersonId, c.now);
+    // S5.2: "2. sesli cihaz" yalnız kişinin ikinci sesli giyilebilir cihazı varsa.
+    let steps = dropMissingVoiceSteps(buildSteps(c.rule, c.ev.isTest, this.proc), devices);
     if (c.rule.priority === 1 && autoAnswerSec > 0)
       steps = steps.map((s) => (isDeviceStep(s) ? { ...s, autoAnswerSec } : s));
     const by = corroboratorOf(c.ev);
     if (by) {
-      const d = (await deviceSummaries(c.tx, this.rules.current(), c.ev.protectedPersonId, c.now)).find(
-        (x) => x.id === by,
-      );
+      const d = devices.find((x) => x.id === by);
       steps = orderForCorroboration(steps, d ? voiceTargetOf(d) : null);
     }
     return steps;

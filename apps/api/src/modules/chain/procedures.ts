@@ -34,6 +34,12 @@ export function buildSteps(rule: Rule, isTest: boolean, proc: ProcedurePack): Ch
   return procedureFor(rule, isTest).map((entry, i) => stepOf(entry, i + 1, rule, proc));
 }
 
+/**
+ * Kuralın operatör metni (operatorScript) kişi / yakın adımlarının metninin yerine geçer; 112 ve anahtar sahibi
+ * ("gidip bakar mısınız", T-087) kendi metnini korur.
+ */
+const OWN_SCRIPT = new Set<StepTarget>(['EMERGENCY', 'KEY_HOLDER']);
+
 export function stepOf(entry: string, n: number, rule: Rule | undefined, proc: ProcedurePack): ChainStep {
   const [kind, idx] = entry.split(':') as [string, string | undefined];
   const k = proc.steps[kind];
@@ -45,7 +51,7 @@ export function stepOf(entry: string, n: number, rule: Rule | undefined, proc: P
     ...(idx ? { contactIndex: Number(idx) } : {}),
     label: k.label,
     ...(k.script
-      ? { script: k.script && rule?.operatorScript && k.target !== 'EMERGENCY' ? rule.operatorScript : k.script }
+      ? { script: k.script && rule?.operatorScript && !OWN_SCRIPT.has(k.target) ? rule.operatorScript : k.script }
       : {}),
     timeoutSec: rule?.stepTimeoutSec?.[kind] ?? k.defaultTimeoutSec,
     required: k.required,
