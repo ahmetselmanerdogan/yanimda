@@ -1472,8 +1472,11 @@ paths:
         403 (komut operatör kimliğiyle denetime yazılır: `device.command`). RING, PROMPT ve LOCATE yalnız kişinin açık
         olayı varken (yoksa 409); push o olayın kimliğini taşır. `eventId` verilirse açık olayla aynı olmalı (409).
         TEST her zaman. PROMPT: olay türünün cihaz sorusu (metin, süre; düşmede W-FALL-1 60 sn), yoksa kural paketi
-        `ladder.operatorPrompt` (W-INACT-1, 60 sn); operatör sorusu sessiz değildir. Push biçimi `DevicePush`.
-        `sent: false`: cihaz bu komutu desteklemiyor (ör. konumu yok). Erişimi olmayan / kaldırılmış cihaz 404.
+        `ladder.operatorPrompt` (W-OP-PROMPT, telefonda P-OP-PROMPT, 60 sn); operatör sorusu sessiz değildir. Push biçimi `DevicePush`.
+        `sent` gerçek teslimdir: cihazın kendi token'ı yoksa (Wear OS saat) komut köprü telefona aktarılır
+        (`outcome: relayed`); hiçbir yol yoksa veya sağlayıcı reddederse `sent: false` ve nedeni `outcome`'da.
+        Cihazın cevabı: TEST → `TEST` sinyali `payload.trigger: OPERATOR`; LOCATE → `LOCATION` sinyali
+        `payload {trigger: LOCATE, eventId}` (bkz. `DevicePush`). Erişimi olmayan / kaldırılmış cihaz 404.
       operationId: deviceCommand
       security: [{ operatorToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -1495,11 +1498,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [type, eventId, sent]
+                required: [type, eventId, sent, outcome]
                 properties:
                   type: { enum: [RING, PROMPT, LOCATE, TEST] }
                   eventId: { type: [string, 'null'], format: uuid }
-                  sent: { type: boolean }
+                  sent:
+                    type: boolean
+                    description: Cihaza ulaştı (doğrudan veya köprü telefon üzerinden); false ise konsol hata gösterir
+                  outcome:
+                    enum: [sent, relayed, unsupported, no-token, unconfigured, invalid-token, retry, error]
+                    description: |
+                      relayed: saatin kendi token'ı yok, köprü telefona `forDeviceId` ile gitti. unsupported: cihaz bu
+                      komutu desteklemiyor. no-token: ne cihazın ne köprü telefonun push token'ı var. unconfigured:
+                      sağlayıcı yapılandırılmamış (geliştirme). Sonuç denetime de yazılır.
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1895,6 +1906,7 @@ paths:
                     sleepWindow,
                     devicePrompt,
                     charging,
+                    lastTestAt,
                     messages,
                     subscription,
                   ]
@@ -1924,6 +1936,10 @@ paths:
                     properties:
                       chargeDonePct: { type: integer, minimum: 1, maximum: 100 }
                       chargeDoneMin: { type: integer, minimum: 0 }
+                  lastTestAt:
+                    type: [string, 'null']
+                    format: date-time
+                    description: T-090 (S4.9) bu cihazın son TEST sinyali (aylık deneme hatırlatması); hiç yoksa null
                   subscription:
                     type: object
                     description: |
@@ -2829,27 +2845,37 @@ components:
     DevicePush:
       type: object
       description: |
-        Sunucu → cihaz push verisi (T-053, T-089, T-090). Tüm değerler string.
-        - `PROMPT` (normal öncelik): olay cihaz sorusuna (DEVICE_PROMPT) girince alarmı açan cihaz(lar)a ve yaşlının
-          telefonuna; soru süresi değişince (doğrulanmış düşme 30 sn, öğrenme modunda 2. soru) yeni `until` ile yeniden.
-          İstemci `until`'i esas alır (sunucu saati, ISO); `windowSec` gönderim anında kalan süre (eski istemciler).
-          `kind` olay türü (FALL, INACTIVITY, operatör sorusunda olayın türü); `tts` saatin W-* kodu — telefon kendi
-          metnini `kind`'den seçer (FALL → P-FALL-PROMPT, INACTIVITY → P-INACT-1). `silent` "true" ise sessiz soru.
+        Sunucu → cihaz push verisi (T-053, T-089, T-090). Tüm değerler string; FCM'de yalnız `data` (görünür bildirim
+        yok; telefonun kendi NOTICE'u hariç), APNs'te aynı alanlar yükte.
+        - `PROMPT` (FCM yüksek öncelik, APNs uyarı 10): olay cihaz sorusuna (DEVICE_PROMPT) girince alarmı açan
+          cihaz(lar)a ve yaşlının telefonuna; soru süresi değişince (doğrulanmış düşme 30 sn, öğrenme modunda 2. soru)
+          yeni `until` ile yeniden; operatörün "Soru gönder" komutuyla da. İstemci `until`'i esas alır (sunucu saati,
+          ISO); `windowSec` gönderim anında kalan süre (eski istemciler). `kind` olay türü; `tts` saatin W-* kodu,
+          `phoneTts` telefonun P-* metni (W-FALL-1 → P-FALL-PROMPT, W-INACT-1 → P-INACT-1, operatör sorusu W-OP-PROMPT
+          → P-OP-PROMPT). `silent` "true" ise sessiz soru.
+        - `RING` (FCM yüksek, APNs uyarı 10, metin P-RING) `eventId`: cihaz çalar, saat W-RING / telefon P-RING gösterir.
+        - `LOCATE` (FCM yüksek, APNs arka plan) `eventId`: cihaz taze konumla `LOCATION` sinyali gönderir,
+          `payload: {trigger: "LOCATE", eventId}`; sunucu bu cevapla açık olayın konumunu (her öncelikte) günceller.
+        - `TEST` (normal, APNs arka plan): cihaz kendini dener ve `TEST` sinyali gönderir, `payload: {trigger: "OPERATOR"}`;
+          bu cevap yeni test olayı açmaz, `GET /devices/{id}/config` `lastTestAt`'e yansır.
         - `NOTICE` (yüksek): yaşlı bildirimi `code`. W-* yalnız saat kategorisine, P-* yalnız telefona.
-          `forDeviceId` varsa bildirim o saat içindir: telefon göstermez, saate iletir (FCM'de görünür bildirim yok).
-        - `RING` (yüksek) `eventId`; `LOCATE` (yüksek) `eventId`; `TEST` (normal); `WAKE` (iOS sessiz uyandırma).
+        - `WAKE` (iOS sessiz uyandırma).
+        Kendi push token'ı olmayan saate (Wear OS: FCM yok) giden PROMPT / RING / LOCATE / TEST / NOTICE kişinin push
+        token'ı olan, en son görülen telefonuna `forDeviceId` = saat kimliğiyle gider: telefon göstermez, Data Layer'dan
+        saate iletir. Telefon soruyu zaten kendi kopyasıyla aldıysa saate ayrıca aktarılmaz (telefon iletir).
       required: [type]
       properties:
         type: { enum: [PROMPT, NOTICE, RING, LOCATE, TEST, WAKE] }
         eventId: { type: string }
         kind: { type: string, example: FALL }
         tts: { type: string, example: W-FALL-1 }
+        phoneTts: { type: string, example: P-FALL-PROMPT }
         windowSec: { type: string, example: '30' }
         until: { type: string, format: date-time }
         silent: { enum: ['true', 'false'] }
         code: { type: string, example: W-CHARGE-DONE }
         notificationId: { type: string }
-        forDeviceId: { type: string, description: NOTICE'u telefonun saate iletmesi için saat kimliği }
+        forDeviceId: { type: string, description: Mesaj bu saat içindir; telefon göstermez, saate iletir }
     DeviceSummary:
       type: object
       description: T-085 cihaz kartı (docs/07 S7.4)
