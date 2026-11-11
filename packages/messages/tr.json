@@ -398,6 +398,14 @@
     "channel": "console",
     "text": "Yanımda acil yardım servisinden arıyorum. Olay: {type}. Kişi: {name}, {age} yaşında. Adres: {address}. Hastalıklar: {conditions}. İlaçlar: {medications}. Alerjiler: {allergies}. Kapı notu: {doorNote}."
   },
+  "O-SCRIPT-112-FOLLOWUP": {
+    "channel": "console",
+    "text": "Yanımda acil yardım servisinden arıyorum. {case} numaralı ihbarımızın durumunu öğrenmek istiyoruz: {name} için {min} dakika önce ekip istemiştik. Ekip yola çıktı mı, tahmini varış ne zaman?"
+  },
+  "O-SCRIPT-WELLNESS": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Sizi her zamanki hal hatır aramamız için arıyorum. Nasılsınız, bugün kendinizi nasıl hissediyorsunuz? İlaçlarınızı aldınız mı, yemeğinizi yediniz mi? Bir ihtiyacınız ya da konuşmak istediğiniz bir şey var mı? Her zaman yanınızdayız; bir şey olursa yardım düğmesine basmanız yeterli."
+  },
   "O-RES-REACHED": {
     "channel": "console",
     "text": "Ulaşıldı"
@@ -671,6 +679,18 @@
   "O-UI-PUSH-DENIED": {
     "channel": "console",
     "text": "Bildirim izni tarayıcıda kapalı"
+  },
+  "O-UI-DISPATCH-FOLLOWUP": {
+    "channel": "console",
+    "text": "112 takip araması yapıldı"
+  },
+  "O-UI-DISPATCH-FOLLOWUPS": {
+    "channel": "console",
+    "text": "{n} takip araması"
+  },
+  "O-UI-SCRIPT-WELLNESS": {
+    "channel": "console",
+    "text": "Yanınızdayız araması"
   },
   "O-UI-ALERTS": {
     "channel": "console",

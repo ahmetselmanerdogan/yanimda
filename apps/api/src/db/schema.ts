@@ -523,6 +523,7 @@ export const dispatchUpdate = eventSchema.table('dispatch_update', {
   actorId: text('actor_id'),
   source: text('source').notNull(),
   note: text('note'),
+  followUp: boolean('follow_up').notNull().default(false),
 });
 
 /** 0023: düzenli "yanınızdayız" arama planı ve dönem satırları. */
