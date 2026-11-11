@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { EventModule } from '../event/event.module';
+import { BridgedDeviceController } from './bridged.controller';
+import { BridgedDeviceService } from './bridged.service';
 import { CompanionController } from './companion.controller';
 import { CompanionService } from './companion.service';
 import { CoverageAccess, CoverageAccessGuard, CoverageController, DeviceManageController } from './coverage.controller';
@@ -15,15 +17,22 @@ import { EnrollmentService } from './enrollment.service';
  */
 @Module({
   imports: [EventModule],
-  controllers: [EnrollmentController, CompanionController, CoverageController, DeviceManageController],
+  controllers: [
+    EnrollmentController,
+    CompanionController,
+    BridgedDeviceController,
+    CoverageController,
+    DeviceManageController,
+  ],
   providers: [
     EnrollmentService,
     CompanionService,
+    BridgedDeviceService,
     DeviceTokenGuard,
     SignalAuthGuard,
     CoverageAccessGuard,
     CoverageAccess,
   ],
-  exports: [EnrollmentService, CompanionService, DeviceTokenGuard, SignalAuthGuard],
+  exports: [EnrollmentService, CompanionService, BridgedDeviceService, DeviceTokenGuard, SignalAuthGuard],
 })
 export class EnrollmentModule {}

@@ -34,6 +34,7 @@ import { ladderOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
 import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { BridgedDeviceService } from './bridged.service';
 import { DeviceService } from './device.service';
 import type { PromptRequest } from './device.types';
 import { EnrollmentService } from './enrollment.service';
@@ -201,6 +202,7 @@ export class DeviceManageController {
     @Inject(CoverageAccess) private readonly access: CoverageAccess,
     @Optional() @Inject(DeviceService) devices?: DeviceService,
     @Optional() @Inject(RULES) rules?: RulesProvider,
+    @Optional() @Inject(BridgedDeviceService) private readonly bridged?: Pick<BridgedDeviceService, 'revokeBridgedOf'>,
   ) {
     this.devices = devices ?? new DeviceService(db);
     this.rules = rules ?? staticRules(loadRulePack());
@@ -250,6 +252,11 @@ export class DeviceManageController {
       data: null,
     });
     await this.protection.coverage.removeDevice(protectedPersonId, id.toLowerCase());
+    // T-092 (S4.8): kaldırılan telefona bağlı BLE cihazlar da kaldırılır (köprü yoksa koruma yok).
+    await this.bridged?.revokeBridgedOf(id.toLowerCase(), {
+      kind: actorKindOf(actorOf(req)),
+      id: subOf(actorOf(req)),
+    });
     this.log.log('Cihaz kaldırıldı; kapsama yeniden hesaplandı');
   }
 

@@ -77,6 +77,7 @@ export const DEFAULT_CAPS: Record<DeviceCategory, CoverageCapabilities> = {
   EARRING: caps(false, false, false, false),
   HOME_UNIT: caps(false, false, true, false),
   CLOUD: caps(false, false, false, false),
+  SENSOR: caps(false, false, false, false), // T-092: BLE nabız / oksimetre / termometre (yalnız değer)
 };
 export const DEFAULT_TIER: Record<DeviceCategory, DeviceTier> = {
   WATCH: 'A',
@@ -87,6 +88,7 @@ export const DEFAULT_TIER: Record<DeviceCategory, DeviceTier> = {
   EARRING: 'C',
   HOME_UNIT: 'A',
   CLOUD: 'C',
+  SENSOR: 'B',
 };
 
 export function profileOf(

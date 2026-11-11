@@ -6,6 +6,7 @@ import { DB, type Db } from '../../db/client';
 import { device, deviceModel } from '../../db/schema';
 import { AdapterRegistry } from './adapter.registry';
 import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
+import { BleBridgedAdapter, BRIDGED_MODELS } from './adapters/ble-bridged.adapter';
 import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
@@ -27,6 +28,7 @@ export function defaultRegistry(push: PushPort = new RecordingPush()): AdapterRe
     new AndroidPhoneAdapter(push),
     new IosPhoneAdapter(push),
     new SimulatorAdapter(),
+    ...BRIDGED_MODELS.map((m) => new BleBridgedAdapter(m)), // T-092 telefon köprüsü
   ]);
 }
 

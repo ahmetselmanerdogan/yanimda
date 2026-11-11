@@ -81,6 +81,8 @@ export const ALL_SIGNAL_KINDS: Signal['kind'][] = [
   'TEST',
   'CHARGE_START',
   'CHARGE_END',
+  'SPO2', // T-092 (S6.2): yalnız kayıt; değer kuralları bayrakla kapalı
+  'SKIN_TEMP_DEVIATION',
 ];
 
 export function assertSupported(adapter: DeviceAdapter, s: Signal) {
