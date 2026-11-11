@@ -3071,6 +3071,15 @@
     "channel": "watch",
     "text": "Pil akşama yetmeyebilir. Şimdi şarja takın."
   },
+  "W-CHARGING": {
+    "channel": "watch",
+    "text": "Şarj oluyor. Telefonunuz yanınızda olsun."
+  },
+  "W-TEST-MONTHLY": {
+    "channel": "watch",
+    "text": "Aylık deneme zamanı. Yardım düğmesini birlikte deneyelim mi?",
+    "action": "Dene"
+  },
   "P-CHARGE-COVER": {
     "channel": "phone",
     "text": "Saatiniz şarjda. Telefonunuzu yanınızda tutun."
@@ -3092,6 +3101,10 @@
     "text": "Saatimi şarj ediyorum",
     "action": "Şarj ediyorum"
   },
+  "P-CHARGE-INTENT-OK": {
+    "channel": "phone",
+    "text": "Tamam. Şarj hatırlatmaları {until} saatine kadar susturuldu."
+  },
   "P-COVERAGE-FULL": {
     "channel": "phone",
     "text": "Korunuyorsunuz. Düşme algılama ve yardım düğmesi açık."
@@ -3111,6 +3124,31 @@
   "P-COVERAGE-NONE": {
     "channel": "phone",
     "text": "Koruma şu an çalışmıyor. Saatinizi takın, telefonunuzu açık tutun."
+  },
+  "P-COVERAGE-BY-WATCH": {
+    "channel": "phone",
+    "text": "Saat koruyor"
+  },
+  "P-COVERAGE-BY-PENDANT": {
+    "channel": "phone",
+    "text": "Kolye koruyor"
+  },
+  "P-COVERAGE-BY-HOME_UNIT": {
+    "channel": "phone",
+    "text": "Ev ünitesi koruyor"
+  },
+  "P-COVERAGE-BY-PHONE": {
+    "channel": "phone",
+    "text": "Telefon koruyor"
+  },
+  "P-FALL-PROMPT": {
+    "channel": "phone",
+    "text": "Düşme algılandı. İyi misiniz?",
+    "action": "İyiyim"
+  },
+  "P-NET-ERROR": {
+    "channel": "phone",
+    "text": "Bağlantı kurulamadı. Biraz sonra yeniden deneyin."
   },
   "F-CHARGE-GAP": {
     "channel": "family",
