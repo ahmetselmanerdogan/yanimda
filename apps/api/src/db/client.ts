@@ -57,9 +57,16 @@ export function createPool(
   // Boştaki bağlantı koparsa (failover, ağ) pg havuzu 'error' yayar; dinleyici yoksa süreç çöker.
   // Havuz bağlantıyı atar, sonraki istek yenisini açar; istek sırasında kopan bağlantı zaten 503 olur.
   let last = 0;
-  pool.on('error', (e) => {
+  const lost = (e: unknown) => {
     if (Date.now() - last > 10_000) poolLog.warn(`Postgres bağlantısı koptu: ${safeError(e)}`);
     last = Date.now();
+  };
+  pool.on('error', lost);
+  pool.on('connect', (client) => {
+    // Havuz kendi dinleyicisini yalnız boştaki istemciye takar. Kullanımdaki istemcinin soketi kapanırsa (aşağıdaki
+    // zaman aşımı, Postgres yeniden başlatma) istemci 'error' yayar; dinleyici yoksa süreç çöker. Sorgu zaten hata
+    // alır; release'te havuz sorgulanamaz istemciyi atar.
+    client.on('error', lost);
   });
   // Okuma zaman aşımı (pg yalnız sorguyu bırakır, soket açık kalır): bağlantıyı kapat ki havuz onu atsın.
   pool.on('connect', (client) => {

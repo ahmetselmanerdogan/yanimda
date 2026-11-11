@@ -55,6 +55,7 @@ describe('Postgres havuzu', () => {
     const pool = createPool('postgres://kimse@127.0.0.1:1/yok');
     const destroy = vi.fn();
     const client = {
+      on: vi.fn(),
       connection: { stream: { destroy } },
       query: () => Promise.reject(new Error('Query read timeout')),
     };
@@ -63,11 +64,41 @@ describe('Postgres havuzu', () => {
     await new Promise((r) => setImmediate(r));
     expect(destroy).toHaveBeenCalledTimes(1);
 
-    const ok = { connection: { stream: { destroy: vi.fn() } }, query: () => Promise.reject(new Error('syntax')) };
+    const ok = {
+      on: vi.fn(),
+      connection: { stream: { destroy: vi.fn() } },
+      query: () => Promise.reject(new Error('syntax')),
+    };
     pool.emit('connect', ok);
     await expect(ok.query()).rejects.toThrow('syntax');
     expect(ok.connection.stream.destroy).not.toHaveBeenCalled(); // normal SQL hatası bağlantıyı kapatmaz
     await pool.end();
+  });
+
+  /**
+   * Kaos (Postgres 10 sn kapalı) CI'da, #51: havuzdan alınmış bağlantının sorgusu zaman aşımına düştü, soket kapatıldı,
+   * pg istemcisi 'error' yaydı. Havuz dinleyicisi yalnız boştaki istemcide olduğundan süreç çöktü (Unhandled 'error').
+   */
+  it('kullanımdaki bağlantı sorgu zaman aşımında kapanınca süreç çökmez; bağlantı havuza geri dönmez', async () => {
+    const sockets: Socket[] = [];
+    // Postgres el sıkışması: AuthenticationOk + ReadyForQuery(I); sonra sorgulara hiç yanıt yok.
+    const ready = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 0, 0x5a, 0, 0, 0, 5, 0x49]);
+    const server: Server = createServer((s) => {
+      sockets.push(s);
+      s.once('data', () => s.write(ready));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    const pool = createPool(`postgres://x@127.0.0.1:${port}/x`, { connectTimeoutMs: 2_000, queryTimeoutMs: 200 });
+    const client = await pool.connect();
+    const ended = new Promise<void>((r) => client.once('end', () => r()));
+    await expect(client.query('SELECT 1')).rejects.toThrow('Query read timeout');
+    await ended; // soket kapatıldı; dinleyici yoksa bu noktada 'error' yakalanmamış istisna olurdu
+    client.release();
+    expect(pool.totalCount).toBe(0); // ölü bağlantı havuzdan atıldı
+    await pool.end();
+    for (const s of sockets) s.destroy();
+    await new Promise<void>((r) => server.close(() => r()));
   });
 
   it('zaman aşımı hataları geçici (503)', () => {
