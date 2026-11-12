@@ -80,6 +80,15 @@ export class AdminController {
     return this.admin.analytics(Math.min(Math.max(Number(days) || 30, 1), 365));
   }
 
+  /**
+   * GET /v1/admin/coverage-metrics?days=30 — T-085 (S7.3): kişi-gün kapsama yüzdesi, model / sürüm başına yanlış
+   * alarm, sınıf / adaptör başına gecikme p95, şarj uyumu, 100 kişi-gün başına olay, model başına pil sağlığı.
+   */
+  @Get('coverage-metrics')
+  coverageMetrics(@Query('days') days?: string) {
+    return this.admin.coverageMetrics(Math.min(Math.max(Number(days) || 30, 1), 90));
+  }
+
   @Get('audit')
   @Roles('ADMIN', 'SUPERVISOR')
   audit(

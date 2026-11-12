@@ -1247,7 +1247,8 @@ button.link {
   margin-top: 4px;
 }
 .badge-voice,
-.badge-source {
+.badge-source,
+.badge-bridge {
   border-radius: 4px;
   padding: 0 6px;
   border: 1px solid var(--brand);
@@ -1277,4 +1278,36 @@ button.link {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+/* T-089 Kalan (S7.1, S7.2, S7.3): vücut konumu simgesi, amir kapsama listeleri, yönetim kapsama ölçüleri. */
+.body-icon {
+  font-size: 1.1em;
+}
+.same-address {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--brand);
+}
+.cov-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.cov-list li {
+  margin: 2px 0;
+}
+.cov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.cov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.cov-table th,
+.cov-table td {
+  text-align: left;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--line);
 }

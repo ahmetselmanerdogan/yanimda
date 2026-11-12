@@ -17,6 +17,7 @@ import { EventModule } from '../event/event.module';
 import { ProtectionService } from '../event/protection.service';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { AlertsService } from './alerts.service';
+import { CoverageBoardService } from './coverage-board.service';
 import { MetricsService } from './metrics.service';
 import { SupervisorService } from './supervisor.service';
 
@@ -32,12 +33,22 @@ export class SupervisorController {
     @Inject(SupervisorService) private readonly supervisor: SupervisorService,
     @Inject(AlertsService) private readonly alerts: AlertsService,
     @Inject(ProtectionService) private readonly protection: ProtectionService,
+    @Inject(CoverageBoardService) private readonly board: CoverageBoardService,
   ) {}
 
   /** GET /v1/supervisor/coverage — seviye başına kişi sayısı ve akşam planlı şarj (T-085, S4.11). */
   @Get('coverage')
   coverage() {
     return this.protection.coverage.supervisorSummary();
+  }
+
+  /**
+   * GET /v1/supervisor/coverage/board — T-089 (S7.2) amir kapsama panosu: uyanıkken 20 dk+ YOK, kronik boşluk,
+   * çevrimdışı telefon köprüleri, merdiven adımı başına ulaşılamama oranı, üstlenilmeyen P1 ve 112 bildirimleri.
+   */
+  @Get('coverage/board')
+  coverageBoard() {
+    return this.board.board();
   }
 
   /** GET /v1/supervisor/alerts?open=1 — kalıcı amir uyarıları (en yeni önce). */
@@ -74,8 +85,8 @@ export class SupervisorController {
 /** T-025 SLA ve metrikler (E-09, D-11), T-074 amir panosu. */
 @Module({
   imports: [EventModule],
-  providers: [MetricsService, SupervisorService, AlertsService],
+  providers: [MetricsService, SupervisorService, AlertsService, CoverageBoardService],
   controllers: [SupervisorController],
-  exports: [MetricsService, SupervisorService, AlertsService],
+  exports: [MetricsService, SupervisorService, AlertsService, CoverageBoardService],
 })
 export class MetricsModule {}

@@ -340,6 +340,12 @@ export function localMinute(at: Date, timeZone: string): number {
   const p = parts(at, timeZone);
   return Number(p.hour) * 60 + Number(p.minute);
 }
+/** Saat diliminin `at` anındaki UTC farkı (dk; İstanbul +180). Rapor döngüleri saat başına bir kez çağırır. */
+export function tzOffsetMin(at: Date, timeZone: string): number {
+  const p = parts(at, timeZone);
+  const local = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute));
+  return Math.round((local - Math.floor(at.getTime() / 60_000) * 60_000) / 60_000);
+}
 /** Kişinin saat dilimindeki gün (YYYY-MM-DD). */
 export function localDate(at: Date, timeZone: string): string {
   const p = parts(at, timeZone);
@@ -429,6 +435,8 @@ export interface LadderCtx {
   none: CoverageNoneParams;
   /** S4.10 "hastanede / seyahatte" modu: zamanlayıcılar sıfırlanır, hiçbir hatırlatma / olay üretilmez. */
   hold?: boolean;
+  /** S4.10 kişiye özel tolerans (dk): KAPSAMA BOŞLUĞU olay eşiklerine (şarj 120, YOK 60) eklenir. */
+  toleranceMin?: number;
 }
 
 const has = (sent: string[], k: string) => sent.includes(k);
@@ -533,7 +541,7 @@ export function stepLadders(
       }
       // Olay her değerlendirmede istenir; olay motoru aynı kaynağı ikinci kez açmaz (başka olaya eklenip o kapanırsa
       // kaynak serbest kalır ve yeniden açılır — AbsorbedSourceService).
-      if (awake(s.gapSince) >= ctx.charging.maxGapMin)
+      if (awake(s.gapSince) >= ctx.charging.maxGapMin + (ctx.toleranceMin ?? 0))
         actions.push({ kind: 'gap-event', reason: cause, sourceId: `coverage-gap:${personId}:${gapKey}` });
     }
   }
@@ -572,7 +580,7 @@ export function stepLadders(
           dedupeKey: `coverage-none:${personId}:${key}`,
         });
       }
-      if (min >= ctx.none.eventMin)
+      if (min >= ctx.none.eventMin + (ctx.toleranceMin ?? 0))
         actions.push({ kind: 'gap-event', reason: noneReason(cov), sourceId: `coverage-none:${personId}:${key}` });
       // T-087 YERİNDE KONTROL (P2): takılı cihaz pili yeterliyken birden sustu (2 sa) veya telefon dahil tüm cihazlar
       // sessiz (6 sa). Boşluk başına tek kaynak: olay motoru aynı kaynağı ikinci kez açmaz (bir kişide tek açık olay).

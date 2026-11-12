@@ -99,6 +99,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-COVERAGE-BACK': FEED, // T-086 kapsama geri geldi
   'F-BAT-PLAN': INFO, //    T-086 18:00 pil akşama yetmeyecek (%15 altı)
   'F-DEVICE-LIMIT': INFO, // T-085 kişi başına cihaz sınırı aşıldı
+  'F-COVERAGE-CHRONIC': INFO, // S4.10 kronik kapsama boşluğu: plan (dönem başına bir)
 };
 
 /** Aile kodları için teslim biçimi; kişinin kendi cihazına giden kodlar (W-*, P-*) yalnız cihaz push'u. */

@@ -1,4 +1,5 @@
 import type {
+  AdminCoverageMetrics,
   ChainView,
   CoverageView,
   EventState,
@@ -7,6 +8,7 @@ import type {
   StepAssessment,
   StepResult,
   SupervisorCoverage,
+  SupervisorCoverageBoard,
 } from '@yanimda/contracts';
 
 export interface QueueItem {
@@ -42,7 +44,14 @@ export interface EventRecord {
   operatorId?: string;
   lockUntil?: string;
   isTest: boolean;
-  location?: { lat: number; lng: number } | null;
+  /** T-088/T-089 (S3.7, S7.1): birleştirilmiş konum; `at` konumun anı, `source` GPS / ağ / telefon. */
+  location?: {
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+    source?: 'GPS' | 'NETWORK' | 'PHONE';
+    at?: string;
+  } | null;
   /** Kaynak sinyal / zamanlayıcı kimlikleri (ör. `wellness:<id>` düzenli arama). */
   sourceSignalIds?: string[];
   /** T-088: olayı bildiren cihazlar ve iptal eden cihaz (cihaz şeridinde rozet). */
@@ -58,6 +67,8 @@ export interface PersonCard {
   address: string | null;
   location: { lat: number; lng: number } | null;
   doorAccessNote: string | null;
+  /** T-089 (S7.7): aynı adreste etkin başka korunan kişi (yalnız ad ve açık olayı; sağlık verisi yok). */
+  sameAddress?: { protectedPersonId: string; displayName: string; openEventId: string | null }[];
   medical: {
     conditions: string[];
     medications: string[];
@@ -502,6 +513,8 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
         ...(eventId ? { eventId } : {}),
       }),
     supervisorCoverage: () => req<SupervisorCoverage>('GET', '/supervisor/coverage'),
+    /** T-089 (S7.2) amir kapsama panosu listeleri. */
+    coverageBoard: () => req<SupervisorCoverageBoard>('GET', '/supervisor/coverage/board'),
     dashboard: () => req<SupervisorDashboard>('GET', '/supervisor/dashboard'),
     setOperatorStatus: (sub: string, status: OperatorStatus) =>
       req<{ subject: string; status: OperatorStatus }>(
@@ -517,6 +530,9 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     adminCalls: (days: number, answered?: boolean) =>
       req<AdminCall[]>('GET', `/admin/calls?days=${days}${answered === undefined ? '' : `&answered=${answered}`}`),
     adminAnalytics: (days: number) => req<AdminAnalytics>('GET', `/admin/analytics?days=${days}`),
+    /** T-085 (S7.3) kapsama ve cihaz ölçüleri (yalnız toplamlar). */
+    adminCoverageMetrics: (days: number) =>
+      req<AdminCoverageMetrics>('GET', `/admin/coverage-metrics?days=${Math.min(days, 90)}`),
     adminHealth: () => req<AdminHealth>('GET', '/admin/health'),
     adminEvents: (days: number, q?: string) =>
       req<

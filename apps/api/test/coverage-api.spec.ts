@@ -135,6 +135,7 @@ describe('GET devices / coverage', () => {
         voiceOrder: 1,
         voiceOrderManual: false,
         voiceNumberLast2: null,
+        bridged: true,
       },
       expect.objectContaining({
         id: PHONE,

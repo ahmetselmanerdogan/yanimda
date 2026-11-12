@@ -1,6 +1,7 @@
-import type { CoverageLevel, SupervisorCoverage } from '@yanimda/contracts';
+import type { CoverageLevel, SupervisorCoverage, SupervisorCoverageBoard } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
+import { CoverageBoardView } from './components/CoverageBoard';
 import { DispatchPanel } from './components/Dispatch';
 import type { DispatchView, SupervisorAlertView } from './lib/api';
 import {
@@ -84,6 +85,14 @@ export function SupervisorBoard({
   }, [api]);
   // T-089 (S7.2, S4.11) filo kapsaması: seviye başına kişi, akşam planlı şarj (sunucu taraması 30 sn).
   const [coverage, setCoverage] = useState<SupervisorCoverage | null>(null);
+  // T-089 (S7.2): uyanıkken YOK, kronik boşluk, çevrimdışı köprüler, ulaşılamama, üstlenilmeyen P1, 112 (60 sn).
+  const [board, setBoard] = useState<SupervisorCoverageBoard | null>(null);
+  useEffect(() => {
+    const load = () => void api.coverageBoard().then(setBoard, () => undefined);
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, [api]);
   useEffect(() => {
     const load = () => void api.supervisorCoverage().then(setCoverage, () => undefined);
     load();
@@ -212,6 +221,13 @@ export function SupervisorBoard({
                 ))}
                 <Tile label={t('O-UI-COVERAGE-PLANNED')} value={coverage.plannedCharging} testId="coverage-planned" />
               </div>
+            </section>
+          )}
+
+          {board && (
+            <section className="sup-panel wide" aria-labelledby="sup-board-title">
+              <h2 id="sup-board-title">{t('O-UI-SUP-COVERAGE-BOARD')}</h2>
+              <CoverageBoardView board={board} now={Date.parse(board.at)} />
             </section>
           )}
 
