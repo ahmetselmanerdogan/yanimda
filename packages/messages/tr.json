@@ -3965,6 +3965,27 @@
     "text": "Pil değiştirildi olarak işaretle",
     "action": "Değiştirildi"
   },
+  "O-UI-SUP-VITAL-REVIEWS": {
+    "channel": "console",
+    "text": "Değer eşiği incelemeleri"
+  },
+  "O-UI-SUP-VITAL-REVIEW-ROW": {
+    "channel": "console",
+    "text": "{name}: {rule} · {date}"
+  },
+  "O-UI-VITAL-REVIEW-WEEKLY_LIMIT": {
+    "channel": "console",
+    "text": "Haftalık kontrol araması sınırı aşıldı"
+  },
+  "O-UI-VITAL-REVIEW-FALSE_ALARMS": {
+    "channel": "console",
+    "text": "Tekrarlayan yanlış alarm"
+  },
+  "O-UI-SUP-VITAL-REVIEW-DONE": {
+    "channel": "console",
+    "text": "İncelemeyi kapat (eşik görüşüldü)",
+    "action": "İncelendi"
+  },
   "O-UI-WO-LOW_BATTERY": {
     "channel": "console",
     "text": "Pil %20'nin altında"

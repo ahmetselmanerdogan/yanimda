@@ -20,6 +20,7 @@ import {
   type SupervisorAlert,
   TOPICS,
   type VitalQuality,
+  type VitalReview,
   type VitalRule,
   type VitalSlice,
   type WeeklyTrendsView,
@@ -1042,13 +1043,18 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
 
   // ---- Amirin eşik incelemesi (S6.7) ----
 
-  async reviews(open = true) {
+  /** Amirin listesi: kişi adı (amir zaten panoda görür), kural ve neden; değer yazılmaz. */
+  async reviews(open = true): Promise<VitalReview[]> {
     const r = (await this.db.execute(sql`
-      SELECT id::text AS id, protected_person_id AS person, rule, reason, created_at, resolved_at, resolved_by
-      FROM health.vital_review ${open ? sql`WHERE resolved_at IS NULL` : sql``}
-      ORDER BY created_at DESC LIMIT 200`)) as unknown as Rows<{
+      SELECT r.id::text AS id, r.protected_person_id AS person, p.display_name AS name, r.rule, r.reason, r.note,
+        r.created_at, r.resolved_at, r.resolved_by
+      FROM health.vital_review r LEFT JOIN profile.protected_person p ON p.id::text = r.protected_person_id
+      ${open ? sql`WHERE r.resolved_at IS NULL` : sql``}
+      ORDER BY r.created_at DESC LIMIT 200`)) as unknown as Rows<{
       id: string;
       person: string;
+      name: string | null;
+      note: string | null;
       rule: VitalRule;
       reason: string;
       created_at: Date | string;
@@ -1058,8 +1064,10 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
     return r.rows.map((x) => ({
       id: x.id,
       protectedPersonId: x.person,
+      name: x.name,
       rule: x.rule,
-      reason: x.reason,
+      reason: x.reason as VitalReview['reason'],
+      note: x.note,
       createdAt: iso(x.created_at),
       resolvedAt: x.resolved_at ? iso(x.resolved_at) : null,
       resolvedBy: x.resolved_by,

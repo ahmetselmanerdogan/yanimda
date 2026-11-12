@@ -272,6 +272,10 @@ export class TrainingSim {
     // T-085 OEM: ortak gecikmesi ve kolye iş emirleri eğitim modunda yok (amir panosu yok).
     supervisorPartners: async () => [],
     workOrders: async () => [],
+    vitalReviews: async () => [],
+    resolveVitalReview: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     completeWorkOrder: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
