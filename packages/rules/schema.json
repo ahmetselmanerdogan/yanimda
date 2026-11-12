@@ -144,7 +144,19 @@
         "familyGapOffPlanMin": { "type": "integer", "minimum": 1 },
         "maxGapMin": { "type": "integer", "minimum": 1 },
         "intentMin": { "type": "integer", "minimum": 1, "maximum": 480 },
-        "resumeAfterWakeMin": { "type": "integer", "minimum": 0, "maximum": 180 }
+        "resumeAfterWakeMin": { "type": "integer", "minimum": 0, "maximum": 180 },
+        "learn": {
+          "description": "S4.3 (T-086): öğrenilmiş şarj penceresi (gün, en az geçerli gün, oturum sınırları, yuvarlama dk)",
+          "type": "object",
+          "properties": {
+            "days": { "type": "integer", "minimum": 7, "maximum": 60 },
+            "minDays": { "type": "integer", "minimum": 1, "maximum": 60 },
+            "minSessionMin": { "type": "integer", "minimum": 1 },
+            "maxSessionH": { "type": "integer", "minimum": 1, "maximum": 24 },
+            "roundMin": { "type": "integer", "minimum": 1, "maximum": 60 }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -193,6 +205,17 @@
         "replacedPct": { "type": "integer", "minimum": 1, "maximum": 100 },
         "testReminderDays": { "type": "integer", "minimum": 1, "maximum": 365 },
         "notWornMinDays": { "type": "integer", "minimum": 1, "maximum": 30 }
+      },
+      "additionalProperties": false
+    },
+    "chronicGap": {
+      "description": "S4.10: kronik boşluk planı (günde boşluk sayısı, kişiye özel tolerans üst sınırı, amir listesi korunma yüzdesi)",
+      "type": "object",
+      "properties": {
+        "gaps": { "type": "integer", "minimum": 2 },
+        "days": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "toleranceMaxMin": { "type": "integer", "minimum": 0, "maximum": 240 },
+        "protectedPct": { "type": "integer", "minimum": 1, "maximum": 100 }
       },
       "additionalProperties": false
     },

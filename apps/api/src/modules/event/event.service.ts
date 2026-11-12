@@ -130,6 +130,8 @@ const WAIT_TIMERS: TimerKind[] = [
 
 /** Kapsama geri gelince sistemin KAPSAMA BOŞLUĞU'nu kapatma gerekçesi ("kişiye ulaşıldı" sayılmaz). */
 const COVERAGE_BACK = 'kapsama geri geldi';
+/** S4.10 kronik boşluk takibinin (FOLLOW_UP) açılış notu; konsol O-UI-FOLLOWUP-COVERAGE_CHRONIC. */
+const CHRONIC_NOTE = 'COVERAGE_CHRONIC';
 /** S4.10 hold açılınca kapanan kapsama olaylarının gerekçesi. */
 const HOLD_NOTE = 'hastanede / seyahatte modu';
 
@@ -613,16 +615,29 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     // S4.10: hastanede / seyahatte modunda kapsama olayı üretilmez; bekleyen / üstlenilmemiş olanlar kapanır.
     if (u.hold) return void (await this.closeHeldEvents(u.protectedPersonId));
     for (const a of u.events) {
-      if (a.kind === 'gap-event')
-        // Not = neden kodu (CHARGING / WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST); konsol O-UI-GAP-<neden>.
-        await this.create('COVERAGE_GAP', {
-          protectedPersonId: u.protectedPersonId,
-          sourceId: a.sourceId,
-          note: a.reason,
-        });
+      if (a.kind === 'gap-event') await this.coverageGap(u.protectedPersonId, a.sourceId, a.reason, u.at);
       else if (a.kind === 'welfare-event') await this.raiseWelfare(u.protectedPersonId, a.reason, a.sourceId, a.since);
       else await this.closeCoverageGap(u.protectedPersonId);
     }
+  }
+
+  /**
+   * KAPSAMA BOŞLUĞU (P3). S4.10 kronik boşluk: boşluk önce kaydedilir; kişi 7 günde 5. boşluğa ulaştıysa P3 açılmaz —
+   * aileye bir kez F-COVERAGE-CHRONIC (kapsama servisi, aynı transaction) ve operasyona bir FOLLOW_UP (P4, not
+   * COVERAGE_CHRONIC: aileyle plan — kişiye özel tolerans, kolyeye geçiş, bakıcı hatırlatması). Kronik dönemdeki
+   * sonraki boşluklar P3 açmaz; YERİNDE KONTROL, SOS ve düşme etkilenmez.
+   */
+  private async coverageGap(protectedPersonId: string, sourceId: string, reason: string, at: Date) {
+    const d = await this.protection.coverage.recordGap(protectedPersonId, sourceId, reason, at);
+    if (d.open)
+      // Not = neden kodu (CHARGING / WATCH_OFF / BATTERY_DEAD / CONNECTION_LOST); konsol O-UI-GAP-<neden>.
+      await this.create('COVERAGE_GAP', { protectedPersonId, sourceId, note: reason });
+    else if (d.chronicSince)
+      await this.create('FOLLOW_UP', {
+        protectedPersonId,
+        sourceId: `coverage-chronic:${protectedPersonId}:${d.chronicSince.toISOString()}`,
+        note: CHRONIC_NOTE,
+      });
   }
 
   /**

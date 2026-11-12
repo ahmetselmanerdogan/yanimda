@@ -1,4 +1,5 @@
 import type {
+  BodyLocation,
   CoverageLevel,
   CoverageReason,
   DeviceCategory,
@@ -121,3 +122,48 @@ export const promptPending = (prompts: DevicePromptView[] | undefined, now: numb
 /** Komut sonucunun satırı: ulaştı, cihaz desteklemiyor veya ulaştırılamadı (token yok, sağlayıcı hatası …). */
 export const commandResultCode = (r: { sent: boolean; outcome: string }) =>
   r.sent ? 'O-UI-DEV-SENT' : r.outcome === 'unsupported' ? 'O-UI-DEV-UNSUPPORTED' : 'O-UI-DEV-NOT-DELIVERED';
+
+// ---- T-089 Kalan (S7.1): vücut konumu simgesi, konum yaşı satırı, kronik boşluk takibi ----
+
+/** Vücut konumu simgesi (görsel; erişilebilir ad katalogdan O-UI-BODY-<konum>). */
+const BODY_ICON: Record<BodyLocation, string> = {
+  WRIST_LEFT: '⌚',
+  WRIST_RIGHT: '⌚',
+  NECK: '📿',
+  CHEST: '📿',
+  FINGER: '💍',
+  EAR: '🎧',
+  POCKET: '📱',
+  HOME: '🏠',
+};
+export const bodyIcon = (l: BodyLocation) => BODY_ICON[l];
+export const bodyCode = (l: BodyLocation) => `O-UI-BODY-${l}`;
+
+/** Yaş metni: "az önce", "{n} dk önce", "{n} sa önce". */
+export function ageText(at: string, now: number): string {
+  const min = Math.max(0, Math.floor((now - Date.parse(at)) / 60_000));
+  if (min < 1) return t('O-UI-LOC-AGE-NOW');
+  if (min < 60) return t('O-UI-LOC-AGE-MIN', { n: min });
+  return t('O-UI-LOC-AGE-HOUR', { n: Math.floor(min / 60) });
+}
+
+/**
+ * Olayın konum satırı: "Konum: 4 dk önce, GPS". Konumun anı yoksa (olay açılırken gelen konum) olayın açılışı
+ * kullanılır. Konum yoksa null.
+ */
+export function locationLine(
+  location: { source?: string; at?: string } | null | undefined,
+  createdAt: string,
+  now: number,
+): string | null {
+  if (!location) return null;
+  const src = location.source && has(`O-UI-LOC-SRC-${location.source}`) ? location.source : 'UNKNOWN';
+  return t('O-UI-LOCATION', { age: ageText(location.at ?? createdAt, now), source: t(`O-UI-LOC-SRC-${src}`) });
+}
+
+/** S4.10 kronik boşluk takibi (FOLLOW_UP, açılış notu COVERAGE_CHRONIC) → katalog metni; diğer takiplerde null. */
+export function followUpReasonCode(transitions: { to: string; note?: string }[]): string | null {
+  const note = transitions.find((x) => x.to === 'CREATED')?.note;
+  const code = note ? `O-UI-FOLLOWUP-${note}` : null;
+  return code && /^O-UI-FOLLOWUP-[A-Z_]+$/.test(code) && has(code) ? code : null;
+}

@@ -1,6 +1,7 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
   type ChargingPlan,
+  type CoverageHistory,
   type CoverageLevel,
   type CoverageView,
   type DeviceCategory,
@@ -14,12 +15,21 @@ import {
   TOPICS,
 } from '@yanimda/contracts';
 import { catalogs } from '@yanimda/messages';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import type { OutboxBus } from '../../common/outbox';
 import type { Db, Tx } from '../../db/client';
-import { auditLog, chargingPlan, coverageHistory, coverageState, device, protectionState } from '../../db/schema';
+import {
+  auditLog,
+  chargingPlan,
+  coverageGap,
+  coverageHistory,
+  coverageState,
+  device,
+  protectionState,
+} from '../../db/schema';
+import { type ChargeMark, learnChargingWindow } from './charge-learning';
 import {
   applySignal,
   computeCoverage,
@@ -37,15 +47,26 @@ import {
   type LadderAction,
   type LadderState,
   legacyFacts,
+  localDate,
   onHold,
   planCheck,
   stepLadders,
   toProtectionState,
   voiceOrderOf,
 } from './coverage';
+import { dailyCoverage, type HistoryRow, spansOf, summarize, toSegments, windowStart } from './coverage-report';
 import { isInWindow } from './night';
 import { PROTECTION_REASON, type ProtectionFacts, type SleepWindow } from './protection';
-import { batteryOf, chargingOf, coverageNoneOf, coverageOf, type RulePack, type RulesProvider } from './rules.loader';
+import {
+  batteryOf,
+  chargeLearnOf,
+  chargingOf,
+  chronicGapOf,
+  coverageNoneOf,
+  coverageOf,
+  type RulePack,
+  type RulesProvider,
+} from './rules.loader';
 
 export interface ProtectionChange {
   protectedPersonId: string;
@@ -76,11 +97,19 @@ export interface PlanWindow {
   end: string;
   source: ChargingPlan['source'];
   nightChargeAllowed: boolean;
+  learnedDays?: number | null;
+  learnedAt?: Date | null;
+}
+
+/** S4.10 kronik boşluk kaydının sonucu: P3 açılsın mı; bu boşlukla kronik döneme girildiyse başlangıcı. */
+export interface GapDecision {
+  open: boolean;
+  chronicSince: Date | null;
 }
 
 type Row = typeof coverageState.$inferSelect;
 /** Kişi ayarları: gece penceresi ve S4.10 "hastanede / seyahatte" modunun bitişi (yoksa null). */
-type PersonWindow = SleepWindow & { holdUntil?: Date | null };
+type PersonWindow = SleepWindow & { holdUntil?: Date | null; coverageToleranceMin?: number };
 interface SettingsSource {
   settingsOf(protectedPersonId: string, tx?: Pick<Db, 'execute'>): Promise<PersonWindow>;
 }
@@ -212,7 +241,18 @@ export class CoverageService {
     const out: CoverageUpdate[] = [];
     const weak = await this.weakKinds();
     for (const r of rows) {
-      const ctx = await this.contextOf(r.protectedPersonId, plans.get(r.protectedPersonId) ?? this.defaultPlan(), weak);
+      const sleep = await this.settings.settingsOf(r.protectedPersonId);
+      let window = plans.get(r.protectedPersonId) ?? this.defaultPlan();
+      // S4.3: şarj penceresi kişinin yerel gününde bir kez öğrenilir (aile verdiyse dokunulmaz).
+      const today = localDate(now, sleep.timezone);
+      if (r.planLearnedOn !== today) {
+        window = (await this.learnPlan(r.protectedPersonId, now, sleep, window)) ?? window;
+        await this.db
+          .update(coverageState)
+          .set({ planLearnedOn: today })
+          .where(eq(coverageState.protectedPersonId, r.protectedPersonId));
+      }
+      const ctx = { sleep, plan: window, weak };
       const facts = factsOf(r);
       const cov = this.compute(facts, now, ctx);
       const step = stepLadders(ladderOf(r), cov, facts, this.ladderCtx(r.protectedPersonId, now, ctx));
@@ -266,6 +306,34 @@ export class CoverageService {
       reasons: cov.reasons,
       capabilities: cov.capabilities,
       devices: await deviceSummaries(this.db, this.pack, protectedPersonId, now, { facts, state: row }),
+      chronicGap: row?.chronicGapSince ? { since: row.chronicGapSince.toISOString() } : null,
+      toleranceMin: ctx.sleep.coverageToleranceMin ?? 0,
+    };
+  }
+
+  /**
+   * GET /protected-persons/{id}/coverage/history?days=7 (S7.3, S7.4): son `days` yerel günün kapsama zaman çizelgesi
+   * (dilimler) ve gün başına uyanık zaman yüzdeleri. Gece penceresi ve hold dakikaları yüzdeye girmez.
+   */
+  async history(protectedPersonId: string, days = 7, now = new Date()): Promise<CoverageHistory> {
+    await this.assertKnown(protectedPersonId);
+    if (!Number.isInteger(days) || days < 1 || days > 30)
+      throw new BadRequestException('days 1–30 arası tam sayı olmalı');
+    const sleep = await this.settings.settingsOf(protectedPersonId);
+    const from = windowStart(now, days, sleep.timezone);
+    const rows = await historyRows(this.db, [protectedPersonId], from, now);
+    const spans = spansOf(rows.get(protectedPersonId) ?? [], from, now);
+    const daily = dailyCoverage(spans, from, now, sleep);
+    return {
+      protectedPersonId,
+      days,
+      from: from.toISOString(),
+      to: now.toISOString(),
+      timezone: sleep.timezone,
+      sleepWindow: { start: sleep.start, end: sleep.end },
+      segments: toSegments(spans),
+      daily,
+      summary: summarize(daily),
     };
   }
 
@@ -308,7 +376,172 @@ export class CoverageService {
   async chargingPlan(protectedPersonId: string): Promise<ChargingPlan> {
     await this.assertKnown(protectedPersonId);
     const p = await this.planOf(protectedPersonId);
-    return { window: `${p.start}-${p.end}`, source: p.source, nightChargeAllowed: p.nightChargeAllowed };
+    return {
+      window: `${p.start}-${p.end}`,
+      source: p.source,
+      nightChargeAllowed: p.nightChargeAllowed,
+      ...(p.source === 'LEARNED'
+        ? { learnedDays: p.learnedDays ?? null, learnedAt: p.learnedAt?.toISOString() ?? null }
+        : {}),
+    };
+  }
+
+  /**
+   * S4.3 öğrenilmiş şarj penceresi: son `learn.days` günün A sınıfı giyilebilir CHARGE_START / CHARGE_END
+   * sinyallerinden (charge-learning.ts). Geçmiş `learn.days` günü kapsamıyorsa, geçerli gün yetmiyorsa, aile pencereyi
+   * verdiyse (FAMILY) veya pencere gece penceresine taşıyor ve gece şarjı onaylı değilse dokunulmaz. Değiştiyse
+   * LEARNED yazılır (denetimde pencere + gün sayısı; kişisel veri yok). Yeni pencereyi (veya null) döner.
+   */
+  async learnPlan(
+    protectedPersonId: string,
+    now: Date,
+    sleep?: PersonWindow,
+    current?: PlanWindow,
+  ): Promise<PlanWindow | null> {
+    const plan = current ?? (await this.planOf(protectedPersonId));
+    if (plan.source === 'FAMILY') return null;
+    const p = chargeLearnOf(this.pack);
+    const win = sleep ?? (await this.settings.settingsOf(protectedPersonId));
+    // "14 gün sonra": en eski şarj sinyali pencerenin başını (bir gün payla) kapsamalı.
+    const first = (await this.db.execute(sql`
+      SELECT min(time) AS t FROM signal.signal
+      WHERE protected_person_id = ${protectedPersonId} AND kind IN ('CHARGE_START', 'CHARGE_END')`)) as unknown as {
+      rows: { t: Date | string | null }[];
+    };
+    const t0 = first.rows[0]?.t;
+    if (!t0 || new Date(t0).getTime() > now.getTime() - (p.days - 1) * 86_400_000) return null;
+    const since = new Date(now.getTime() - (p.days + 1) * 86_400_000);
+    const r = (await this.db.execute(sql`
+      SELECT device_id, kind, time FROM signal.signal
+      WHERE protected_person_id = ${protectedPersonId} AND kind IN ('CHARGE_START', 'CHARGE_END')
+        AND time >= ${since.toISOString()}::timestamptz AND time <= ${now.toISOString()}::timestamptz
+        AND coalesce(payload->'source'->>'category', 'WATCH') NOT IN ('PHONE', 'HOME_UNIT', 'CLOUD')
+        AND coalesce(payload->'source'->>'tier', 'A') = 'A'
+      ORDER BY time`)) as unknown as { rows: { device_id: string; kind: ChargeMark['kind']; time: Date | string }[] };
+    const marks = r.rows.map((x) => ({ deviceId: x.device_id, kind: x.kind, at: new Date(x.time) }));
+    const learned = learnChargingWindow(marks, win.timezone, now, p);
+    if (!learned) return null;
+    if (!plan.nightChargeAllowed && overlaps(learned.start, learned.end, win.start, win.end)) return null;
+    const same = plan.source === 'LEARNED' && plan.start === learned.start && plan.end === learned.end;
+    const values = {
+      windowStart: learned.start,
+      windowEnd: learned.end,
+      source: 'LEARNED',
+      learnedDays: learned.validDays,
+      learnedAt: now,
+      updatedAt: now,
+      updatedBy: 'system',
+    };
+    await this.db.transaction(async (tx) => {
+      // Aile bu arada yazdıysa (FAMILY) dokunulmaz.
+      await tx
+        .insert(chargingPlan)
+        .values({ protectedPersonId, ...values })
+        .onConflictDoUpdate({
+          target: chargingPlan.protectedPersonId,
+          set: values,
+          setWhere: sql`${chargingPlan.source} <> 'FAMILY'`,
+        });
+      if (!same)
+        await tx.insert(auditLog).values({
+          actorKind: 'SYSTEM',
+          action: 'coverage.charging_plan_learned',
+          entityType: 'protected_person',
+          entityId: protectedPersonId,
+          data: { window: `${learned.start}-${learned.end}`, validDays: learned.validDays },
+        });
+    });
+    return {
+      ...plan,
+      start: learned.start,
+      end: learned.end,
+      source: 'LEARNED',
+      learnedDays: learned.validDays,
+      learnedAt: now,
+    };
+  }
+
+  /**
+   * S4.10 kronik boşluk: olay eşiğine ulaşan her kapsama boşluğu bir kez kaydedilir (kaynak kimliği). Son
+   * `chronicGap.days` günde (son temizlenmeden sonra) `chronicGap.gaps` boşluk olduysa kişi kronik boşluk dönemine
+   * girer: bu ve sonraki boşluklarda P3 açılmaz; aileye bir kez F-COVERAGE-CHRONIC (aynı transaction'da outbox).
+   * Dönemdeki boşluklar eşiğin altına inerse dönem kendiliğinden biter (P3'ler döner). Hold'da çağrılmaz.
+   */
+  async recordGap(protectedPersonId: string, sourceId: string, reason: string, at: Date): Promise<GapDecision> {
+    const p = chronicGapOf(this.pack);
+    const decision = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ since: coverageState.chronicGapSince, cleared: coverageState.chronicClearedAt })
+        .from(coverageState)
+        .where(eq(coverageState.protectedPersonId, protectedPersonId))
+        .for('update');
+      const ins = await tx
+        .insert(coverageGap)
+        .values({ sourceId, protectedPersonId, reason, at })
+        .onConflictDoNothing()
+        .returning({ id: coverageGap.sourceId });
+      if (!ins.length) {
+        const [g] = await tx.select().from(coverageGap).where(eq(coverageGap.sourceId, sourceId));
+        return { open: !g?.chronic, chronicSince: null, notify: false };
+      }
+      const from = new Date(at.getTime() - p.days * 86_400_000);
+      const after = row?.cleared && row.cleared > from ? row.cleared : from;
+      const [c] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(coverageGap)
+        .where(
+          and(
+            eq(coverageGap.protectedPersonId, protectedPersonId),
+            gte(coverageGap.at, after),
+            sql`${coverageGap.at} <= ${at.toISOString()}::timestamptz`,
+          ),
+        );
+      const n = c?.n ?? 0;
+      if (n < p.gaps) {
+        if (row?.since)
+          await tx
+            .update(coverageState)
+            .set({ chronicGapSince: null, chronicClearedAt: at })
+            .where(eq(coverageState.protectedPersonId, protectedPersonId));
+        return { open: true, chronicSince: null, notify: false };
+      }
+      await tx.update(coverageGap).set({ chronic: true }).where(eq(coverageGap.sourceId, sourceId));
+      if (row?.since) return { open: false, chronicSince: null, notify: false };
+      await tx
+        .update(coverageState)
+        .set({ chronicGapSince: at })
+        .where(eq(coverageState.protectedPersonId, protectedPersonId));
+      await tx.insert(auditLog).values({
+        actorKind: 'SYSTEM',
+        action: 'coverage.chronic_gap',
+        entityType: 'protected_person',
+        entityId: protectedPersonId,
+        data: { gaps: n, days: p.days },
+      });
+      const req: NotifyRequest = {
+        code: 'F-COVERAGE-CHRONIC',
+        audience: 'FAMILY',
+        protectedPersonId,
+        dedupeKey: `coverage-chronic:${protectedPersonId}:${at.toISOString()}:F-COVERAGE-CHRONIC`,
+        vars: { n, days: p.days },
+      };
+      await this.outbox.publish(
+        TOPICS.notifyRequested,
+        this.envelope(TOPICS.notifyRequested, protectedPersonId, at, req),
+        tx,
+      );
+      return { open: false, chronicSince: at, notify: true };
+    });
+    if (decision.notify) this.outbox.notifyCommitted();
+    return { open: decision.open, chronicSince: decision.chronicSince };
+  }
+
+  /** S4.10: kronik boşluk dönemini bitirir (plan yapıldı: tolerans değişti). Sayım bu andan sonraki boşluklarla başlar. */
+  async clearChronic(protectedPersonId: string, now: Date, tx: Pick<Db, 'update'> = this.db) {
+    await tx
+      .update(coverageState)
+      .set({ chronicGapSince: null, chronicClearedAt: now })
+      .where(eq(coverageState.protectedPersonId, protectedPersonId));
   }
 
   /**
@@ -411,6 +644,7 @@ export class CoverageService {
       charging,
       none: coverageNoneOf(this.pack),
       hold: onHold(ctx.sleep, now),
+      toleranceMin: Math.min(ctx.sleep.coverageToleranceMin ?? 0, chronicGapOf(this.pack).toleranceMaxMin),
     };
   }
 
@@ -510,6 +744,11 @@ export class CoverageService {
         tx,
       );
       this.log.debug(`Kapsama: ${from ?? '-'} → ${cov.level}`);
+    } else if (!fresh && row!.reasons.includes('ON_HOLD') !== cov.reasons.includes('ON_HOLD')) {
+      // S4.10 hold açıldı / bitti: seviye aynı kalsa da geçmişe yazılır (uyanık zaman yüzdesinden hold çıkarılır).
+      await tx
+        .insert(coverageHistory)
+        .values({ protectedPersonId: personId, fromLevel: from, level: cov.level, reasons: cov.reasons, at: now });
     }
     const protection = await this.saveProtection(tx, personId, cov, facts, now);
     const all = [...step.actions, ...(plan?.actions ?? [])];
@@ -666,6 +905,7 @@ export async function deviceSummaries(
         voiceOrder: null as number | null,
         voiceOrderManual: false as boolean,
         voiceNumberLast2: r?.voice_last2 ?? null,
+        bridged: f.category !== 'PHONE' && f.bridged,
       } satisfies DeviceSummary,
     };
   });
@@ -716,7 +956,52 @@ const planWindowOf = (p: typeof chargingPlan.$inferSelect): PlanWindow => ({
   end: p.windowEnd,
   source: p.source as PlanWindow['source'],
   nightChargeAllowed: p.nightChargeAllowed,
+  learnedDays: p.learnedDays,
+  learnedAt: p.learnedAt,
 });
+
+/**
+ * Kişilerin `from`–`to` kapsama geçmişi: `from` öncesindeki son satır (o andaki seviye) + aralıktaki satırlar.
+ * Rapor uçları (kişi zaman çizelgesi, amir kronik listesi, yönetim kişi-gün yüzdesi) ortak kullanır.
+ */
+export async function historyRows(
+  q: Pick<Db, 'select'>,
+  personIds: string[],
+  from: Date,
+  to: Date,
+): Promise<Map<string, HistoryRow[]>> {
+  const out = new Map<string, HistoryRow[]>();
+  if (!personIds.length) return out;
+  const ids = sql.join(
+    personIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const rows = await q
+    .select({
+      id: coverageHistory.protectedPersonId,
+      at: coverageHistory.at,
+      level: coverageHistory.level,
+      reasons: coverageHistory.reasons,
+    })
+    .from(coverageHistory)
+    .where(
+      and(
+        sql`${coverageHistory.protectedPersonId} IN (${ids})`,
+        lt(coverageHistory.at, to),
+        sql`(${coverageHistory.at} >= ${from.toISOString()}::timestamptz OR ${coverageHistory.id} IN (
+          SELECT DISTINCT ON (h.protected_person_id) h.id FROM event.coverage_history h
+          WHERE h.protected_person_id IN (${ids}) AND h.at < ${from.toISOString()}::timestamptz
+          ORDER BY h.protected_person_id, h.at DESC, h.id DESC))`,
+      ),
+    )
+    .orderBy(asc(coverageHistory.at), asc(coverageHistory.id));
+  for (const r of rows) {
+    const list = out.get(r.id) ?? [];
+    list.push({ at: r.at, level: r.level as CoverageLevel, reasons: r.reasons });
+    out.set(r.id, list);
+  }
+  return out;
+}
 
 const iso = (v: Date | string | null) => (v ? new Date(v).toISOString() : null);
 
@@ -792,4 +1077,84 @@ export async function activeDeviceCounts(
     else if (tier === 'A' && isWearable({ category })) alarmWearables++;
   }
   return { total, phones, alarmWearables };
+}
+
+/** Filo raporları için kişi satırı (kapsama durumu + ayarlar). Ad yalnız amir panosuna gider; yönetim ölçüleri adsız. */
+export interface FleetPerson {
+  id: string;
+  name: string | null;
+  sleep: { timezone: string; start: string; end: string };
+  holdUntil: Date | null;
+  toleranceMin: number;
+  chronicSince: Date | null;
+  level: string;
+  noneSince: Date | null;
+  facts: Facts;
+}
+
+/** Kapsama durumu olan tüm kişiler (gece penceresi event.threshold, yoksa 22:00–08:00). */
+export async function fleetPersons(q: Pick<Db, 'execute'>): Promise<FleetPerson[]> {
+  const r = (await q.execute(sql`
+    SELECT c.protected_person_id AS id, p.display_name AS name, coalesce(p.timezone, 'Europe/Istanbul') AS tz,
+           coalesce(t.sleep_start::text, '22:00') AS ss, coalesce(t.sleep_end::text, '08:00') AS se,
+           p.hold_until, coalesce(p.coverage_tolerance_min, 0) AS tol, c.chronic_gap_since, c.level, c.none_since,
+           c.devices, c.bridge_seen_at
+    FROM event.coverage_state c
+    LEFT JOIN profile.protected_person p ON p.id::text = c.protected_person_id
+    LEFT JOIN event.threshold t ON t.protected_person_id = c.protected_person_id
+    ORDER BY c.protected_person_id`)) as unknown as {
+    rows: {
+      id: string;
+      name: string | null;
+      tz: string;
+      ss: string;
+      se: string;
+      hold_until: Date | string | null;
+      tol: number;
+      chronic_gap_since: Date | string | null;
+      level: string;
+      none_since: Date | string | null;
+      devices: Facts['devices'] | null;
+      bridge_seen_at: Date | string | null;
+    }[];
+  };
+  const d = (v: Date | string | null) => (v ? new Date(v) : null);
+  return r.rows.map((x) => ({
+    id: x.id,
+    name: x.name,
+    sleep: { timezone: x.tz, start: x.ss.slice(0, 5), end: x.se.slice(0, 5) },
+    holdUntil: d(x.hold_until),
+    toleranceMin: x.tol,
+    chronicSince: d(x.chronic_gap_since),
+    level: x.level,
+    noneSince: d(x.none_since),
+    facts: {
+      devices: x.devices ?? {},
+      bridgeSeenAt: x.bridge_seen_at ? new Date(x.bridge_seen_at).toISOString() : null,
+    },
+  }));
+}
+
+/** Kişi başına son `days` yerel günün uyanık zaman dağılımı (kişi zaman çizelgesiyle aynı hesap). */
+export async function fleetDaily(
+  q: Pick<Db, 'select'>,
+  persons: Pick<FleetPerson, 'id' | 'sleep'>[],
+  days: number,
+  now: Date,
+): Promise<Map<string, ReturnType<typeof dailyCoverage>>> {
+  const out = new Map<string, ReturnType<typeof dailyCoverage>>();
+  if (!persons.length) return out;
+  const starts = new Map(persons.map((p) => [p.id, windowStart(now, days, p.sleep.timezone)] as const));
+  const earliest = new Date(Math.min(...[...starts.values()].map((x) => x.getTime())));
+  const rows = await historyRows(
+    q,
+    persons.map((p) => p.id),
+    earliest,
+    now,
+  );
+  for (const p of persons) {
+    const from = starts.get(p.id)!;
+    out.set(p.id, dailyCoverage(spansOf(rows.get(p.id) ?? [], from, now), from, now, p.sleep));
+  }
+  return out;
 }

@@ -170,6 +170,8 @@ export const protectedPerson = profileSchema.table('protected_person', {
   /** 0031 (S4.10): "hastanede / seyahatte" modu (HOSPITAL | TRAVEL) ve bitişi; ikisi birlikte dolu/boş. */
   holdMode: text('hold_mode'),
   holdUntil: timestamptz('hold_until'),
+  /** 0035 (S4.10): kişiye özel tolerans (dk), kapsama boşluğu olay eşiğine eklenir. */
+  coverageToleranceMin: integer('coverage_tolerance_min').notNull().default(0),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
@@ -529,6 +531,11 @@ export const coverageState = eventSchema.table('coverage_state', {
   intentUntil: timestamptz('intent_until'),
   planCheckedOn: text('plan_checked_on'),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  /** 0035 (S4.3): şarj penceresi öğrenmesinin yapıldığı yerel gün. */
+  planLearnedOn: text('plan_learned_on'),
+  /** 0035 (S4.10): kronik boşluk dönemi (P3 yerine plan) ve son temizlenme. */
+  chronicGapSince: timestamptz('chronic_gap_since'),
+  chronicClearedAt: timestamptz('chronic_cleared_at'),
 });
 
 export const coverageHistory = eventSchema.table('coverage_history', {
@@ -551,6 +558,18 @@ export const chargingPlan = eventSchema.table('charging_plan', {
   nightAckBy: text('night_ack_by'),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   updatedBy: text('updated_by'),
+  /** 0035 (S4.3): öğrenilmiş pencerenin geçerli gün sayısı ve zamanı. */
+  learnedDays: integer('learned_days'),
+  learnedAt: timestamptz('learned_at'),
+});
+
+/** 0035 (S4.10): olay eşiğine ulaşan kapsama boşlukları (kronik boşluk sayımı). */
+export const coverageGap = eventSchema.table('coverage_gap', {
+  sourceId: text('source_id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  reason: text('reason').notNull(),
+  at: timestamptz('at').notNull(),
+  chronic: boolean('chronic').notNull().default(false),
 });
 
 /** T-014 kişiye özel eşikler (0005) + T-070 öğrenme (0011). Saatler kişinin saat diliminde. */

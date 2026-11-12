@@ -101,6 +101,7 @@ const DELIVERY: Record<string, Delivery> = {
   'F-DEVICE-LIMIT': INFO, // T-085 kişi başına cihaz sınırı aşıldı
   'F-PENDANT-BATTERY': INFO, // T-085 OEM (S4.9) kolye pili iş emri açıldı (ekip değiştirecek)
   'F-PENDANT-TEST': FEED, //    T-085 OEM (S4.9) kolyenin aylık düğme testi yapılmadı
+  'F-COVERAGE-CHRONIC': INFO, // S4.10 kronik kapsama boşluğu: plan (dönem başına bir)
 };
 
 /** Aile kodları için teslim biçimi; kişinin kendi cihazına giden kodlar (W-*, P-*) yalnız cihaz push'u. */

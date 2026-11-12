@@ -93,9 +93,21 @@ export function TopBar(p: {
  */
 /**
  * Kişi paneli. Tıbbi özet, adres ve kapı notu yalnız olay operatörde iken sunucudan gelir (T-040; her açılış audit'e
- * yazılır). Kopyalama engelli (E-03).
+ * yazılır). Kopyalama engelli (E-03). T-089 (S7.7): aynı adreste ikinci korunan kişi (yalnız ad; açık olayı varsa
+ * bağlantı) — eş ilk ulaşılacak kişi olabilir.
  */
-export function PersonPanel({ item, card, mine }: { item: QueueItem | null; card?: PersonCard | null; mine: boolean }) {
+export function PersonPanel({
+  item,
+  card,
+  mine,
+  onOpenEvent,
+}: {
+  item: QueueItem | null;
+  card?: PersonCard | null;
+  mine: boolean;
+  /** Aynı adresteki kişinin açık olayını seç. */
+  onOpenEvent?(eventId: string): void;
+}) {
   const [warn, setWarn] = useState(false);
   const med = card?.medical;
   const listRow = (code: string, xs: string[] | undefined) =>
@@ -139,6 +151,23 @@ export function PersonPanel({ item, card, mine }: { item: QueueItem | null; card
             </>
           )}
         </dl>
+      )}
+      {card?.sameAddress && card.sameAddress.length > 0 && (
+        <div className="same-address" data-testid="same-address">
+          {card.sameAddress.map((x) => (
+            <p key={x.protectedPersonId}>
+              {t('O-UI-SAME-ADDRESS', { name: x.displayName })}
+              {x.openEventId && onOpenEvent && (
+                <>
+                  {' '}
+                  <button type="button" onClick={() => onOpenEvent(x.openEventId!)}>
+                    {t('O-UI-SAME-ADDRESS-EVENT')}
+                  </button>
+                </>
+              )}
+            </p>
+          ))}
+        </div>
       )}
       <h3>{t('O-UI-MEDICAL')}</h3>
       {!mine || card === undefined ? (

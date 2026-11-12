@@ -170,6 +170,8 @@ export interface DeviceSummary {
   voiceOrderManual: boolean;
   /** T-087 (S5.2): cihaza özel sesli arama numarasının son iki hanesi (operasyon PATCH voiceNumber); yoksa null. */
   voiceNumberLast2?: string | null;
+  /** T-089 (S7.1, S4.8): son sinyali yaşlının telefonu üzerinden (BLE köprüsü) geldi — "telefon üzerinden". */
+  bridged?: boolean;
 }
 
 /** GET /protected-persons/{id}/coverage */
@@ -179,6 +181,10 @@ export interface CoverageView {
   reasons: CoverageReason[];
   capabilities: CoverageCapabilities;
   devices: DeviceSummary[];
+  /** S4.10 kronik boşluk: 7 günde 5 boşluktan sonra P3 yerine plan (aile + operasyon takibi); yoksa null. */
+  chronicGap?: { since: string } | null;
+  /** S4.10 kişiye özel tolerans (dk), KAPSAMA BOŞLUĞU olay eşiğine eklenir. */
+  toleranceMin?: number;
 }
 
 /** GET|PUT /protected-persons/{id}/charging-plan */
@@ -186,6 +192,9 @@ export interface ChargingPlan {
   window: string;
   source: 'DEFAULT' | 'LEARNED' | 'FAMILY';
   nightChargeAllowed: boolean;
+  /** T-086 (S4.3): öğrenilmiş pencerenin dayandığı geçerli gün sayısı ve zamanı (LEARNED değilse null). */
+  learnedDays?: number | null;
+  learnedAt?: string | null;
 }
 
 /** GET /supervisor/coverage (S4.11): seviye başına kişi sayısı; akşam planlı şarj ayrı sayılır. */
@@ -244,6 +253,109 @@ export interface WorkOrder {
   dueAt: string;
   createdAt: string;
   closedAt: string | null;
+}
+
+/** T-085 (S7.3, S7.4) kapsama zaman çizelgesi dilimi; hold: "hastanede / seyahatte" modu. */
+export interface CoverageSegment {
+  from: string;
+  to: string;
+  level: CoverageLevel;
+  hold: boolean;
+}
+/**
+ * Kişinin yerel günü başına uyanık (gece penceresi dışı) dakika dağılımı. Yüzdeler (0–100, bir ondalık) korunan
+ * (FULL/BASIC) + yalnız telefon + YOK toplamına göredir; hold ve bilinmeyen dakikalar girmez; ölçülemediyse null.
+ */
+export interface CoverageDay {
+  date: string;
+  awakeMin: number;
+  protectedMin: number;
+  phoneOnlyMin: number;
+  noneMin: number;
+  holdMin: number;
+  unknownMin: number;
+  protectedPct: number | null;
+  phoneOnlyPct: number | null;
+  nonePct: number | null;
+}
+/** GET /protected-persons/{id}/coverage/history?days=7 — aile uygulamasının "son 7 günün kapsama zaman çizelgesi". */
+export interface CoverageHistory {
+  protectedPersonId: string;
+  days: number;
+  from: string;
+  to: string;
+  timezone: string;
+  sleepWindow: { start: string; end: string };
+  segments: CoverageSegment[];
+  daily: CoverageDay[];
+  summary: Omit<CoverageDay, 'date'>;
+}
+
+/** GET /supervisor/coverage/board (S7.2): amirin kapsama panosu listeleri. */
+export interface SupervisorCoverageBoard {
+  at: string;
+  /** Uyanıkken kapsama YOK ≥ coverageNone.remindMin (20 dk), en uzun önce. Hold'dakiler yok. */
+  noneAwake: { protectedPersonId: string; name: string | null; since: string; awakeMin: number; reasons: string[] }[];
+  /** Son 7 günde uyanık zamanın chronicGap.protectedPct'sinden (%80) azı korunanlar ve kronik boşluk işaretliler. */
+  chronic: {
+    protectedPersonId: string;
+    name: string | null;
+    protectedPct: number | null;
+    chronicSince: string | null;
+    toleranceMin: number;
+  }[];
+  /** Yaşlının telefonu çevrimdışı ve üzerinden (BLE) bağlanan cihazlar var: hepsi birlikte düştü (S4.8). */
+  offlineBridges: {
+    protectedPersonId: string;
+    name: string | null;
+    phoneSeenAt: string | null;
+    bridgedDevices: number;
+  }[];
+  /** Ulaşılamama oranı (P1/P2 merdivenleri, test hariç): adım türü başına deneme / ulaşılan / ulaşılamayan. */
+  unreachable: { days7: LadderStepStat[]; days30: LadderStepStat[] };
+  /** 90 sn üstlenilmeyen P1 (O-P1-UNCLAIMED), son 7 gün. */
+  unclaimedP1: { eventId: string; eventType: string; at: string; acked: boolean }[];
+  /** Hareketsizlik / yerinde kontrol olaylarında 112 bildirimi, son 7 gün. */
+  dispatch112: { eventId: string; eventType: string; notifiedAt: string; status: string; name: string | null }[];
+}
+export interface LadderStepStat {
+  /** Adım türü (CALL_WATCH, CALL_PHONE, CALL_CONTACT:1 …). */
+  step: string;
+  attempted: number;
+  reached: number;
+  unreached: number;
+  offlineSkipped: number;
+  /** (ulaşılamayan + çevrimdışı atlanan) / deneme; deneme yoksa null. */
+  unreachableRate: number | null;
+  /** Merdivenin son denenen adımı buysa ve kimseye ulaşılamadıysa (merdiven burada takıldı). */
+  stalledHere: number;
+}
+
+/** GET /admin/coverage-metrics (S7.3): yalnız toplamlar, kişisel veri yok. */
+export interface AdminCoverageMetrics {
+  days: number;
+  from: string;
+  to: string;
+  coverage: {
+    personDays: number;
+    avgProtectedPct: number | null;
+    medianProtectedPct: number | null;
+    /** Korunan payı %80'in altında kalan kişi-gün oranı (0–1). */
+    belowTargetShare: number | null;
+    buckets: { label: string; n: number }[];
+  };
+  falseAlarms: { model: string; appVersion: string; events: number; falseAlarms: number; rate: number }[];
+  latency: { tier: string; adapter: string; signals: number; p50Sec: number | null; p95Sec: number | null }[];
+  charging: {
+    sessions: number;
+    worn: number;
+    medianToWearMin: number | null;
+    p90ToWearMin: number | null;
+    /** İlk hatırlatmadan (15 dk) önce takılanların oranı (0–1). */
+    beforeReminderShare: number | null;
+  };
+  eventsPer100PersonDays: Record<string, number>;
+  battery: { model: string; devices: number; deviceDays: number; medianDailyDrainPct: number | null }[];
 }
 
 export interface KafkaEnvelope<T> {
