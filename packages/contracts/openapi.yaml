@@ -3994,11 +3994,14 @@ components:
             spo2LowCopd: { type: integer }
     VitalReview:
       type: object
+      required: [id, protectedPersonId, name, rule, reason, note, createdAt, resolvedAt, resolvedBy]
       properties:
         id: { type: string, format: uuid }
         protectedPersonId: { type: string }
+        name: { type: [string, 'null'], description: Kişinin görünen adı (amir panosundaki gibi) }
         rule: { $ref: '#/components/schemas/VitalRule' }
         reason: { enum: [WEEKLY_LIMIT, FALSE_ALARMS] }
+        note: { type: [string, 'null'], maxLength: 500 }
         createdAt: { type: string, format: date-time }
         resolvedAt: { type: [string, 'null'], format: date-time }
         resolvedBy: { type: [string, 'null'] }

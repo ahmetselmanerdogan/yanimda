@@ -1627,6 +1627,10 @@
     "channel": "voice",
     "text": "Operatörümüz sizi birazdan arayacak."
   },
+  "V-VITAL-ASK": {
+    "channel": "voice",
+    "text": "Yanımda: saatiniz alışılmadık bir ölçüm gösterdi. İyi misiniz? İyiyseniz 'evet' deyin veya 1'e basın."
+  },
   "V-NO-OPERATOR": {
     "channel": "voice",
     "text": "Yanımda acil yardım servisi: {name} için acil durum uyarısı aldık. Lütfen hemen 112'yi arayın."
@@ -3826,6 +3830,46 @@
     "channel": "family",
     "text": "Cilt sıcaklığı iki gece üst üste alışılmışın üzerindeydi"
   },
+  "F-UI-VITAL-WEEK": {
+    "channel": "family",
+    "text": "{date} haftası"
+  },
+  "F-UI-VITAL-RESTING-HR": {
+    "channel": "family",
+    "text": "Dinlenirken nabız"
+  },
+  "F-UI-VITAL-SLEEP-HR": {
+    "channel": "family",
+    "text": "Uykuda nabız"
+  },
+  "F-UI-VITAL-SPO2": {
+    "channel": "family",
+    "text": "Oksijen okuması"
+  },
+  "F-UI-VITAL-BPM": {
+    "channel": "family",
+    "text": "{value} atım/dk"
+  },
+  "F-UI-VITAL-NO-DATA": {
+    "channel": "family",
+    "text": "Yeterli okuma yok"
+  },
+  "F-UI-VITAL-MEDIAN-DAYS": {
+    "channel": "family",
+    "text": "Haftanın orta değeri, {days} günün okumasından"
+  },
+  "F-UI-VITAL-SKIN-TEMP-NIGHTS": {
+    "channel": "family",
+    "text": "Cilt sıcaklığı {nights} gece alışılmışın üzerindeydi"
+  },
+  "F-UI-VITAL-OUTCOMES": {
+    "channel": "family",
+    "text": "Cihaz okuması nedeniyle yapılan aramalar"
+  },
+  "F-UI-VITAL-TRENDS-EMPTY": {
+    "channel": "family",
+    "text": "Henüz haftalık özet yok. Saat birkaç gün takılınca burada görünür."
+  },
   "P-SENSORS": {
     "channel": "phone",
     "text": "Telefonunuza bağlı nabız ve oksijen ölçerler.",
@@ -3904,6 +3948,10 @@
     "text": "Sensörlerinize bağlanabilmemiz için yakındaki cihazlara izin verin.",
     "action": "İzin ver"
   },
+  "P-PERM-BLUETOOTH-IOS": {
+    "channel": "phone",
+    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin."
+  },
   "O-OEM-LATENCY": {
     "channel": "console",
     "text": "Ortak cihaz merkezinin gecikmesi son 1 saatte 60 sn'yi aştı (p99). Bu ortağın cihazları kapsamada zayıf sayılıyor; ortağın 7/24 hattını arayın."
@@ -3960,6 +4008,27 @@
     "channel": "console",
     "text": "Pil değiştirildi olarak işaretle",
     "action": "Değiştirildi"
+  },
+  "O-UI-SUP-VITAL-REVIEWS": {
+    "channel": "console",
+    "text": "Değer eşiği incelemeleri"
+  },
+  "O-UI-SUP-VITAL-REVIEW-ROW": {
+    "channel": "console",
+    "text": "{name}: {rule} · {date}"
+  },
+  "O-UI-VITAL-REVIEW-WEEKLY_LIMIT": {
+    "channel": "console",
+    "text": "Haftalık kontrol araması sınırı aşıldı"
+  },
+  "O-UI-VITAL-REVIEW-FALSE_ALARMS": {
+    "channel": "console",
+    "text": "Tekrarlayan yanlış alarm"
+  },
+  "O-UI-SUP-VITAL-REVIEW-DONE": {
+    "channel": "console",
+    "text": "İncelemeyi kapat (eşik görüşüldü)",
+    "action": "İncelendi"
   },
   "O-UI-WO-LOW_BATTERY": {
     "channel": "console",

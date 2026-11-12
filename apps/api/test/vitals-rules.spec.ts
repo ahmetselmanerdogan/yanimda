@@ -86,13 +86,13 @@ describe('kural paketi ve bayrak (S6 giriş, S8.4)', () => {
     expect(vitalsEnabled(on, { VITALS_ENABLED: 'false' })).toBe(false);
     expect(vitalsEnabled(on, { VITALS_ENABLED: 'evet' })).toBe(true);
   });
-  it('değer olayları: cihaz → telefon → 1. yakın, ön eleme ve cihaz sorusu yok, P3', () => {
+  it('değer olayları: P3, cihaz sorusu yok; önce V-VITAL-ASK sesli ön eleme, sonra cihaz → telefon → 1. yakın', () => {
     for (const t of ['HEART_ANOMALY', 'SPO2_LOW'] as const) {
       const r = ruleFor(pack, t)!;
       expect(r).toMatchObject({ priority: 3, operatorScript: 'O-SCRIPT-VITALS' });
       expect(r.chain).toEqual(['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1']);
       expect(r.devicePrompt).toBeUndefined();
-      expect(r.autoVoiceScreening).toBeUndefined();
+      expect(r.autoVoiceScreening).toMatchObject({ enabled: true, phrase: 'V-VITAL-ASK', timeoutSec: 120 });
     }
   });
   it('aile "iyi" olmayan değer sonucunu görür (F-VITAL-RESULT); "iyi" sonuç ve kuyruk bildirimi yok', () => {

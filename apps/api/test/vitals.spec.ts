@@ -391,7 +391,9 @@ describe('alarm yorgunluğu (S6.7)', () => {
     // Amir incelemeyi kapatır (denetimde).
     const [r] = await vitals.reviews();
     const done = await vitals.resolveReview(r!.id, 'sup-1', { note: 'eşik görüşüldü' }, t(210));
-    expect(done).toMatchObject({ resolvedBy: 'sup-1' });
+    expect(r).toMatchObject({ rule: 'HIGH_HR', reason: 'WEEKLY_LIMIT', note: null, resolvedAt: null });
+    expect(r).toHaveProperty('name'); // amirin listesinde kişi adı (profil yoksa null)
+    expect(done).toMatchObject({ resolvedBy: 'sup-1', note: 'eşik görüşüldü' });
     expect(await vitals.reviews()).toEqual([]);
   });
 

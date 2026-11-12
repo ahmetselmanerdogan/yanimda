@@ -585,6 +585,20 @@ export interface WeeklyTrendsView {
   outcomes: { eventId: string; type: EventType; outcome: string; at: string }[];
 }
 
+/** GET /supervisor/vital-reviews (S6.7): amirin eşik incelemesi kuyruğu; değer yok. */
+export interface VitalReview {
+  id: string;
+  protectedPersonId: string;
+  name: string | null;
+  rule: VitalRule;
+  /** WEEKLY_LIMIT: haftalık kontrol araması sınırı aşıldı; FALSE_ALARMS: değerlerde tekrarlayan yanlış alarm. */
+  reason: 'WEEKLY_LIMIT' | 'FALSE_ALARMS';
+  note: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
 /** T-092 telefon köprüsüyle bağlanan BLE cihaz modelleri (S2.1, S7.5). */
 export type BridgedDeviceModel = 'BLE_HR' | 'BLE_PULSE_OX' | 'BLE_THERMO' | 'BLE_PENDANT';
 /** POST /devices/bridged yanıtı ve GET /devices/bridged öğesi. */

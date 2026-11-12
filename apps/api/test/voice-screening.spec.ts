@@ -529,3 +529,77 @@ describe('Webhook ucu ve Twilio', () => {
     expect(b.get('Twiml')).toContain('<Gather ');
   });
 });
+
+describe('T-092 değer olayları (S6.4, S8.5): P3 → V-VITAL-ASK ön eleme, P2 atlar', () => {
+  const vital = async (
+    type: 'HEART_ANOMALY' | 'SPO2_LOW',
+    last: string | null,
+    o: { priority?: 2 | 3; headOfQueue?: boolean } = {},
+  ) => {
+    if (last) await contacts(PERSON, [{ role: 'ELDER', phone: phone(last) }]);
+    const id = await events.raiseVital(type, {
+      protectedPersonId: PERSON,
+      sourceId: `vital:${type}:${o.priority ?? 3}`,
+      note: 'değer kuralı',
+      priority: o.priority ?? 3,
+      ...(o.headOfQueue ? { headOfQueue: true } : {}),
+    });
+    expect(id).toBeTruthy();
+    return id!;
+  };
+
+  it('P3 düşük/yüksek nabız: önce kişiye V-VITAL-ASK; "evet iyiyim" → OK kapanır (SYSTEM)', async () => {
+    const id = await vital('HEART_ANOMALY', '2');
+    const during = await events.get(id);
+    expect(during).toMatchObject({ state: 'DEVICE_PROMPT', priority: 3 });
+    expect(timers.pendingIds()).toEqual([`${id}.voice-screen-expire`]);
+    expect(fake.screens).toEqual([{ to: phone('2'), text: t('V-VITAL-ASK') }]);
+    await settle();
+    const ev = await events.get(id);
+    expect(ev).toMatchObject({ state: 'CLOSED', confirmedOutcome: 'OK' });
+    expect(ev.transitions.find((x) => x.to === 'CANCELLED_BY_USER')!.actorKind).toBe('SYSTEM');
+    expect(await rowOf(id)).toMatchObject({ status: 'OK' });
+  });
+
+  it('P3 oksijen: "yardım edin" → operatör kuyruğu (merdiven sürer)', async () => {
+    const id = await vital('SPO2_LOW', '7');
+    await settle();
+    const ev = await events.get(id);
+    expect(ev.state).toBe('OPERATOR_QUEUE');
+    expect(await rowOf(id)).toMatchObject({ status: 'HELP' });
+  });
+
+  it('P3 cevapsız → operatör kuyruğu', async () => {
+    const id = await vital('HEART_ANOMALY', '0');
+    await settle();
+    expect((await events.get(id)).state).toBe('OPERATOR_QUEUE');
+    expect(await rowOf(id)).toMatchObject({ status: 'NO_ANSWER' });
+  });
+
+  it('P2 kombinasyonu (oksijen + nabız ≥120) ve kuyruğun başına alınan → ön eleme yok, doğrudan kuyruk', async () => {
+    const a = await vital('SPO2_LOW', '2', { priority: 2 });
+    expect(await events.get(a)).toMatchObject({ state: 'OPERATOR_QUEUE', priority: 2 });
+    await h.reset();
+    setup();
+    const b = await vital('HEART_ANOMALY', '2', { priority: 2, headOfQueue: true });
+    expect(await events.get(b)).toMatchObject({ state: 'OPERATOR_QUEUE', headOfQueue: true });
+    expect(fake.screens).toEqual([]);
+    expect(await rowOf(b)).toBeUndefined();
+  });
+
+  it('kişinin telefonu yok / CPaaS kapalı → ön eleme yapılamaz, olay kaybolmaz: kuyruk', async () => {
+    const a = await vital('HEART_ANOMALY', null);
+    expect((await events.get(a)).state).toBe('OPERATOR_QUEUE');
+    await h.reset();
+    setup(BASE, 'off');
+    const b = await vital('SPO2_LOW', '2');
+    expect((await events.get(b)).state).toBe('OPERATOR_QUEUE');
+  });
+
+  it('ön eleme sürerken saatten gelen "iyiyim" olayı kapatmaz (soru kişiye sesle soruldu)', async () => {
+    transport = 'drop'; // arama sonucu gelmesin
+    const id = await vital('HEART_ANOMALY', '2');
+    await deliver(sig('OK', { protectedPersonId: PERSON }));
+    expect((await events.get(id)).state).toBe('DEVICE_PROMPT');
+  });
+});

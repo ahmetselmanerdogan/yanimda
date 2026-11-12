@@ -11,6 +11,7 @@ import type {
   StepResult,
   SupervisorCoverage,
   SupervisorCoverageBoard,
+  VitalReview,
   WorkOrder,
 } from '@yanimda/contracts';
 
@@ -566,6 +567,10 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       req<WorkOrder[]>('GET', `/supervisor/work-orders?status=${status}`),
     completeWorkOrder: (id: string) =>
       req<WorkOrder>('POST', `/supervisor/work-orders/${encodeURIComponent(id)}/done`, {}),
+    // T-092 (S6.7): amirin değer eşiği incelemeleri.
+    vitalReviews: (open = true) => req<VitalReview[]>('GET', `/supervisor/vital-reviews?open=${open ? 1 : 0}`),
+    resolveVitalReview: (id: string, note?: string) =>
+      req<VitalReview>('POST', `/supervisor/vital-reviews/${encodeURIComponent(id)}/resolve`, note ? { note } : {}),
     pushConfig: () => req<{ enabled: boolean; publicKey: string | null }>('GET', '/push/web/config'),
     pushSubscribe: (sub: PushSubscriptionJSON) => req<{ enabled: boolean }>('POST', '/push/web/subscriptions', sub),
     pushUnsubscribe: (endpoint: string) => req<void>('DELETE', '/push/web/subscriptions', { endpoint }),
