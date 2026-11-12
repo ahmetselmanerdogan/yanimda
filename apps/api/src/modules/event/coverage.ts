@@ -46,6 +46,12 @@ export interface DeviceFact {
   batteryPct: number | null;
   /** Son sinyal telefon köprüsünden (BLE) geldi: telefon düşerse bu cihaz da düşer. */
   bridged: boolean;
+  /** T-085 OEM (S4.9): üretici hattın düştüğünü bildirdi (son bilgi); cihaz çevrimdışı sayılır. */
+  lineDown?: boolean;
+  /** T-085 OEM (S4.9): ev ünitesinin elektriği kesildi (yedek pilde); cihaz çalışır, kapsama nedeni olur. */
+  powerLoss?: boolean;
+  /** T-085 OEM: ev ünitesi üzerinden bağlı (radyo kolye); ev ünitesinin hattı düşerse bu cihaz da düşer. */
+  viaHomeUnit?: boolean;
 }
 
 export interface Facts {
@@ -91,7 +97,7 @@ export const DEFAULT_TIER: Record<DeviceCategory, DeviceTier> = {
 
 export function profileOf(
   source?: SignalSource,
-): Pick<DeviceFact, 'kind' | 'category' | 'tier' | 'caps' | 'batteryLifeH'> {
+): Pick<DeviceFact, 'kind' | 'category' | 'tier' | 'caps' | 'batteryLifeH' | 'viaHomeUnit'> {
   const category: DeviceCategory = source?.category ?? (source?.role === 'PHONE' ? 'PHONE' : 'WATCH');
   return {
     kind: source?.kind ?? 'SIMULATOR',
@@ -99,6 +105,7 @@ export function profileOf(
     tier: source?.tier ?? DEFAULT_TIER[category],
     caps: source?.caps ?? DEFAULT_CAPS[category],
     batteryLifeH: source?.batteryLifeH ?? null,
+    ...(source?.connectionPath === 'HOME_UNIT' ? { viaHomeUnit: true } : {}),
   };
 }
 
@@ -135,6 +142,9 @@ export function applySignal(f: Facts, s: Signal, at: Date): Facts {
   const battery =
     s.device?.batteryPct ?? (s.kind === 'BATTERY' && typeof s.value === 'number' ? Math.round(s.value) : undefined);
   if (battery !== undefined) d.batteryPct = battery;
+  // T-085 OEM (S4.9): üreticinin bildirdiği hat ve ev ünitesi elektriği (son bilgi geçerli).
+  if (typeof s.device?.lineOk === 'boolean') d.lineDown = !s.device.lineOk;
+  if (typeof s.device?.mainsPower === 'boolean') d.powerLoss = !s.device.mainsPower;
 
   const charging = s.kind === 'CHARGE_START' ? true : s.kind === 'CHARGE_END' ? false : s.device?.charging;
   if (charging === true && !d.charging) {
@@ -169,6 +179,8 @@ export interface CoverageCtx {
   hold?: boolean;
   /** S4.7 YERİNDE KONTROL: takılı cihaz bu pil yüzdesinin üzerindeyken sustuysa "birden sustu" (varsayılan 20). */
   droppedPct?: number;
+  /** T-085 OEM (S2.7): gecikmesi bozulan ortakların cihaz türleri; bu türdeki cihazlar "zayıf" (PARTNER_LATENCY). */
+  weakKinds?: ReadonlySet<string>;
 }
 
 const minutesSince = (iso: string | null, now: Date) =>
@@ -180,9 +192,18 @@ export function phoneOnline(f: Facts, now: Date, p: CoverageParams): boolean {
   return Object.values(f.devices).some((d) => d.category === 'PHONE' && minutesSince(d.seenAt, now) < p.onlineMin.A);
 }
 
-/** Cihaz çevrimiçi (S3.2): sınıf süresi içinde görüldü; köprülüyse köprü de çevrimiçi (S4.8). C sınıfı hiç sayılmaz. */
+/** T-085 OEM: kişinin ev ünitelerinden birinin hattı düştü (ona bağlı radyo kolyeler de düşer). */
+const homeUnitLineDown = (f: Facts) =>
+  Object.values(f.devices).some((x) => x.category === 'HOME_UNIT' && x.lineDown === true);
+
+/**
+ * Cihaz çevrimiçi (S3.2): sınıf süresi içinde görüldü; köprülüyse köprü de çevrimiçi (S4.8). C sınıfı hiç sayılmaz.
+ * T-085 OEM: üreticinin bildirdiği hat kaybında cihaz, ev ünitesinin hattı düştüyse ona bağlı kolye de çevrimdışı.
+ */
 export function deviceOnline(d: DeviceFact, f: Facts, now: Date, p: CoverageParams): boolean {
   if (d.tier === 'C') return false;
+  if (d.lineDown === true) return false;
+  if (d.viaHomeUnit && d.category !== 'HOME_UNIT' && homeUnitLineDown(f)) return false;
   const limit = d.tier === 'B' ? p.onlineMin.B : p.onlineMin.A;
   if (!(minutesSince(d.seenAt, now) < limit)) return false;
   if (d.bridged && d.category !== 'PHONE' && !phoneOnline(f, now, p)) return false;
@@ -259,6 +280,12 @@ export function computeCoverage(f: Facts, now: Date, ctx: CoverageCtx): Coverage
   }
   if (level === 'NIGHT') reasons.push('NIGHT_WINDOW');
   if (ctx.hold) reasons.push('ON_HOLD');
+  // T-085 OEM (S2.7, S4.9): seviyeden bağımsız bilgi nedenleri. C sınıfı cihaz hiçbirini değiştirmez.
+  const counted = devices.filter((d) => d.tier !== 'C');
+  if (counted.some((d) => d.lineDown === true)) reasons.push('LINE_LOSS');
+  if (counted.some((d) => d.category === 'HOME_UNIT' && d.powerLoss === true)) reasons.push('HOME_UNIT_POWER_LOSS');
+  if (ctx.weakKinds?.size && counted.some((d) => !!d.kind && ctx.weakKinds!.has(d.kind)))
+    reasons.push('PARTNER_LATENCY');
   const droppedPct = ctx.droppedPct ?? 20;
   const dropped = alarm.filter(
     (d) => !online(d) && !d.charging && d.onBody === true && d.batteryPct !== null && d.batteryPct > droppedPct,

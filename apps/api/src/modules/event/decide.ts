@@ -1,6 +1,6 @@
-import type { EventType, NotifyRequest, Signal } from '@yanimda/contracts';
+import type { DeviceTier, EventType, NotifyRequest, Signal } from '@yanimda/contracts';
 
-import { batteryOf, coverageOf, ruleFor, type RulePack } from './rules.loader';
+import { batteryOf, coverageOf, pendantOf, ruleFor, type RulePack } from './rules.loader';
 
 /**
  * D-02 sinyal → karar (T-012). Saf fonksiyon: cihaz ve ülke bilmez; eşikler ve bastırmalar kural paketinden.
@@ -8,13 +8,20 @@ import { batteryOf, coverageOf, ruleFor, type RulePack } from './rules.loader';
  */
 export type Notice = Pick<NotifyRequest, 'code' | 'audience'>;
 
+/**
+ * Yok sayma nedeni (denetime yazılır): CHARGING_FALL şarjdaki cihazın düşmesi (S3.4); TIER_C eğilim sınıfı cihaz olay
+ * açamaz; TIER_B_P1 canlı izlem sınıfı cihaz P1 (SOS / düşme) açamaz (S2.1, T-085 OEM).
+ */
+export type IgnoreReason = 'CHARGING_FALL' | 'TIER_C' | 'TIER_B_P1';
+
 export type Decision =
-  | { action: 'create'; type: EventType }
+  /** `note`: CREATED geçişinin notu (KAPSAMA BOŞLUĞU'nda neden kodu, ör. NOT_WORN). */
+  | { action: 'create'; type: EventType; note?: string }
   | { action: 'answer' } //   CANCEL / OK: cihaz sorusuna cevap
   | { action: 'on-body' } //  saat takıldı: WATCH_OFF kapanır
   | { action: 'notify'; notices: Notice[] }
   | { action: 'charge-start' } // T-086: şarja takıldı — bekleyen WATCH_OFF kapanır (şarj boşluğu devralır)
-  | { action: 'ignore'; reason: 'CHARGING_FALL' } // S3.4: şarjdaki cihazın düşmesi yok sayılır, denetime yazılır
+  | { action: 'ignore'; reason: IgnoreReason } // S3.4 şarjdaki düşme; S2.1 sınıf kapısı — denetime yazılır
   | { action: 'none'; reason: string };
 
 export interface DecideContext {
@@ -29,6 +36,13 @@ export interface DecideContext {
   alarmWorn?: boolean;
   /** Sinyali gönderen cihaz A sınıfı giyilebilir mi; değilse (yüzük, telefon) çıkarılması olay açmaz. */
   alarmWearable?: boolean;
+  /**
+   * T-085 OEM (S2.1): sinyali gönderen cihazın sınıfı. Yalnız A sınıfı P1 açar; B sınıfı SOS / düşme (P1) açamaz (P2/P3
+   * yalnız kurallarla); C sınıfı hiçbir olay açmaz. Verilmezse A (eski kayıtlar).
+   */
+  tier?: DeviceTier;
+  /** S4.9: katalogdaki pil ömrü uzun (12 ay kolye): yaşlıya pil bildirimi gitmez, bakım iş emri açılır. */
+  longLifeBattery?: boolean;
 }
 
 const SIMPLE: Partial<Record<Signal['kind'], EventType>> = {
@@ -42,11 +56,26 @@ const SIMPLE: Partial<Record<Signal['kind'], EventType>> = {
  * katalogdaki tarihsel adlardır. Şarjdaki cihazın pil uyarısı gönderilmez.
  */
 export function decide(s: Pick<Signal, 'kind' | 'value' | 'device' | 'payload'>, ctx: DecideContext): Decision {
-  const create = (type: EventType): Decision => {
+  return tierGate(decideKind(s, ctx), ctx);
+}
+
+/**
+ * S2.1 sınıf kapısı (T-085 OEM; adaptör profilinin yanında olay motorunda ikinci kez): C sınıfı olay açmaz, B sınıfı
+ * önceliği 1 olan olayı (SOS, düşme) açmaz. Olay motoru cihaz bilmez: sınıf sinyalin `source` alanından gelir.
+ */
+export function tierGate(d: Decision, ctx: Pick<DecideContext, 'pack' | 'tier'>): Decision {
+  if (d.action !== 'create' || !ctx.tier || ctx.tier === 'A') return d;
+  if (ctx.tier === 'C') return { action: 'ignore', reason: 'TIER_C' };
+  if (ruleFor(ctx.pack, d.type)?.priority === 1) return { action: 'ignore', reason: 'TIER_B_P1' };
+  return d;
+}
+
+function decideKind(s: Pick<Signal, 'kind' | 'value' | 'device' | 'payload'>, ctx: DecideContext): Decision {
+  const create = (type: EventType, note?: string): Decision => {
     const rule = ruleFor(ctx.pack, type);
     if (!rule) return { action: 'none', reason: `kural yok: ${type}` };
     if (ctx.night && rule.suppressIn?.includes('NIGHT')) return { action: 'none', reason: 'gece penceresi' };
-    return { action: 'create', type };
+    return note ? { action: 'create', type, note } : { action: 'create', type };
   };
 
   switch (s.kind) {
@@ -56,6 +85,14 @@ export function decide(s: Pick<Signal, 'kind' | 'value' | 'device' | 'payload'>,
     case 'ON_BODY':
       return { action: 'on-body' };
     case 'OFF_BODY':
+      // T-085 OEM (S4.9): üreticinin "N gündür takılmadı" bildirimi (value = gün). Eşik ve üstü KAPSAMA BOŞLUĞU P3
+      // (neden NOT_WORN), yaşlıya hatırlatma yok; başka bir A sınıfı cihaz takılıysa açılmaz.
+      if (typeof s.value === 'number') {
+        if (s.value < pendantOf(ctx.pack).notWornMinDays)
+          return { action: 'none', reason: 'takılmadı bildirimi eşik altı' };
+        if (ctx.alarmWorn) return { action: 'none', reason: 'başka alarm cihazı takılı' };
+        return create('COVERAGE_GAP', 'NOT_WORN');
+      }
       // S3.4: "saat çıkarıldı" yalnız hiçbir A sınıfı cihaz takılı değilken; şarja takılan cihaz şarj boşluğuna girer.
       if (ctx.charging || s.device?.charging === true) return { action: 'none', reason: 'şarjda' };
       if (ctx.alarmWearable === false) return { action: 'none', reason: 'alarm cihazı değil' };
@@ -78,6 +115,8 @@ export function decide(s: Pick<Signal, 'kind' | 'value' | 'device' | 'payload'>,
     case 'BATTERY': {
       if (typeof s.value !== 'number') return { action: 'none', reason: 'pil değeri yok' };
       if (ctx.charging || s.device?.charging === true) return { action: 'none', reason: 'şarjda' };
+      // S4.9: 12 ay pilli kolyede yaşlı hiç rahatsız edilmez; pil bakım iş emri (PendantMaintenanceService) açılır.
+      if (ctx.longLifeBattery) return { action: 'none', reason: 'uzun ömürlü pil: bakım iş emri' };
       const b = batteryOf(ctx.pack);
       if (s.value <= b.criticalPct)
         return {

@@ -174,6 +174,40 @@
       },
       "additionalProperties": false
     },
+    "partner": {
+      "description": "T-085 OEM (S2.7): ortak gecikmesi; p99 eşiği (sn), pencere (dk), en az örnek",
+      "type": "object",
+      "required": ["latencyP99Sec", "latencyWindowMin", "minSamples"],
+      "properties": {
+        "latencyP99Sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "latencyWindowMin": { "type": "integer", "minimum": 5, "maximum": 1440 },
+        "minSamples": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "pendant": {
+      "description": "T-085 / T-086 (S4.9): uzun ömürlü pilli kolye bakımı ve 'takılmadı' bildirimi",
+      "type": "object",
+      "required": [
+        "longLifeBatteryH",
+        "workOrderPct",
+        "workOrderDaysBeforeEnd",
+        "replaceWithinDays",
+        "replacedPct",
+        "testReminderDays",
+        "notWornMinDays"
+      ],
+      "properties": {
+        "longLifeBatteryH": { "type": "integer", "minimum": 24 },
+        "workOrderPct": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "workOrderDaysBeforeEnd": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "replaceWithinDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+        "replacedPct": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "testReminderDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "notWornMinDays": { "type": "integer", "minimum": 1, "maximum": 30 }
+      },
+      "additionalProperties": false
+    },
     "chronicGap": {
       "description": "S4.10: kronik boşluk planı (günde boşluk sayısı, kişiye özel tolerans üst sınırı, amir listesi korunma yüzdesi)",
       "type": "object",

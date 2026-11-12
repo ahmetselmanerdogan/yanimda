@@ -18,7 +18,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
-import { device, signal } from '../../db/schema';
+import { auditLog, device, signal } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
 import { IdempotencyStore } from './idempotency.store';
 import { AUTH_REJECT_REASONS, rejectedEntry, type RejectedSignal, type SignalRejectReason } from './signal-reject';
@@ -68,8 +68,13 @@ export class SignalService {
 
   /**
    * @param denied Yetki denetiminin (CompanionService.authorizeBatch) reddettiği sıralar → neden.
+   * @param opts.onAccepted T-085 OEM: yeni yazılan (tekrar olmayan) her sinyal için, commit'ten sonra (ortak gecikmesi).
    */
-  async accept(batch: unknown[], denied: ReadonlyMap<number, SignalRejectReason> = new Map()): Promise<AcceptResult> {
+  async accept(
+    batch: unknown[],
+    denied: ReadonlyMap<number, SignalRejectReason> = new Map(),
+    opts: { onAccepted?: (s: Signal) => void } = {},
+  ): Promise<AcceptResult> {
     if (!Array.isArray(batch) || batch.length === 0) throw new BadRequestException('Boş sinyal listesi');
     const rejected: RejectedSignal[] = [];
     const candidates: { index: number; signal: Signal }[] = [];
@@ -83,10 +88,15 @@ export class SignalService {
     // T-015: her sinyal cihaz türünün adaptöründen geçer (normalize + source). Desteklenmeyen → yalnız o sinyal.
     const prepared: Signal[] = [];
     const normalized = candidates.length ? await this.devices.prepareEach(candidates.map((c) => c.signal)) : [];
+    const unsupported: Signal[] = [];
     normalized.forEach((s, i) => {
       if (s) prepared.push(s);
-      else rejected.push(rejectedEntry(candidates[i].index, candidates[i].signal, 'UNSUPPORTED_SIGNAL'));
+      else {
+        rejected.push(rejectedEntry(candidates[i].index, candidates[i].signal, 'UNSUPPORTED_SIGNAL'));
+        unsupported.push(candidates[i].signal);
+      }
     });
+    if (unsupported.length) await this.auditUnsupported(unsupported);
     rejected.sort((a, b) => a.index - b.index);
     if (rejected.length)
       this.log.warn(`Partide ${rejected.length}/${batch.length} sinyal reddedildi (${summary(rejected)})`);
@@ -122,11 +132,33 @@ export class SignalService {
         throw new ServiceUnavailableException('Sinyal kaydedilemedi, yeniden deneyin');
       }
       await this.idem.complete(s.idempotencyKey);
-      if (inserted) accepted++;
-      else duplicates++;
+      if (inserted) {
+        accepted++;
+        opts.onAccepted?.(s);
+      } else duplicates++;
     }
     if (accepted) this.outbox.notifyCommitted();
     return { accepted, duplicates, rejected };
+  }
+
+  /**
+   * T-085 OEM (S2.5): profil dışı sinyal (cihaz türü / modeli göndermez, ör. C sınıfından düşme) denetime yazılır.
+   * Yalnız sabit kod, tür ve cihaz kimliği; kişi kimliği, değer, konum yok. Yazım hatası partiyi durdurmaz.
+   */
+  private async auditUnsupported(list: Signal[]) {
+    try {
+      await this.db.insert(auditLog).values(
+        list.map((s) => ({
+          actorKind: 'SYSTEM',
+          action: 'signal.rejected',
+          entityType: 'device',
+          entityId: s.deviceId,
+          data: { kind: s.kind, reason: 'UNSUPPORTED_SIGNAL' },
+        })),
+      );
+    } catch (e) {
+      this.log.warn(`Ret denetimi yazılamadı: ${safeError(e)}`);
+    }
   }
 
   /** Tek transaction. Veritabanında zaten varsa (Redis anahtarı kaybolmuşsa) false döner, outbox'a yazmaz. */

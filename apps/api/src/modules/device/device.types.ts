@@ -50,11 +50,18 @@ export interface RingRequest {
 /** T-089 operatör komutları (S7.1, S8.3): konum iste (açık olay), cihaz testi (aylık deneme, S4.9). */
 export type DeviceCommand = { type: 'LOCATE'; eventId: string } | { type: 'TEST' };
 
+/** T-085 OEM: sinyali gönderen kayıtlı cihazın katalog modeli (ortak adaptörü profili modele göre seçer). */
+export interface NormalizeContext {
+  modelId?: string | null;
+}
+
 export interface DeviceAdapter {
   readonly kind: DeviceKind;
   capabilities(): DeviceCapabilities;
+  /** T-085 OEM: modele özgü yetenekler (ortak adaptörü); yoksa `capabilities()` geçerli. */
+  capabilitiesFor?(modelId: string | null | undefined): DeviceCapabilities;
   /** Ham (şemaya uygun) sinyali kanonik biçime getirir. Girişi değiştirmez. Desteklenmeyen → UnsupportedSignalError. */
-  normalize(raw: Signal): Signal;
+  normalize(raw: Signal, ctx?: NormalizeContext): Signal;
   /** Sonuç push teslimidir (void: sonucu bilinmeyen / ağa çıkmayan uygulama, ör. simülatör = gönderildi). */
   promptUser(deviceId: string, req: PromptRequest): Promise<PushOutcome | void>;
   ring(deviceId: string, req: RingRequest): Promise<PushOutcome | void>;

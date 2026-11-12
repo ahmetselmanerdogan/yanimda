@@ -140,6 +140,22 @@ export interface CoverageNoneParams {
   welfareDroppedH: number;
   welfareNoMovementH: number;
 }
+/** T-085 OEM (S2.7): ortak gecikmesi — son latencyWindowMin dk'da en az minSamples örnekle p99 > latencyP99Sec. */
+export interface PartnerParams {
+  latencyP99Sec: number;
+  latencyWindowMin: number;
+  minSamples: number;
+}
+/** T-085 / T-086 (S4.9): uzun ömürlü pilli kolye bakımı ve üreticinin "N gündür takılmadı" bildirimi. */
+export interface PendantParams {
+  longLifeBatteryH: number;
+  workOrderPct: number;
+  workOrderDaysBeforeEnd: number;
+  replaceWithinDays: number;
+  replacedPct: number;
+  testReminderDays: number;
+  notWornMinDays: number;
+}
 export interface RulePack {
   country: string;
   version: number;
@@ -154,6 +170,8 @@ export interface RulePack {
   battery?: BatteryParams;
   charging?: ChargingParams;
   coverageNone?: Partial<CoverageNoneParams> & Pick<CoverageNoneParams, 'remindMin' | 'familyMin' | 'eventMin'>;
+  partner?: PartnerParams;
+  pendant?: PendantParams;
   chronicGap?: Partial<ChronicGapParams>;
   rules: Rule[];
 }
@@ -232,6 +250,22 @@ export const coverageNoneOf = (pack: RulePack): CoverageNoneParams => ({
   ...DEFAULT_COVERAGE_NONE,
   ...pack.coverageNone,
 });
+
+export const DEFAULT_PARTNER: PartnerParams = { latencyP99Sec: 60, latencyWindowMin: 60, minSamples: 20 };
+export const DEFAULT_PENDANT: PendantParams = {
+  longLifeBatteryH: 2000,
+  workOrderPct: 20,
+  workOrderDaysBeforeEnd: 30,
+  replaceWithinDays: 14,
+  replacedPct: 80,
+  testReminderDays: 30,
+  notWornMinDays: 3,
+};
+export const partnerOf = (pack: RulePack): PartnerParams => pack.partner ?? DEFAULT_PARTNER;
+export const pendantOf = (pack: RulePack): PendantParams => pack.pendant ?? DEFAULT_PENDANT;
+/** Katalogdaki pil ömrü uzun (12 ay pilli kolye): yaşlıya pil bildirimi gitmez, bakım iş emri açılır (S4.9). */
+export const isLongLifeBattery = (pack: RulePack, batteryLifeH: number | null | undefined) =>
+  typeof batteryLifeH === 'number' && batteryLifeH >= pendantOf(pack).longLifeBatteryH;
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {

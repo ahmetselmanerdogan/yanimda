@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
-import { contact, device, invite, signal } from '../../db/schema';
+import { contact, device, invite, signal, vendorLink } from '../../db/schema';
 import { subscriptionProtection } from '../billing/subscription-protection';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
@@ -356,6 +356,11 @@ export class EnrollmentService {
       .set({ revokedAt: now, retiredAt: now, pushToken: null })
       .where(and(eq(device.id, deviceId), isNull(device.revokedAt)))
       .returning({ id: device.id, personId: device.protectedPersonId });
+    // T-085 OEM (S9.4): ortak cihazının üretici bağlantısı ve bulut belirteci de anında geçersiz.
+    await this.db
+      .update(vendorLink)
+      .set({ status: 'REVOKED', revokedAt: now, tokenEnc: null })
+      .where(and(eq(vendorLink.deviceId, deviceId), eq(vendorLink.status, 'ACTIVE')));
     if (rows[0]) return { protectedPersonId: rows[0].personId };
     const [exists] = await this.db
       .select({ id: device.id, personId: device.protectedPersonId })

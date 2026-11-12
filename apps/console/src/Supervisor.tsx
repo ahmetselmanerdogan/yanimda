@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { CoverageBoardView } from './components/CoverageBoard';
 import { DispatchPanel } from './components/Dispatch';
+import { PartnerOpsPanel } from './components/PartnerOps';
 import type { DispatchView, SupervisorAlertView } from './lib/api';
 import {
   ApiError,
@@ -264,6 +265,8 @@ export function SupervisorBoard({
               </ul>
             )}
           </section>
+
+          <PartnerOpsPanel api={api} onError={setError} />
 
           <section className="sup-panel wide" data-testid="dispatches">
             <h2>{t('O-UI-DISPATCH-OPEN-LIST')}</h2>

@@ -239,6 +239,7 @@ export class CoverageService {
       (await this.db.select().from(chargingPlan)).map((p) => [p.protectedPersonId, planWindowOf(p)] as const),
     );
     const out: CoverageUpdate[] = [];
+    const weak = await this.weakKinds();
     for (const r of rows) {
       const sleep = await this.settings.settingsOf(r.protectedPersonId);
       let window = plans.get(r.protectedPersonId) ?? this.defaultPlan();
@@ -251,7 +252,7 @@ export class CoverageService {
           .set({ planLearnedOn: today })
           .where(eq(coverageState.protectedPersonId, r.protectedPersonId));
       }
-      const ctx = { sleep, plan: window };
+      const ctx = { sleep, plan: window, weak };
       const facts = factsOf(r);
       const cov = this.compute(facts, now, ctx);
       const step = stepLadders(ladderOf(r), cov, facts, this.ladderCtx(r.protectedPersonId, now, ctx));
@@ -598,9 +599,20 @@ export class CoverageService {
 
   // ---- İç ----
 
-  private async contextOf(protectedPersonId: string, plan?: PlanWindow) {
+  private async contextOf(protectedPersonId: string, plan?: PlanWindow, weak?: ReadonlySet<string>) {
     const sleep = await this.settings.settingsOf(protectedPersonId);
-    return { sleep, plan: plan ?? (await this.planOf(protectedPersonId)) };
+    return { sleep, plan: plan ?? (await this.planOf(protectedPersonId)), weak: weak ?? (await this.weakKinds()) };
+  }
+
+  /**
+   * T-085 OEM (S2.7): gecikmesi bozulan ortaklar (device.partner_status; ortak kodu = cihaz türü). Ortak sağlığını
+   * PartnerHealthService yazar; kapsama yalnız "zayıf" nedenini ekler, seviyeyi değiştirmez.
+   */
+  async weakKinds(): Promise<ReadonlySet<string>> {
+    const r = (await this.db.execute(
+      sql`SELECT partner FROM device.partner_status WHERE degraded_since IS NOT NULL`,
+    )) as unknown as { rows: { partner: string }[] };
+    return new Set(r.rows.map((x) => x.partner));
   }
 
   private defaultPlan(): PlanWindow {
@@ -608,7 +620,7 @@ export class CoverageService {
     return { start, end, source: 'DEFAULT', nightChargeAllowed: false };
   }
 
-  private compute(f: Facts, now: Date, ctx: { sleep: PersonWindow }): CoverageResult {
+  private compute(f: Facts, now: Date, ctx: { sleep: PersonWindow; weak?: ReadonlySet<string> }): CoverageResult {
     const pack = this.pack;
     const battery = batteryOf(pack);
     return computeCoverage(f, now, {
@@ -617,6 +629,7 @@ export class CoverageService {
       night: isInWindow(now, ctx.sleep.timezone, ctx.sleep.start, ctx.sleep.end),
       hold: onHold(ctx.sleep, now),
       droppedPct: battery.warnPct,
+      weakKinds: ctx.weak,
     });
   }
 
@@ -656,7 +669,7 @@ export class CoverageService {
   private async evaluate(
     tx: Tx,
     personId: string,
-    ctx: { sleep: PersonWindow; plan: PlanWindow },
+    ctx: { sleep: PersonWindow; plan: PlanWindow; weak?: ReadonlySet<string> },
     mutate: ((f: Facts) => Facts) | null,
     nowOf: (f: Facts) => Date,
     ladderMutate?: (l: LadderState) => void,
@@ -848,7 +861,7 @@ export async function deviceSummaries(
           SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
                  coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.voice_order, d.last_seen_at,
                  d.battery_pct, d.charging, d.charging_since, d.on_wrist, d.connectivity, m.capabilities,
-                 m.battery_life_h, right(d.voice_number, 2) AS voice_last2
+                 m.battery_life_h, right(d.voice_number, 2) AS voice_last2, d.connection_path
           FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
           WHERE d.protected_person_id = ${personId}::uuid AND d.revoked_at IS NULL AND d.retired_at IS NULL
           ORDER BY d.created_at, d.id`)) as unknown as { rows: DeviceRow[] }
@@ -935,6 +948,7 @@ interface DeviceRow {
   battery_life_h: number | null;
   /** Cihaza özel numaranın son iki hanesi (numaranın kendisi okunmaz). */
   voice_last2: string | null;
+  connection_path?: string | null;
 }
 
 const planWindowOf = (p: typeof chargingPlan.$inferSelect): PlanWindow => ({
@@ -1019,6 +1033,10 @@ function rowFact(r: DeviceRow, fact?: DeviceFact): DeviceFact {
     chargeEndedAt: fact?.chargeEndedAt ?? null,
     batteryPct: useFact ? fact!.batteryPct : r.battery_pct,
     bridged: useFact ? fact!.bridged : r.connectivity === 'BLE' && category !== 'PHONE',
+    // T-085 OEM: hat / elektrik yalnız sinyalden (olgu); ev ünitesi bağlantısı kayıttan da.
+    ...(fact?.lineDown !== undefined ? { lineDown: fact.lineDown } : {}),
+    ...(fact?.powerLoss !== undefined ? { powerLoss: fact.powerLoss } : {}),
+    ...(fact?.viaHomeUnit || r.connection_path === 'HOME_UNIT' ? { viaHomeUnit: true } : {}),
   };
 }
 

@@ -717,3 +717,81 @@ export const webPushSubscription = identitySchema.table('web_push_subscription',
   lastOkAt: timestamptz('last_ok_at'),
   failures: integer('failures').notNull().default(0),
 });
+
+// ---- 0036 · T-085 OEM ortak cihazları (docs/07 S2.5–S2.7, S4.9) ----
+
+/** Kişi/cihaz ↔ üretici bağlantısı. Üretici hesap kimliği ve belirteç yalnız şifreli (FieldCipher). */
+export const vendorLink = deviceSchema.table('vendor_link', {
+  id: uuid('id').primaryKey(),
+  partner: text('partner').notNull(),
+  vendorDeviceId: text('vendor_device_id').notNull(),
+  vendorAccountEnc: text('vendor_account_enc'),
+  tokenEnc: text('token_enc'),
+  deviceId: uuid('device_id').notNull(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  modelId: text('model_id').notNull(),
+  status: text('status').notNull().default('ACTIVE'),
+  dataRegion: text('data_region').notNull(),
+  consentBasis: text('consent_basis').notNull(),
+  consentAt: timestamptz('consent_at'),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  createdBy: text('created_by'),
+  revokedAt: timestamptz('revoked_at'),
+});
+
+/** Webhook tekrar koruması: (ortak, nonce) bir kez. */
+export const partnerDelivery = deviceSchema.table(
+  'partner_delivery',
+  {
+    partner: text('partner').notNull(),
+    nonce: text('nonce').notNull(),
+    receivedAt: timestamptz('received_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.partner, t.nonce] })],
+);
+
+/** Ortak gecikmesi örnekleri (ms). */
+export const partnerLatency = deviceSchema.table('partner_latency', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  partner: text('partner').notNull(),
+  at: timestamptz('at').notNull(),
+  latencyMs: integer('latency_ms').notNull(),
+});
+
+/** Ortak başına son gecikme değerlendirmesi; degraded_since → kapsamada PARTNER_LATENCY. */
+export const partnerStatus = deviceSchema.table('partner_status', {
+  partner: text('partner').primaryKey(),
+  samples: integer('samples').notNull().default(0),
+  p95Ms: integer('p95_ms'),
+  p99Ms: integer('p99_ms'),
+  degradedSince: timestamptz('degraded_since'),
+  checkedAt: timestamptz('checked_at'),
+});
+
+/** Operasyon iş emri (S4.9): kolye pil değişimi. */
+export const workOrder = deviceSchema.table('work_order', {
+  id: uuid('id').primaryKey(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('OPEN'),
+  reason: text('reason').notNull(),
+  deviceId: uuid('device_id').notNull(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  batteryPct: integer('battery_pct'),
+  predictedEndAt: timestamptz('predicted_end_at'),
+  dueAt: timestamptz('due_at').notNull(),
+  createdAt: timestamptz('created_at').notNull(),
+  closedAt: timestamptz('closed_at'),
+  closedBy: text('closed_by'),
+  closeReason: text('close_reason'),
+});
+
+/** Uzun ömürlü pilli cihazın pil eğilimi ve aylık test hatırlatması. */
+export const pendantMaintenance = deviceSchema.table('pendant_maintenance', {
+  deviceId: uuid('device_id').primaryKey(),
+  protectedPersonId: uuid('protected_person_id').notNull(),
+  baselinePct: integer('baseline_pct'),
+  baselineAt: timestamptz('baseline_at'),
+  lastPct: integer('last_pct'),
+  lastAt: timestamptz('last_at'),
+  testRemindedAt: timestamptz('test_reminded_at'),
+});

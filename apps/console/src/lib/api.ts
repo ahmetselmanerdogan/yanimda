@@ -5,10 +5,12 @@ import type {
   EventState,
   EventType,
   LadderView,
+  PartnerHealth,
   StepAssessment,
   StepResult,
   SupervisorCoverage,
   SupervisorCoverageBoard,
+  WorkOrder,
 } from '@yanimda/contracts';
 
 export interface QueueItem {
@@ -553,6 +555,12 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     adminCase: (id: string) => req<AdminCase>('GET', `/admin/events/${encodeURIComponent(id)}/case`),
     alerts: (open = true) => req<SupervisorAlertView[]>('GET', `/supervisor/alerts${open ? '?open=1' : ''}`),
     ackAlert: (id: string) => req<SupervisorAlertView>('POST', `/supervisor/alerts/${encodeURIComponent(id)}/ack`, {}),
+    // T-085 OEM (S2.7, S4.9): ortak gecikmesi ve kolye pili iş emirleri (amir).
+    supervisorPartners: () => req<PartnerHealth[]>('GET', '/supervisor/partners'),
+    workOrders: (status: 'OPEN' | 'DONE' = 'OPEN') =>
+      req<WorkOrder[]>('GET', `/supervisor/work-orders?status=${status}`),
+    completeWorkOrder: (id: string) =>
+      req<WorkOrder>('POST', `/supervisor/work-orders/${encodeURIComponent(id)}/done`, {}),
     pushConfig: () => req<{ enabled: boolean; publicKey: string | null }>('GET', '/push/web/config'),
     pushSubscribe: (sub: PushSubscriptionJSON) => req<{ enabled: boolean }>('POST', '/push/web/subscriptions', sub),
     pushUnsubscribe: (endpoint: string) => req<void>('DELETE', '/push/web/subscriptions', { endpoint }),

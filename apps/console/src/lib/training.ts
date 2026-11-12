@@ -265,6 +265,12 @@ export class TrainingSim {
     unclaim: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
+    // T-085 OEM: ortak gecikmesi ve kolye iş emirleri eğitim modunda yok (amir panosu yok).
+    supervisorPartners: async () => [],
+    workOrders: async () => [],
+    completeWorkOrder: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     // 112 süreç takibi eğitim modunda yok (gerçek 112 aranmaz).
     dispatch: async () => {
       throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
