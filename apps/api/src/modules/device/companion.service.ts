@@ -8,7 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { type KafkaEnvelope, type NotifyRequest, TOPICS } from '@yanimda/contracts';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -19,6 +19,7 @@ import { device } from '../../db/schema';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
 import type { SignalRejectReason } from '../signal/signal-reject';
+import { BRIDGED_MODELS } from './adapters/ble-bridged.adapter';
 import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
 import { type DevicePrincipal, EnrollmentService, type TokenResponse } from './enrollment.service';
 
@@ -185,7 +186,11 @@ export class CompanionService {
         and(
           inArray(sql`${device.id}::text`, [...new Set(bridged.values())]),
           eq(device.protectedPersonId, p.protectedPersonId),
-          eq(device.kind, 'WEAROS_WATCH'),
+          // T-092 (S7.5): bu telefona bağlı etkin BLE cihazlar da (POST /devices/bridged); sinyal türünü adaptör sınar.
+          or(
+            eq(device.kind, 'WEAROS_WATCH'),
+            and(inArray(device.kind, BRIDGED_MODELS), eq(device.bridgeDeviceId, p.deviceId)),
+          ),
           isNull(device.revokedAt),
         ),
       );

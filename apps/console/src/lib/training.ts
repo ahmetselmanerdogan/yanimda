@@ -246,6 +246,10 @@ export class TrainingSim {
     // T-089 cihaz şeridi: tatbikat kişisinin sahte saati ve telefonu; komutlar hiçbir cihaza gitmez.
     coverage: async () => trainingCoverage(Date.now()),
     deviceCommand: async (_id, type, eventId) => ({ type, eventId: eventId ?? null, sent: true, outcome: 'sent' }),
+    // T-092: tatbikatta değer grafiği yok (değer olayı açılmaz).
+    vitals: async () => {
+      throw new ApiError(404, 'Eğitim modunda değer yok');
+    },
     supervisorCoverage: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },

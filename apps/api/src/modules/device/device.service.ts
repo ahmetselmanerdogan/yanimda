@@ -20,6 +20,7 @@ import {
 } from '../partner/partner.types';
 import { AdapterRegistry } from './adapter.registry';
 import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
+import { BleBridgedAdapter, BRIDGED_MODELS } from './adapters/ble-bridged.adapter';
 import { IosPhoneAdapter } from './adapters/ios-phone.adapter';
 import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
@@ -45,6 +46,7 @@ export function defaultRegistry(
     new AndroidPhoneAdapter(push),
     new IosPhoneAdapter(push),
     new SimulatorAdapter(),
+    ...BRIDGED_MODELS.map((m) => new BleBridgedAdapter(m)), // T-092 telefon köprüsü
     // T-085 OEM: sahte ortak (test / geliştirme). Webhook'u yalnız sırrı tanımlıysa açılır (PartnerWebhookService).
     new FakePendantAdapter(partners),
   ]);

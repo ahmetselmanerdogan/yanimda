@@ -9,6 +9,8 @@ import type { EventState, EventType } from '@yanimda/contracts';
  *  - DISPATCH (112'ye ulaşıldı) → F-EVT-112
  *  - Kişi saatten iptal etti (CANCELLED_BY_USER → CLOSED), FALL/SOS → F-EVT-OK
  *  - Takip araması iyi kapandı (FOLLOW_UP, OK) → F-FOLLOWUP
+ *  - T-092 (S6.8): değer olayı (HEART_ANOMALY / SPO2_LOW) "iyi" olmayan sonuçla kapandı (EMERGENCY, UNREACHABLE) →
+ *    F-VITAL-RESULT. "İyi" sonuç aileye gitmez (değer kuralları bayrakla kapalıyken bu olaylar hiç açılmaz).
  * Test olayları (T-063) yalnız "test" kodlarıyla: kuyruğa düşünce F-TEST-QUEUED, kapanınca F-TEST-DONE.
  */
 export interface EventFacts {
@@ -28,6 +30,9 @@ const QUEUE_CODE: Partial<Record<EventType, string>> = {
   WATCH_OFF: 'F-WATCH-OFF-4H',
   CONNECTION_LOST: 'F-CONN-LOST',
 };
+/** T-092 değer olayları ve "iyi" olmayan sonuçları (S6.8). */
+const VITAL_TYPES = new Set<EventType>(['HEART_ANOMALY', 'SPO2_LOW']);
+const NOT_GOOD = new Set(['EMERGENCY', 'UNREACHABLE']);
 /** Kuyruğa dönüş (ilk düşüş değil): aile zaten bilgilendirildi. */
 const REQUEUE_FROM = new Set<EventState>(['OPERATOR_ASSIGNED', 'CONTACT_CHAIN']);
 
@@ -41,6 +46,7 @@ export function familyNoticeFor(ev: EventFacts, t: TransitionFacts): string | nu
   if (t.to === 'CLOSED' && t.from === 'CANCELLED_BY_USER' && (ev.type === 'FALL' || ev.type === 'SOS'))
     return 'F-EVT-OK';
   if (t.to === 'CLOSED' && ev.type === 'FOLLOW_UP' && ev.confirmedOutcome === 'OK') return 'F-FOLLOWUP';
+  if (t.to === 'CLOSED' && VITAL_TYPES.has(ev.type) && NOT_GOOD.has(ev.confirmedOutcome ?? '')) return 'F-VITAL-RESULT';
   return null;
 }
 
@@ -99,6 +105,8 @@ const DELIVERY: Record<string, Delivery> = {
   'F-COVERAGE-BACK': FEED, // T-086 kapsama geri geldi
   'F-BAT-PLAN': INFO, //    T-086 18:00 pil akşama yetmeyecek (%15 altı)
   'F-DEVICE-LIMIT': INFO, // T-085 kişi başına cihaz sınırı aşıldı
+  'F-VITAL-RESULT': INFO, // T-092 değer olayı "iyi" olmayan sonuçla kapandı
+  'F-VITAL-TREND': FEED, //  T-092 dinlenme nabzı tabandan uzak (P4 eğilim; yalnız push, SMS yok)
   'F-PENDANT-BATTERY': INFO, // T-085 OEM (S4.9) kolye pili iş emri açıldı (ekip değiştirecek)
   'F-PENDANT-TEST': FEED, //    T-085 OEM (S4.9) kolyenin aylık düğme testi yapılmadı
   'F-COVERAGE-CHRONIC': INFO, // S4.10 kronik kapsama boşluğu: plan (dönem başına bir)

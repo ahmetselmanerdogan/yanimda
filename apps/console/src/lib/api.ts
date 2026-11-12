@@ -4,6 +4,7 @@ import type {
   CoverageView,
   EventState,
   EventType,
+  EventVitalsView,
   LadderView,
   PartnerHealth,
   StepAssessment,
@@ -23,6 +24,8 @@ export interface QueueItem {
   lockedBy: string | null;
   lockUntil: string | null;
   isTest: boolean;
+  /** T-092: P2 değer kombinasyonu aynı öncelikte önce (sunucu sırasıyla aynı). */
+  headOfQueue?: boolean;
   person: { displayName: string; age: number | null } | null;
 }
 
@@ -515,6 +518,8 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
         ...(eventId ? { eventId } : {}),
       }),
     supervisorCoverage: () => req<SupervisorCoverage>('GET', '/supervisor/coverage'),
+    /** T-092 (S6.8): açık olayda değer grafiği (kapalı olay 403, değer yok / özellik kapalı 404). */
+    vitals: (id: string) => req<EventVitalsView>('GET', `${ev(id)}/vitals`),
     /** T-089 (S7.2) amir kapsama panosu listeleri. */
     coverageBoard: () => req<SupervisorCoverageBoard>('GET', '/supervisor/coverage/board'),
     dashboard: () => req<SupervisorDashboard>('GET', '/supervisor/dashboard'),

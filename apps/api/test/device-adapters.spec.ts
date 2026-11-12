@@ -29,6 +29,8 @@ const ALL_KINDS: Signal['kind'][] = [
   'TEST',
   'CHARGE_START', // T-086
   'CHARGE_END',
+  'SPO2', // T-092 (yalnız kayıt; değer kuralları bayrakla kapalı)
+  'SKIN_TEMP_DEVIATION',
 ];
 
 describe('WearOsAdapter', () => {

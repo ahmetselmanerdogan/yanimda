@@ -21,6 +21,7 @@ import { RulesModule } from './modules/rules/rules.module';
 import { ScreeningModule } from './modules/screening/screening.module';
 import { SignalModule } from './modules/signal/signal.module';
 import { InboundModule } from './modules/telephony/inbound.module';
+import { VitalsModule } from './modules/vitals/vitals.module';
 import { WebPushModule } from './modules/webpush/webpush.module';
 import { WellnessModule } from './modules/wellness/wellness.module';
 
@@ -50,6 +51,7 @@ import { WellnessModule } from './modules/wellness/wellness.module';
     BillingModule,
     InboundModule,
     ScreeningModule,
+    VitalsModule, // T-092: bayrakla kapalı (vitals.enabled / VITALS_ENABLED)
     PartnerModule,
   ],
 })

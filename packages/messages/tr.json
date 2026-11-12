@@ -3709,6 +3709,201 @@
     "channel": "console",
     "text": "Toplam {n} kişi"
   },
+  "O-TYPE-SPO2_LOW": {
+    "channel": "console",
+    "text": "Alışılmadık oksijen okuması"
+  },
+  "O-SCRIPT-VITALS": {
+    "channel": "console",
+    "text": "Merhaba, ben Yanımda'dan {operator}. {name} ile mi görüşüyorum? Cihazınız alışılmadık bir okuma gösterdi, sizi kontrol etmek için arıyorum. Nasılsınız? Başınız dönüyor mu, nefes almakta zorlanıyor musunuz, göğsünüzde ağrı var mı?"
+  },
+  "O-UI-VITALS": {
+    "channel": "console",
+    "text": "Değerler (son 2 saat)"
+  },
+  "O-UI-VITALS-HR": {
+    "channel": "console",
+    "text": "Nabız"
+  },
+  "O-UI-VITALS-SPO2": {
+    "channel": "console",
+    "text": "Oksijen"
+  },
+  "O-UI-VITALS-BASELINE": {
+    "channel": "console",
+    "text": "Kişisel taban: {value}"
+  },
+  "O-UI-VITALS-NO-BASELINE": {
+    "channel": "console",
+    "text": "Kişisel taban henüz yok (genel eşikler)"
+  },
+  "O-UI-VITALS-NO-DATA": {
+    "channel": "console",
+    "text": "Son 2 saatte okuma yok"
+  },
+  "O-UI-VITALS-QUALITY-Q1": {
+    "channel": "console",
+    "text": "Kalite: iki cihaz uyuşuyor"
+  },
+  "O-UI-VITALS-QUALITY-Q2": {
+    "channel": "console",
+    "text": "Kalite: bilek optik"
+  },
+  "O-UI-VITALS-QUALITY-Q3": {
+    "channel": "console",
+    "text": "Kalite: yalnız eğilim (yüzük / kulak)"
+  },
+  "O-UI-VITALS-HIGHLIGHT": {
+    "channel": "console",
+    "text": "Düşme sırasında alışılmadık nabız okuması"
+  },
+  "O-UI-VITALS-NOTE": {
+    "channel": "console",
+    "text": "Cihaz okumasıdır, bir değerlendirme değildir. Yalnız olay açıkken görünür; dışa aktarılmaz."
+  },
+  "O-UI-VITALS-CHART": {
+    "channel": "console",
+    "text": "{kind}: son 2 saat, 5 dakikalık ortancalar; en düşük {min}, en yüksek {max}"
+  },
+  "O-UI-VITAL-RULE-LOW_HR_STILL": {
+    "channel": "console",
+    "text": "Düşük nabız ve hiç hareket yok"
+  },
+  "O-UI-VITAL-RULE-LOW_HR": {
+    "channel": "console",
+    "text": "Uzun süre düşük nabız"
+  },
+  "O-UI-VITAL-RULE-HIGH_HR": {
+    "channel": "console",
+    "text": "Dinlenirken uzun süre yüksek nabız"
+  },
+  "O-UI-VITAL-RULE-HR_BASELINE_DEVIATION": {
+    "channel": "console",
+    "text": "Nabız kişisel tabandan uzak"
+  },
+  "O-UI-VITAL-RULE-SPO2_LOW": {
+    "channel": "console",
+    "text": "Düşük oksijen okuması"
+  },
+  "O-UI-VITAL-RULE-SPO2_LOW_HR": {
+    "channel": "console",
+    "text": "Düşük oksijen okuması ve yüksek nabız"
+  },
+  "O-UI-VITAL-RULE-FALL_HR_HIGHLIGHT": {
+    "channel": "console",
+    "text": "Düşme sırasında alışılmadık nabız"
+  },
+  "O-VITAL-UNCLAIMED": {
+    "channel": "console",
+    "text": "Değer olayı ({type}) 15 dakikadır üstlenilmedi. Amir: üstlenin ya da bir operatöre verin.",
+    "action": "Üstlen"
+  },
+  "O-UI-DEV-CAT-SENSOR": {
+    "channel": "console",
+    "text": "Ölçüm cihazı"
+  },
+  "F-UI-TYPE-SPO2_LOW": {
+    "channel": "family",
+    "text": "Oksijen okuması uyarısı"
+  },
+  "F-VITAL-TREND": {
+    "channel": "family",
+    "text": "{name}'ın dinlenme nabzı bir süredir kendi alışılmış değerinden uzak. Merak ederseniz kendisini arayabilirsiniz."
+  },
+  "F-VITAL-RESULT": {
+    "channel": "family",
+    "text": "{name} için alışılmadık bir cihaz okuması nedeniyle kontrol araması yapıldı. Operatörümüz sonucu not etti; ayrıntı için uygulamaya bakın."
+  },
+  "F-VITAL-WELLNESS-NOTE": {
+    "channel": "family",
+    "text": "Sağlık eğilimleri bilgi amaçlıdır: cihaz okumalarına dayanır ve bir sağlık değerlendirmesinin yerini tutmaz. Acil bir durumda 112'yi arayın."
+  },
+  "F-UI-VITAL-TRENDS": {
+    "channel": "family",
+    "text": "Haftalık sağlık eğilimleri"
+  },
+  "F-UI-VITAL-SKIN-TEMP": {
+    "channel": "family",
+    "text": "Cilt sıcaklığı iki gece üst üste alışılmışın üzerindeydi"
+  },
+  "P-SENSORS": {
+    "channel": "phone",
+    "text": "Telefonunuza bağlı nabız ve oksijen ölçerler.",
+    "action": "Sensörler"
+  },
+  "P-SENSOR-ADD": {
+    "channel": "phone",
+    "text": "Sensörü açın ve telefonun yanına getirin.",
+    "action": "Sensör ekle"
+  },
+  "P-SENSOR-SCANNING": {
+    "channel": "phone",
+    "text": "Yakındaki sensörler aranıyor…"
+  },
+  "P-SENSOR-NONE": {
+    "channel": "phone",
+    "text": "Sensör bulunamadı. Sensörün açık ve yakında olduğundan emin olun."
+  },
+  "P-SENSOR-ADDED": {
+    "channel": "phone",
+    "text": "Sensör eklendi."
+  },
+  "P-SENSOR-REMOVE": {
+    "channel": "phone",
+    "text": "Bu sensörü kaldırmak istiyor musunuz?",
+    "action": "Kaldır"
+  },
+  "P-SENSOR-CLOSE": {
+    "channel": "phone",
+    "text": "Sensörler ekranını kapatın.",
+    "action": "Kapat"
+  },
+  "P-SENSOR-BLE_HR": {
+    "channel": "phone",
+    "text": "Nabız ölçer"
+  },
+  "P-SENSOR-BLE_PULSE_OX": {
+    "channel": "phone",
+    "text": "Oksijen ölçer"
+  },
+  "P-SENSOR-BLE_THERMO": {
+    "channel": "phone",
+    "text": "Ateş ölçer"
+  },
+  "P-SENSOR-BLE_PENDANT": {
+    "channel": "phone",
+    "text": "Kolye"
+  },
+  "P-SENSOR-CONNECTED": {
+    "channel": "phone",
+    "text": "Bağlı"
+  },
+  "P-SENSOR-WAITING": {
+    "channel": "phone",
+    "text": "Bağlantı bekleniyor"
+  },
+  "P-SENSOR-NOT-HERE": {
+    "channel": "phone",
+    "text": "Bu telefona bağlı değil"
+  },
+  "P-SENSOR-LIMIT": {
+    "channel": "phone",
+    "text": "Daha fazla cihaz eklenemiyor. Ailenizden yardım isteyin."
+  },
+  "P-SENSOR-CONFLICT": {
+    "channel": "phone",
+    "text": "Bu sensör başka bir türle kayıtlı. Ailenizden yardım isteyin."
+  },
+  "P-SENSOR-BT-OFF": {
+    "channel": "phone",
+    "text": "Sensörlerin çalışması için Bluetooth'u açın.",
+    "action": "Bluetooth'u aç"
+  },
+  "P-PERM-BLUETOOTH": {
+    "channel": "phone",
+    "text": "Sensörlerinize bağlanabilmemiz için yakındaki cihazlara izin verin.",
+    "action": "İzin ver"
+  },
   "O-OEM-LATENCY": {
     "channel": "console",
     "text": "Ortak cihaz merkezinin gecikmesi son 1 saatte 60 sn'yi aştı (p99). Bu ortağın cihazları kapsamada zayıf sayılıyor; ortağın 7/24 hattını arayın."

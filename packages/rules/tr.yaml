@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 7
+version: 8
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -89,6 +89,46 @@ pendant:
 # SOS ve düşme etkilenmez; hastanede / seyahatte modu hepsini susturur. protectedPct: S7.2 amir kronik boşluk listesi
 # (son 7 günde uyanık zamanın %80'inden azı korunan).
 chronicGap: { gaps: 5, days: 7, toleranceMaxMin: 240, protectedPct: 80 }
+# T-092 (docs/07 S6, S8.4) değer kuralları — BAYRAKLA KAPALI. Yazılı mevzuat görüşü (S6 giriş, S9, S10.2) alınmadan
+# `enabled: true` yapılmaz; ortam değişkeni VITALS_ENABLED (true/false) varsa paketin yerine geçer. Kapalıyken
+# davranış bugünküyle aynıdır: HEART_RATE / STEPS / SPO2 / SKIN_TEMP_DEVIATION yalnız kaydedilir, health şemasına
+# örnek yazılmaz, olay ve bildirim yok. Anormal değer teşhis değil, "kişiyi arayalım" tetikleyicisidir.
+#  learnDays / minValidDays / baselineDays / validDaySamples: kişisel taban çizgisi (S6.3) — ilk örnekten sonra 14 gün
+#   öğrenme (bu sürede değer olayı yok), en az 7 geçerli gün; dilim (uyku / uyanık-dinlenme / uyanık-hareketli)
+#   ortancası, 28 günlük kayan pencere. Taban yokken genel eşikler.
+#  preconditions (tüm kurallar, S6.4): takılı, şarjda değil, wornMin dk'dan uzun süredir takılı, pil ≥ batteryPct,
+#   son stillMin dk'da hiçbir cihazda stillSteps adımdan az, en az minSamples tutarlı örnek (aralar ≤ maxGapMin),
+#   hrMin–hrMax dışındaki nabız atılır.
+#  hr / spo2 / skinTemp: S6.4 tablosu. agreeMin içinde iki farklı cihaz uyuşursa kanıt bir basamak güçlenir (S6.6);
+#   Q3 (yüzük/kulak) tek başına olay açmaz; tek cihaz en çok Q2.
+#  cooldownH / worsenPct / maxChecksPerWeek (S6.7): operatör "iyi" kaydedince kişi+kural 24 sa susar, okuma %20
+#   kötüleşirse sessizlik delinir; haftada en çok 2 değer kaynaklı kontrol araması, fazlası amirin eşik incelemesine.
+#   P2 kombinasyonları hiçbir sınıra takılmaz.
+#  claimSlaMin: P3 değer olayı bu sürede üstlenilmezse amire O-VITAL-UNCLAIMED. unreachableMin (S5.4): kişiye
+#   ulaşılamadı ve bu sürede hiçbir cihazda hareket yok → olay P2 hareketsizlik merdivenine geçer.
+#  retention (S6.8): ham örnekler 30 gün, günlük özetler 13 ay. view: operatör grafiği son 2 sa, 5 dk ortanca.
+vitals:
+  enabled: false
+  learnDays: 14
+  minValidDays: 7
+  baselineDays: 28
+  validDaySamples: 30
+  sustainedMin: 10
+  comboMin: 5
+  cooldownH: 24
+  worsenPct: 20
+  maxChecksPerWeek: 2
+  claimSlaMin: 15
+  unreachableMin: 10
+  agreeMin: 5
+  preconditions:
+    { wornMin: 5, batteryPct: 10, stillSteps: 20, stillMin: 5, minSamples: 3, maxGapMin: 5, hrMin: 25, hrMax: 250 }
+  hr: { low: 40, belowSleepBaseline: 10, highResting: 130, deviationPct: 30, deviationMin: 30, agreePct: 10 }
+  spo2: { low: 88, lowCopd: 85, apartMin: 10, comboHr: 120, agreePts: 3 }
+  skinTemp: { deltaC: 1.0, nights: 2 }
+  retention: { rawDays: 30, summaryMonths: 13 }
+  view: { windowMin: 120, bucketMin: 5 }
+  trendCode: F-VITAL-TREND
 rules:
   - type: SOS
     priority: 1
@@ -187,6 +227,19 @@ rules:
     chain: [CALL_PHONE, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER]
     stepTimeoutSec: { CALL_PHONE: 20, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
     operatorScript: O-SCRIPT-WELFARE
+  # T-092 (S6.4, S5.4) değer olayları — yalnız vitals.enabled açıkken açılır. Öncelik kuraldan gelir (düşük nabız +
+  # hareketsizlik P2, kuyruğun başına; diğerleri P3). Cihaz sorusu ve sesli ön eleme yok; merdiven cihaz → telefon →
+  # 1. yakın. Ulaşılamaz ve 10 dk hareket yoksa P2 hareketsizlik merdivenine geçer (vitals.unreachableMin).
+  - type: HEART_ANOMALY
+    priority: 3
+    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1]
+    stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_CONTACT: 25 }
+    operatorScript: O-SCRIPT-VITALS
+  - type: SPO2_LOW
+    priority: 3
+    chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1]
+    stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_CONTACT: 25 }
+    operatorScript: O-SCRIPT-VITALS
   - type: CALLBACK
     priority: 4
     chain: [CALL_PHONE]

@@ -76,6 +76,10 @@ interface EventSource {
   chargingDeviceIds?: string[];
   /** T-087: YERİNDE KONTROL nedeni (denetim `event.welfare_raised`; konsol gösterir). */
   welfareReason?: WelfareReason;
+  /** T-092 (S6.4): kuralın önceliği yerine (değer kuralı P2 / P3). */
+  priority?: 1 | 2 | 3 | 4;
+  /** T-092: P2 değer kombinasyonu aynı öncelikte kuyruğun başına. */
+  headOfQueue?: boolean;
 }
 
 /** Bir transaction içindeki olay değişiklikleri; flush ile tek seferde yazılır. */
@@ -494,6 +498,29 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     return this.create('CALLBACK', { protectedPersonId, sourceId, note, exclusive });
   }
 
+  /**
+   * T-092 (docs/07 S6.4) değer olayı: HEART_ANOMALY / SPO2_LOW, öncelik kuraldan (P2 kombinasyon kuyruğun başına, P3).
+   * Cihaz sorusu ve sesli ön eleme yok (doğrudan kuyruk). Kişinin açık olayı varsa ona eklenir (öncelik yükselir;
+   * düşme P1 kalır). Not = kural kodu. Olayın kimliğini döner (yeni veya eklenen); bulunamazsa null.
+   */
+  async raiseVital(
+    type: 'HEART_ANOMALY' | 'SPO2_LOW' | 'INACTIVITY',
+    s: {
+      protectedPersonId: string;
+      sourceId: string;
+      note: string;
+      priority?: 1 | 2 | 3 | 4;
+      headOfQueue?: boolean;
+      deviceId?: string;
+    },
+  ): Promise<string | null> {
+    await this.create(type, { ...s });
+    const r = (await this.db.execute(sql`
+      SELECT id::text AS id FROM event.event WHERE ${s.sourceId} = ANY(source_signal_ids)
+      ORDER BY created_at DESC LIMIT 1`)) as unknown as { rows: { id: string }[] };
+    return r.rows[0]?.id ?? null;
+  }
+
   // ---- Taramalar ----
 
   /** Süresi (+ pay) geçmiş DEVICE_PROMPT olaylarını (cihaz sorusu, saat bekleme) yükseltir. */
@@ -901,10 +928,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const rule = ruleFor(this.pack, type);
     // Eklenen tespitin kendi önceliği daha acilse olay ona çekilir (bulgu 7b: P4 geri aramaya pil bitti → P3).
     const to = upgrade
-      ? Math.min(u.ev.priority, rule?.priority ?? 1)
+      ? Math.min(u.ev.priority, src?.priority ?? rule?.priority ?? 1)
       : type === 'SOS'
         ? 1
-        : Math.min(u.ev.priority, rule?.priority ?? u.ev.priority);
+        : Math.min(u.ev.priority, src?.priority ?? rule?.priority ?? u.ev.priority);
     if (to < u.ev.priority) {
       await this.repo.insertAudit(u.tx, {
         actorKind: 'SYSTEM',
@@ -1389,13 +1416,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       id: uuidv7(),
       protectedPersonId: s.protectedPersonId,
       type,
-      priority: rule.priority,
+      priority: s.priority ?? rule.priority,
       state: 'CREATED',
       createdAt: now.toISOString(),
       location: s.location ?? undefined,
       sourceSignalIds: [s.sourceId],
       sourceDeviceIds: s.deviceId ? [s.deviceId] : [],
       isTest: type === 'TEST',
+      ...(s.headOfQueue ? { headOfQueue: true } : {}),
       transitions: [],
     };
   }

@@ -5,6 +5,7 @@ import { DispatchPanel } from './components/Dispatch';
 import { EventCard, type OperatorResult } from './components/EventCard';
 import { ClosePanel, EscalateDialog, PersonPanel, PhoneBar, TopBar } from './components/Panels';
 import { QueueList } from './components/Queue';
+import { VitalsPanel } from './components/Vitals';
 import {
   ApiError,
   CALL_ACTIVE,
@@ -481,6 +482,7 @@ export function Console({
             onError={(m) => setError(m)}
           />
         )}
+        {ev && ev.state !== 'CLOSED' && <VitalsPanel key={`vitals-${ev.id}`} api={api} event={ev} />}
         {ev?.type === 'WELFARE_CHECK' && (
           <section className="script welfare-script" aria-labelledby="welfare-script-title" data-testid="welfare">
             <h2 id="welfare-script-title">{t('O-UI-SCRIPT-WELFARE')}</h2>

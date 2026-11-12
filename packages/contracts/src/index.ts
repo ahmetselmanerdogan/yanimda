@@ -16,7 +16,11 @@ export type SignalKind =
   | 'TEST'
   /** T-086 (S4.2): cihaz şarja girdi / şarjdan çıktı. */
   | 'CHARGE_START'
-  | 'CHARGE_END';
+  | 'CHARGE_END'
+  /** T-092 (docs/07 S6.2): oksijen doygunluğu (value %, `vital.quality` Q1–Q3). */
+  | 'SPO2'
+  /** T-092: cilt sıcaklığı sapması (value °C, cihazın kendi gece tabanına göre; gecede bir). */
+  | 'SKIN_TEMP_DEVIATION';
 
 export interface Signal {
   schemaVersion: 1;
@@ -41,6 +45,8 @@ export interface Signal {
     lineOk?: boolean;
   };
   payload?: Record<string, unknown>;
+  /** T-092 (S6.3, S6.6): değer ölçümünün kalite sınıfı ve bağlamı (HEART_RATE, SPO2). İsteğe bağlı. */
+  vital?: VitalMeta;
   /**
    * Sunucu doldurur (T-015, cihaz adaptörü); istemci gönderemez (şema additionalProperties: false).
    * Olay motoru cihaz türünü buradan okur, cihaz tablosundan değil.
@@ -83,7 +89,9 @@ export type EventType =
   /** T-086 (S4.4, S4.7): kapsama boşluğu; nedenleri CHARGING, WATCH_OFF, BATTERY_DEAD, CONNECTION_LOST. */
   | 'COVERAGE_GAP'
   /** T-087 (S4.7, S5.4): yerinde kontrol (P2); nedeni WelfareReason. */
-  | 'WELFARE_CHECK';
+  | 'WELFARE_CHECK'
+  /** T-092 (S6.4): alışılmadık oksijen okuması (P3; nabız ≥120 ile P2). Bayrakla kapalı. */
+  | 'SPO2_LOW';
 
 /**
  * WELFARE_CHECK nedeni: DEVICE_DROPPED kapsama YOK iken takılı cihaz pili yeterliyken birden sustu (2 sa);
@@ -114,16 +122,28 @@ export type EventState =
 
 /**
  * Kayıtlı cihaz türü (device.device.kind). Yeni tür = yeni DeviceAdapter (T-015). OEM ortak cihazlarında tür ortak
- * kodudur (T-085, S2.5): FAKE_PENDANT test / geliştirme için sahte hücresel ve radyo kolye ortağı.
+ * kodudur (T-085, S2.5): FAKE_PENDANT test / geliştirme için sahte hücresel ve radyo kolye ortağı; BLE köprülü
+ * modeller T-092 (telefon köprüsü).
  */
-export type DeviceKind = 'WEAROS_WATCH' | 'ANDROID_PHONE' | 'IOS_PHONE' | 'SIMULATOR' | 'FAKE_PENDANT';
+export type DeviceKind =
+  'WEAROS_WATCH' | 'ANDROID_PHONE' | 'IOS_PHONE' | 'SIMULATOR' | 'FAKE_PENDANT' | BridgedDeviceModel;
 export type DeviceRole = 'WATCH' | 'PHONE';
 
 /** Eski koruma durumu: bir sürüm boyunca kapsama seviyesinden türetilir (S3.1). */
 export type ProtectionState = 'PROTECTED_WATCH' | 'PROTECTED_PHONE' | 'NIGHT' | 'UNPROTECTED';
 
 // ---- T-085 çoklu cihaz ve kapsama (docs/07 S1, S3) ----
-export type DeviceCategory = 'WATCH' | 'PHONE' | 'PENDANT' | 'RING' | 'EARBUD' | 'EARRING' | 'HOME_UNIT' | 'CLOUD';
+export type DeviceCategory =
+  | 'WATCH'
+  | 'PHONE'
+  | 'PENDANT'
+  | 'RING'
+  | 'EARBUD'
+  | 'EARRING'
+  | 'HOME_UNIT'
+  | 'CLOUD'
+  /** T-092: telefona BLE ile bağlı tek amaçlı ölçüm cihazı (nabız kemeri, parmak oksimetre, termometre). */
+  | 'SENSOR';
 /** A alarm (SOS/düşme açar, korumaya sayılır), B canlı izlem, C eğilim (S2.1). */
 export type DeviceTier = 'A' | 'B' | 'C';
 export type BodyLocation = 'WRIST_LEFT' | 'WRIST_RIGHT' | 'NECK' | 'CHEST' | 'FINGER' | 'EAR' | 'POCKET' | 'HOME';
@@ -508,4 +528,74 @@ export interface FalseAlarm {
   eventType: EventType;
   cause: FalseAlarmCause;
   at: string;
+}
+
+// ---- T-092 değer kuralları (docs/07 S6) ve BLE köprülü cihazlar (S2.1 B sınıfı, S4.8, S7.5) ----
+/** Ölçüm kalite sınıfı (S1.4): Q1 doğrulanmış, Q2 bilek optik, Q3 yüzük/kulak/küpe sağlık-amaçlı. */
+export type VitalQuality = 'Q1' | 'Q2' | 'Q3';
+/** Ölçüm anındaki bağlam (cihaz biliyorsa); yoksa sunucu uyku penceresi ve adımdan türetir. */
+export type VitalContext = 'RESTING' | 'ACTIVE' | 'SLEEP';
+export interface VitalMeta {
+  quality?: VitalQuality;
+  context?: VitalContext;
+}
+/** Taban çizgisi dilimi (S6.3). */
+export type VitalSlice = 'SLEEP' | 'REST' | 'ACTIVE';
+/**
+ * Değer kuralları (S6.4): LOW_HR_STILL düşük nabız + hiçbir cihazda hareket yok (P2); LOW_HR, HIGH_HR (P3);
+ * HR_BASELINE_DEVIATION (yalnız aileye P4 eğilim); SPO2_LOW (P3) / SPO2_LOW_HR (P2); FALL_HR_HIGHLIGHT düşme
+ * olayında operatöre vurgu (P1 kalır).
+ */
+export type VitalRule =
+  'LOW_HR_STILL' | 'LOW_HR' | 'HIGH_HR' | 'HR_BASELINE_DEVIATION' | 'SPO2_LOW' | 'SPO2_LOW_HR' | 'FALL_HR_HIGHLIGHT';
+
+/** GET /events/{id}/vitals — yalnız açık olayda; 5 dk'lık ortancalar (dakika düzeyinde ham veri yok). */
+export interface EventVitalsView {
+  eventId: string;
+  windowMin: number;
+  bucketMin: number;
+  series: { kind: 'HR' | 'SPO2'; points: { at: string; value: number; n: number }[] }[];
+  /** Kişisel taban çizgisi (dilim ortancaları); oluşmadıysa null (genel eşikler). */
+  baseline: { HR: Partial<Record<VitalSlice, number>> } | null;
+  /** Penceredeki en iyi etkin kalite (iki cihaz uyuşursa bir basamak güçlü); örnek yoksa null. */
+  quality: VitalQuality | null;
+  /** Olayı açan / olaya eklenen değer kuralı ve okuma; vurgu (düşme + alışılmadık nabız) dahil. */
+  alerts: { rule: VitalRule; value: number; at: string }[];
+  highlight: boolean;
+  /** Konsolun gösterdiği sağlık-amaçlı uyarı notu (katalog kodu). */
+  noteCode: string;
+}
+
+/** GET /protected-persons/{id}/trends/weekly — aile; haftalık özet (ham veri yok). */
+export interface WeeklyTrendsView {
+  protectedPersonId: string;
+  /** Sağlık-amaçlı uyarı notu (katalog kodu, aile uygulaması gösterir). */
+  noteCode: string;
+  weeks: {
+    weekStart: string;
+    restingHr: number | null;
+    sleepHr: number | null;
+    spo2: number | null;
+    /** Cilt sıcaklığı sapması eşiği (+1,0 °C) aşılan gece sayısı ve iki gece üst üste aşıldı mı (S6.4). */
+    skinTempNightsAbove: number;
+    skinTempTwoNights: boolean;
+    validDays: number;
+  }[];
+  /** "İyi" olmayan değer olayı sonuçları (S6.8). */
+  outcomes: { eventId: string; type: EventType; outcome: string; at: string }[];
+}
+
+/** T-092 telefon köprüsüyle bağlanan BLE cihaz modelleri (S2.1, S7.5). */
+export type BridgedDeviceModel = 'BLE_HR' | 'BLE_PULSE_OX' | 'BLE_THERMO' | 'BLE_PENDANT';
+/** POST /devices/bridged yanıtı ve GET /devices/bridged öğesi. */
+export interface BridgedDeviceView {
+  deviceId: string;
+  model: BridgedDeviceModel;
+  category: DeviceCategory;
+  tier: DeviceTier;
+  /** Telefonun bu cihaz için gönderebileceği sinyal türleri (model profili). */
+  signals: SignalKind[];
+  bridgeDeviceId: string;
+  nickname: string | null;
+  createdAt: string;
 }

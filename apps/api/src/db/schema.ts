@@ -124,7 +124,11 @@ export const device = deviceSchema.table('device', {
   charging: boolean('charging').notNull().default(false),
   chargingSince: timestamptz('charging_since'),
   /** 0033 (T-087, S5.2): cihaza özel sesli arama numarası (E.164); yalnız arama anında okunur, log'a yazılmaz. */
-  voiceNumber: text('voice_number'),
+  voiceNumber:
+    text(
+      'voice_number',
+    ) /** 0037 (T-092): BLE köprülü cihazın adres özeti (HMAC; ham MAC tutulmaz). Köprü telefon bridgeDeviceId. */,
+  bridgeAddressHash: text('bridge_address_hash'),
 });
 
 /** T-085 (0030) cihaz modeli kataloğu: yetenekler, pil ömrü. Kimlik bugün cihaz türüyle aynı. */
@@ -421,7 +425,9 @@ export const event = eventSchema.table('event', {
   /** 0031 (T-088, S8.2): olayı bildiren cihazlar, doğrulanma zamanı, iptal eden cihaz. */
   sourceDeviceIds: text('source_device_ids').array().notNull().default([]),
   corroboratedAt: timestamptz('corroborated_at'),
-  cancelledByDeviceId: text('cancelled_by_device_id'),
+  cancelledByDeviceId:
+    text('cancelled_by_device_id') /** 0037 (T-092, S6.4): P2 değer kombinasyonu aynı öncelikte kuyruğun başına. */,
+  headOfQueue: boolean('head_of_queue').notNull().default(false),
 });
 
 export const transition = eventSchema.table('transition', {
@@ -794,4 +800,67 @@ export const pendantMaintenance = deviceSchema.table('pendant_maintenance', {
   lastPct: integer('last_pct'),
   lastAt: timestamptz('last_at'),
   testRemindedAt: timestamptz('test_reminded_at'),
+});
+
+// ---- 0037 · T-092 değer kuralları (docs/07 S6). health şeması: yalnız olay anında çözülür, log'a yazılmaz. ----
+
+/** Geçerli ham örnekler (30 gün). kind HR / SPO2 / SKIN_TEMP; slice SLEEP / REST / ACTIVE. */
+export const vitalSample = healthSchema.table('vital_sample', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  deviceId: text('device_id').notNull(),
+  kind: text('kind').notNull(),
+  value: doublePrecision('value').notNull(),
+  at: timestamptz('at').notNull(),
+  quality: text('quality').notNull(),
+  slice: text('slice').notNull(),
+  worn: boolean('worn').notNull(),
+  still: boolean('still').notNull(),
+  eligible: boolean('eligible').notNull(),
+  sourceKey: text('source_key').notNull(),
+});
+
+/** Kişi başına değer ayarları: öğrenme başlangıcı, kişiye özel eşikler (aile onayı + doktor notu işareti). */
+export const vitalProfile = healthSchema.table('vital_profile', {
+  protectedPersonId: text('protected_person_id').primaryKey(),
+  learningStartedAt: timestamptz('learning_started_at'),
+  lowHr: integer('low_hr'),
+  highHr: integer('high_hr'),
+  spo2Low: integer('spo2_low'),
+  copd: boolean('copd').notNull().default(false),
+  trendsMuted: boolean('trends_muted').notNull().default(false),
+  familyConsentBy: text('family_consent_by'),
+  familyConsentAt: timestamptz('family_consent_at'),
+  doctorNote: boolean('doctor_note').notNull().default(false),
+  doctorNoteRef: text('doctor_note_ref'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+});
+
+/** Tetiklenen değer kuralları (olay, aile eğilimi, haftalık sınır, düşme vurgusu). */
+export const vitalAlert = healthSchema.table('vital_alert', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  rule: text('rule').notNull(),
+  outcome: text('outcome').notNull(),
+  priority: integer('priority'),
+  value: doublePrecision('value').notNull(),
+  runStart: timestamptz('run_start').notNull(),
+  at: timestamptz('at').notNull(),
+  eventId: uuid('event_id'),
+  escalatedAt: timestamptz('escalated_at'),
+  falseAlarmAt: timestamptz('false_alarm_at'),
+});
+
+/** Amirin eşik incelemesi kuyruğu (değer yazılmaz). */
+export const vitalReview = healthSchema.table('vital_review', {
+  id: uuid('id').primaryKey(),
+  protectedPersonId: text('protected_person_id').notNull(),
+  rule: text('rule').notNull(),
+  reason: text('reason').notNull(),
+  dedupeKey: text('dedupe_key').notNull(),
+  createdAt: timestamptz('created_at').notNull(),
+  resolvedAt: timestamptz('resolved_at'),
+  resolvedBy: text('resolved_by'),
+  note: text('note'),
 });
