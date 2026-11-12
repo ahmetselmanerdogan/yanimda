@@ -3825,5 +3825,83 @@
   "F-UI-VITAL-SKIN-TEMP": {
     "channel": "family",
     "text": "Cilt sıcaklığı iki gece üst üste alışılmışın üzerindeydi"
+  },
+  "P-SENSORS": {
+    "channel": "phone",
+    "text": "Telefonunuza bağlı nabız ve oksijen ölçerler.",
+    "action": "Sensörler"
+  },
+  "P-SENSOR-ADD": {
+    "channel": "phone",
+    "text": "Sensörü açın ve telefonun yanına getirin.",
+    "action": "Sensör ekle"
+  },
+  "P-SENSOR-SCANNING": {
+    "channel": "phone",
+    "text": "Yakındaki sensörler aranıyor…"
+  },
+  "P-SENSOR-NONE": {
+    "channel": "phone",
+    "text": "Sensör bulunamadı. Sensörün açık ve yakında olduğundan emin olun."
+  },
+  "P-SENSOR-ADDED": {
+    "channel": "phone",
+    "text": "Sensör eklendi."
+  },
+  "P-SENSOR-REMOVE": {
+    "channel": "phone",
+    "text": "Bu sensörü kaldırmak istiyor musunuz?",
+    "action": "Kaldır"
+  },
+  "P-SENSOR-CLOSE": {
+    "channel": "phone",
+    "text": "Sensörler ekranını kapatın.",
+    "action": "Kapat"
+  },
+  "P-SENSOR-BLE_HR": {
+    "channel": "phone",
+    "text": "Nabız ölçer"
+  },
+  "P-SENSOR-BLE_PULSE_OX": {
+    "channel": "phone",
+    "text": "Oksijen ölçer"
+  },
+  "P-SENSOR-BLE_THERMO": {
+    "channel": "phone",
+    "text": "Ateş ölçer"
+  },
+  "P-SENSOR-BLE_PENDANT": {
+    "channel": "phone",
+    "text": "Kolye"
+  },
+  "P-SENSOR-CONNECTED": {
+    "channel": "phone",
+    "text": "Bağlı"
+  },
+  "P-SENSOR-WAITING": {
+    "channel": "phone",
+    "text": "Bağlantı bekleniyor"
+  },
+  "P-SENSOR-NOT-HERE": {
+    "channel": "phone",
+    "text": "Bu telefona bağlı değil"
+  },
+  "P-SENSOR-LIMIT": {
+    "channel": "phone",
+    "text": "Daha fazla cihaz eklenemiyor. Ailenizden yardım isteyin."
+  },
+  "P-SENSOR-CONFLICT": {
+    "channel": "phone",
+    "text": "Bu sensör başka bir türle kayıtlı. Ailenizden yardım isteyin."
+  },
+  "P-SENSOR-BT-OFF": {
+    "channel": "phone",
+    "text": "Sensörlerin çalışması için Bluetooth'u açın.",
+    "action": "Bluetooth'u aç"
+  },
+  "P-PERM-BLUETOOTH": {
+    "channel": "phone",
+    "text": "Sensörlerinize bağlanabilmemiz için yakındaki cihazlara izin verin.",
+    "action": "İzin ver"
   }
 }
