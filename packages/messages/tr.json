@@ -3948,6 +3948,10 @@
     "text": "Sensörlerinize bağlanabilmemiz için yakındaki cihazlara izin verin.",
     "action": "İzin ver"
   },
+  "P-PERM-BLUETOOTH-IOS": {
+    "channel": "phone",
+    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin."
+  },
   "O-OEM-LATENCY": {
     "channel": "console",
     "text": "Ortak cihaz merkezinin gecikmesi son 1 saatte 60 sn'yi aştı (p99). Bu ortağın cihazları kapsamada zayıf sayılıyor; ortağın 7/24 hattını arayın."
