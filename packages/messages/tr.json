@@ -3944,5 +3944,41 @@
   "O-UI-ADM-COL-DRAIN": {
     "channel": "console",
     "text": "Günlük düşüş"
+  },
+  "F-UI-COVERAGE-HISTORY": {
+    "channel": "family",
+    "text": "Son {days} gün"
+  },
+  "F-UI-COVERAGE-HISTORY-DAY": {
+    "channel": "family",
+    "text": "{date}: uyanık zamanın %{pct}'i korundu"
+  },
+  "F-UI-COVERAGE-TOLERANCE": {
+    "channel": "family",
+    "text": "Kişiye özel bekleme süresi"
+  },
+  "F-UI-COVERAGE-PLAN-LEARNED": {
+    "channel": "family",
+    "text": "{days} günlük şarj alışkanlığından öğrenildi ({date})"
+  },
+  "F-UI-HOLD": {
+    "channel": "family",
+    "text": "Hastanede / seyahatte"
+  },
+  "F-UI-HOLD-KIND-HOSPITAL": {
+    "channel": "family",
+    "text": "Hastanede"
+  },
+  "F-UI-HOLD-KIND-TRAVEL": {
+    "channel": "family",
+    "text": "Seyahatte"
+  },
+  "F-UI-HOLD-HINT": {
+    "channel": "family",
+    "text": "Bu sürede kapsama hatırlatmaları durur. Yardım düğmesi ve düşme algılama her zaman çalışır."
+  },
+  "F-UI-HOLD-OFF": {
+    "channel": "family",
+    "text": "Modu kapat"
   }
 }
