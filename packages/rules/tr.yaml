@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 8
+version: 9
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -232,11 +232,23 @@ rules:
   # 1. yakın. Ulaşılamaz ve 10 dk hareket yoksa P2 hareketsizlik merdivenine geçer (vitals.unreachableMin).
   - type: HEART_ANOMALY
     priority: 3
+    # T-092 (S6.4, S8.5, v9): P3 değer olayında önce kişiye sesli ön eleme (V-VITAL-ASK); "evet/iyiyim/1" → OK kapanır
+    # (24 sa sessizlik, %20 kötüleşme deler), diğer / cevapsız → operatör. P2 kombinasyonları ön elemeyi atlar.
+    autoVoiceScreening: &vitalScreening
+      enabled: true
+      phrase: V-VITAL-ASK
+      acceptIf: [evet, iyiyim]
+      helpIf: [hayır, yardım, imdat, değil, kötü]
+      acceptDigits: ['1']
+      minConfidence: 0.5
+      timeoutSec: 120
+      operatorSampleRate: 0.2
     chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1]
     stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_CONTACT: 25 }
     operatorScript: O-SCRIPT-VITALS
   - type: SPO2_LOW
     priority: 3
+    autoVoiceScreening: *vitalScreening
     chain: [CALL_WATCH, CALL_PHONE, CALL_CONTACT:1]
     stepTimeoutSec: { CALL_WATCH: 20, CALL_PHONE: 20, CALL_CONTACT: 25 }
     operatorScript: O-SCRIPT-VITALS

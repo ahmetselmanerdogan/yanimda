@@ -351,7 +351,7 @@
           },
           "activeHours": { "type": "object" },
           "autoVoiceScreening": {
-            "description": "D-12 otomatik sesli ön eleme (T-072): soru/bekleme cevapsızsa operatörden önce kişiye TTS araması; yalnız INACTIVITY ve WATCH_OFF gibi sorulu/bekleyen türler, asla SOS/FALL",
+            "description": "D-12 otomatik sesli ön eleme (T-072): soru/bekleme cevapsızsa operatörden önce kişiye TTS araması; INACTIVITY / WATCH_OFF gibi sorulu/bekleyen türler, COVERAGE_GAP ve P3 değer olayları (T-092, V-VITAL-ASK); asla SOS/FALL",
             "type": "object",
             "required": ["enabled", "phrase", "acceptIf"],
             "properties": {

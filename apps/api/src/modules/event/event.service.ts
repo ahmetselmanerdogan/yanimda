@@ -97,7 +97,18 @@ interface Uow {
 /** Bekleme olayları: cihaz sorusu yok, kişinin bir şey yapması (saati takması) beklenir; süre dolunca operatör. */
 const WAITING_TYPES = new Set<EventType>(['WATCH_OFF']);
 /** Cihazdan "iyiyim" ile kapanmayan olaylar (soru cihaza değil, sesli ön elemeyle kişiye sorulur). */
-const NOT_DEVICE_ANSWERABLE = new Set<EventType>(['WATCH_OFF', 'COVERAGE_GAP', 'WELFARE_CHECK']);
+const NOT_DEVICE_ANSWERABLE = new Set<EventType>([
+  'WATCH_OFF',
+  'COVERAGE_GAP',
+  'WELFARE_CHECK',
+  'HEART_ANOMALY',
+  'SPO2_LOW',
+]);
+/**
+ * T-092 (S6.4, S8.5): P3 değer olayında önce sesli ön eleme (V-VITAL-ASK), sonra merdiven. P2 kombinasyonları (düşük
+ * nabız + hareketsiz, oksijen + yüksek nabız) ve kuyruğun başına alınanlar ön elemeyi atlar.
+ */
+const VITAL_SCREENED = new Set<EventType>(['HEART_ANOMALY', 'SPO2_LOW']);
 /**
  * S4.10 "hastanede / seyahatte" modunda açılmayan olaylar: kapsama uyarıları (KAPSAMA BOŞLUĞU, YERİNDE KONTROL ve
  * eski nedenleri). SOS, düşme ve hareketsizlik her zaman çalışır.
@@ -875,8 +886,13 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
           await this.timers.schedule(u.ev.id, 'watch-off-operator', wait);
           if (rule.remindAfterMin)
             await this.timers.schedule(u.ev.id, 'watch-off-remind', rule.remindAfterMin * 60_000);
-        } else if (type === 'COVERAGE_GAP' && rule.autoVoiceScreening?.enabled && this.screener) {
+        } else if (
+          (type === 'COVERAGE_GAP' || (VITAL_SCREENED.has(type) && u.ev.priority >= 3 && !u.ev.headOfQueue)) &&
+          rule.autoVoiceScreening?.enabled &&
+          this.screener
+        ) {
           // T-086 (S5.4): kapsama boşluğunda önce sesli ön eleme (kişiye), sonuç yoksa / olumsuzsa operatör.
+          // T-092 (S6.4): P3 değer olayı da aynı yoldan (V-VITAL-ASK).
           u.ev.devicePromptUntil = now.toISOString();
           this.transition(u, 'DEVICE_PROMPT', 'SYSTEM', undefined, 'sesli ön eleme');
           await this.flush(u);

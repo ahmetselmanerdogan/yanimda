@@ -1627,6 +1627,10 @@
     "channel": "voice",
     "text": "Operatörümüz sizi birazdan arayacak."
   },
+  "V-VITAL-ASK": {
+    "channel": "voice",
+    "text": "Yanımda: saatiniz alışılmadık bir ölçüm gösterdi. İyi misiniz? İyiyseniz 'evet' deyin veya 1'e basın."
+  },
   "V-NO-OPERATOR": {
     "channel": "voice",
     "text": "Yanımda acil yardım servisi: {name} için acil durum uyarısı aldık. Lütfen hemen 112'yi arayın."
