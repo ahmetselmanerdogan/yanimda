@@ -1,10 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import type { AdminCoverageMetrics } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
 import { auditLog } from '../../db/schema';
+import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import type { RecordingStore } from '../telephony/recording-store';
 import { RECORDINGS } from '../telephony/telephony.service';
+import { coverageMetrics } from './coverage-metrics';
 
 /**
  * Yönetim ve çağrı merkezi paneli (okuma ağırlıklı). Kişisel veri en az: numara yok (rehber rolü ve sırası),
@@ -79,7 +82,16 @@ export class AdminService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Optional() @Inject(RECORDINGS) private readonly recordings?: RecordingStore | null,
-  ) {}
+    @Optional() @Inject(RULES) rules?: RulesProvider,
+  ) {
+    this.rules = rules ?? staticRules(loadRulePack());
+  }
+  private readonly rules: RulesProvider;
+
+  /** GET /v1/admin/coverage-metrics — T-085 (S7.3) kapsama ve cihaz ölçüleri (yalnız toplamlar). */
+  coverageMetrics(days = 30, now = new Date()): Promise<AdminCoverageMetrics> {
+    return coverageMetrics(this.db, this.rules.current(), days, now);
+  }
 
   private async q<T>(s: ReturnType<typeof sql>) {
     return ((await this.db.execute(s)) as unknown as Rows<T>).rows;

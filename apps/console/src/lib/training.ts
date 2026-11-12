@@ -253,6 +253,9 @@ export class TrainingSim {
     supervisorCoverage: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
+    coverageBoard: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     // Amir panosu eğitim modunda yok (T-074).
     dashboard: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
@@ -264,6 +267,12 @@ export class TrainingSim {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
     unclaim: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
+    // T-085 OEM: ortak gecikmesi ve kolye iş emirleri eğitim modunda yok (amir panosu yok).
+    supervisorPartners: async () => [],
+    workOrders: async () => [],
+    completeWorkOrder: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
     // 112 süreç takibi eğitim modunda yok (gerçek 112 aranmaz).
@@ -280,6 +289,9 @@ export class TrainingSim {
       throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
     },
     adminHealth: async () => {
+      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+    },
+    adminCoverageMetrics: async () => {
       throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
     },
     adminAudit: async () => [],

@@ -3903,5 +3903,354 @@
     "channel": "phone",
     "text": "Sensörlerinize bağlanabilmemiz için yakındaki cihazlara izin verin.",
     "action": "İzin ver"
+  },
+  "O-OEM-LATENCY": {
+    "channel": "console",
+    "text": "Ortak cihaz merkezinin gecikmesi son 1 saatte 60 sn'yi aştı (p99). Bu ortağın cihazları kapsamada zayıf sayılıyor; ortağın 7/24 hattını arayın."
+  },
+  "O-TYPE-PARTNER": {
+    "channel": "console",
+    "text": "Ortak cihaz"
+  },
+  "O-UI-GAP-NOT_WORN": {
+    "channel": "console",
+    "text": "Kolye günlerdir takılmadı (üretici bildirimi)"
+  },
+  "O-UI-COVERAGE-REASON-PARTNER_LATENCY": {
+    "channel": "console",
+    "text": "Ortak merkezi gecikmeli (zayıf)"
+  },
+  "O-UI-COVERAGE-REASON-HOME_UNIT_POWER_LOSS": {
+    "channel": "console",
+    "text": "Ev ünitesinin elektriği kesik"
+  },
+  "O-UI-COVERAGE-REASON-LINE_LOSS": {
+    "channel": "console",
+    "text": "Kolye veya ev ünitesi hattı düştü"
+  },
+  "O-UI-SUP-PARTNERS": {
+    "channel": "console",
+    "text": "Ortak gecikmesi (son 1 saat)"
+  },
+  "O-UI-SUP-PARTNER-ROW": {
+    "channel": "console",
+    "text": "{partner}: p95 {p95} sn, p99 {p99} sn ({n} olay)"
+  },
+  "O-UI-SUP-PARTNER-NODATA": {
+    "channel": "console",
+    "text": "{partner}: son 1 saatte olay yok"
+  },
+  "O-UI-SUP-PARTNER-DEGRADED": {
+    "channel": "console",
+    "text": "Zayıf"
+  },
+  "O-UI-SUP-WORK-ORDERS": {
+    "channel": "console",
+    "text": "Kolye pili iş emirleri"
+  },
+  "O-UI-SUP-WORK-ORDERS-NONE": {
+    "channel": "console",
+    "text": "Açık iş emri yok"
+  },
+  "O-UI-SUP-WORK-ORDER-ROW": {
+    "channel": "console",
+    "text": "Pil %{pct} · son tarih {due}"
+  },
+  "O-UI-SUP-WORK-ORDER-DONE": {
+    "channel": "console",
+    "text": "Pil değiştirildi olarak işaretle",
+    "action": "Değiştirildi"
+  },
+  "O-UI-WO-LOW_BATTERY": {
+    "channel": "console",
+    "text": "Pil %20'nin altında"
+  },
+  "O-UI-WO-PREDICTED_END": {
+    "channel": "console",
+    "text": "Tahmini bitime 30 günden az"
+  },
+  "F-PENDANT-BATTERY": {
+    "channel": "family",
+    "text": "{name}'ın kolye pili azalıyor (%{pct}). Ekibimiz {days} gün içinde pili evde değiştirecek; sizin bir şey yapmanız gerekmiyor."
+  },
+  "F-PENDANT-TEST": {
+    "channel": "family",
+    "text": "{name}'ın kolyesi bu ay denenmedi. Kolyedeki düğmeye bir kez basmasını hatırlatır mısınız? Merkezimiz arayıp doğrulayacak."
+  },
+  "P-PENDANT-TEST": {
+    "channel": "phone",
+    "text": "Kolyenizi bu ay denemediniz. Düğmesine bir kez basın; merkezimiz sizi arayıp doğrulayacak."
+  },
+  "F-COVERAGE-CHRONIC": {
+    "channel": "family",
+    "text": "{name} son {days} günde {n} kez uzun süre korumasız kaldı. Birlikte bir plan yapalım: kişiye özel bekleme süresi, kolyeye geçiş veya bakıcı hatırlatması. Ekibimiz sizi arayacak."
+  },
+  "O-UI-FOLLOWUP-COVERAGE_CHRONIC": {
+    "channel": "console",
+    "text": "Kronik kapsama boşluğu: aileyle plan yapın (kişiye özel tolerans, kolyeye geçiş, bakıcı hatırlatması)"
+  },
+  "O-UI-DEV-VIA-PHONE": {
+    "channel": "console",
+    "text": "telefon üzerinden"
+  },
+  "O-UI-BODY-WRIST_LEFT": {
+    "channel": "console",
+    "text": "sol bilek"
+  },
+  "O-UI-BODY-WRIST_RIGHT": {
+    "channel": "console",
+    "text": "sağ bilek"
+  },
+  "O-UI-BODY-NECK": {
+    "channel": "console",
+    "text": "boyun"
+  },
+  "O-UI-BODY-CHEST": {
+    "channel": "console",
+    "text": "göğüs"
+  },
+  "O-UI-BODY-FINGER": {
+    "channel": "console",
+    "text": "parmak"
+  },
+  "O-UI-BODY-EAR": {
+    "channel": "console",
+    "text": "kulak"
+  },
+  "O-UI-BODY-POCKET": {
+    "channel": "console",
+    "text": "cep"
+  },
+  "O-UI-BODY-HOME": {
+    "channel": "console",
+    "text": "ev"
+  },
+  "O-UI-LOCATION": {
+    "channel": "console",
+    "text": "Konum: {age}, {source}"
+  },
+  "O-UI-LOC-AGE-NOW": {
+    "channel": "console",
+    "text": "az önce"
+  },
+  "O-UI-LOC-AGE-MIN": {
+    "channel": "console",
+    "text": "{n} dk önce"
+  },
+  "O-UI-LOC-AGE-HOUR": {
+    "channel": "console",
+    "text": "{n} sa önce"
+  },
+  "O-UI-LOC-SRC-GPS": {
+    "channel": "console",
+    "text": "GPS"
+  },
+  "O-UI-LOC-SRC-NETWORK": {
+    "channel": "console",
+    "text": "ağ konumu"
+  },
+  "O-UI-LOC-SRC-PHONE": {
+    "channel": "console",
+    "text": "telefon konumu"
+  },
+  "O-UI-LOC-SRC-UNKNOWN": {
+    "channel": "console",
+    "text": "kaynak bilinmiyor"
+  },
+  "O-UI-SAME-ADDRESS": {
+    "channel": "console",
+    "text": "Aynı adreste ikinci kişi: {name} — ilk ulaşılacak kişi olabilir"
+  },
+  "O-UI-SAME-ADDRESS-EVENT": {
+    "channel": "console",
+    "text": "Açık olayını aç"
+  },
+  "O-UI-SUP-COVERAGE-BOARD": {
+    "channel": "console",
+    "text": "Kapsama panosu"
+  },
+  "O-UI-SUP-EMPTY": {
+    "channel": "console",
+    "text": "Kayıt yok"
+  },
+  "O-UI-SUP-NONE-AWAKE": {
+    "channel": "console",
+    "text": "Uyanıkken kapsama YOK (20 dk ve üstü)"
+  },
+  "O-UI-SUP-NONE-ROW": {
+    "channel": "console",
+    "text": "{name}: {n} dk"
+  },
+  "O-UI-SUP-CHRONIC": {
+    "channel": "console",
+    "text": "Kronik boşluk (son 7 gün, uyanık zamanın %80’inden azı korunan)"
+  },
+  "O-UI-SUP-CHRONIC-ROW": {
+    "channel": "console",
+    "text": "{name}: korunan {pct}"
+  },
+  "O-UI-SUP-CHRONIC-PLAN": {
+    "channel": "console",
+    "text": "plan bekliyor (P3 açılmıyor)"
+  },
+  "O-UI-SUP-TOLERANCE": {
+    "channel": "console",
+    "text": "tolerans {n} dk"
+  },
+  "O-UI-SUP-BRIDGES": {
+    "channel": "console",
+    "text": "Çevrimdışı telefon köprüleri"
+  },
+  "O-UI-SUP-BRIDGE-ROW": {
+    "channel": "console",
+    "text": "{name}: telefon {seen} görüldü, üzerinden {n} cihaz bağlı"
+  },
+  "O-UI-SUP-UNREACHABLE": {
+    "channel": "console",
+    "text": "Ulaşılamama oranı (merdiven adımı, P1/P2)"
+  },
+  "O-UI-SUP-DAYS": {
+    "channel": "console",
+    "text": "Son {n} gün"
+  },
+  "O-UI-SUP-COL-STEP": {
+    "channel": "console",
+    "text": "Adım"
+  },
+  "O-UI-SUP-COL-ATTEMPTS": {
+    "channel": "console",
+    "text": "Deneme"
+  },
+  "O-UI-SUP-COL-UNREACHED": {
+    "channel": "console",
+    "text": "Ulaşılamadı"
+  },
+  "O-UI-SUP-COL-STALLED": {
+    "channel": "console",
+    "text": "Burada takıldı"
+  },
+  "O-UI-SUP-UNCLAIMED-P1": {
+    "channel": "console",
+    "text": "90 sn üstlenilmeyen P1 (son 7 gün)"
+  },
+  "O-UI-SUP-NOT-ACKED": {
+    "channel": "console",
+    "text": "görülmedi"
+  },
+  "O-UI-SUP-DISPATCH-112": {
+    "channel": "console",
+    "text": "Hareketsizlik / yerinde kontrol 112 bildirimleri (son 7 gün)"
+  },
+  "O-UI-ADM-TAB-COVERAGE": {
+    "channel": "console",
+    "text": "Kapsama ve cihazlar"
+  },
+  "O-UI-ADM-COV-PERSON-DAY": {
+    "channel": "console",
+    "text": "Kişi-gün kapsama yüzdesi (uyanık zaman)"
+  },
+  "O-UI-ADM-COV-SUMMARY": {
+    "channel": "console",
+    "text": "Ortalama {avg}, ortanca {median}; %80 altı {below} ({n} kişi-gün)"
+  },
+  "O-UI-ADM-COV-FALSE-ALARM": {
+    "channel": "console",
+    "text": "Model ve sürüm başına yanlış alarm"
+  },
+  "O-UI-ADM-COL-MODEL": {
+    "channel": "console",
+    "text": "Model"
+  },
+  "O-UI-ADM-COL-VERSION": {
+    "channel": "console",
+    "text": "Sürüm"
+  },
+  "O-UI-ADM-COL-EVENTS": {
+    "channel": "console",
+    "text": "Olay"
+  },
+  "O-UI-ADM-COL-RATE": {
+    "channel": "console",
+    "text": "Oran"
+  },
+  "O-UI-ADM-COV-LATENCY": {
+    "channel": "console",
+    "text": "Sinyal gecikmesi (sınıf ve adaptör)"
+  },
+  "O-UI-ADM-COL-TIER": {
+    "channel": "console",
+    "text": "Sınıf"
+  },
+  "O-UI-ADM-COL-ADAPTER": {
+    "channel": "console",
+    "text": "Adaptör"
+  },
+  "O-UI-ADM-COL-SIGNALS": {
+    "channel": "console",
+    "text": "Sinyal"
+  },
+  "O-UI-ADM-COL-P95": {
+    "channel": "console",
+    "text": "p95"
+  },
+  "O-UI-ADM-COV-CHARGING": {
+    "channel": "console",
+    "text": "Şarj uyumu"
+  },
+  "O-UI-ADM-COV-CHARGING-ROW": {
+    "channel": "console",
+    "text": "{n} şarj; yeniden takma ortanca {median} dk, p90 {p90} dk; ilk hatırlatmadan önce {early}"
+  },
+  "O-UI-ADM-COV-EVENTS": {
+    "channel": "console",
+    "text": "100 kişi-gün başına olay"
+  },
+  "O-UI-ADM-COV-BATTERY": {
+    "channel": "console",
+    "text": "Model başına pil sağlığı (günlük düşüş ortancası)"
+  },
+  "O-UI-ADM-COL-DEVICES": {
+    "channel": "console",
+    "text": "Cihaz"
+  },
+  "O-UI-ADM-COL-DRAIN": {
+    "channel": "console",
+    "text": "Günlük düşüş"
+  },
+  "F-UI-COVERAGE-HISTORY": {
+    "channel": "family",
+    "text": "Son {days} gün"
+  },
+  "F-UI-COVERAGE-HISTORY-DAY": {
+    "channel": "family",
+    "text": "{date}: uyanık zamanın %{pct}'i korundu"
+  },
+  "F-UI-COVERAGE-TOLERANCE": {
+    "channel": "family",
+    "text": "Kişiye özel bekleme süresi"
+  },
+  "F-UI-COVERAGE-PLAN-LEARNED": {
+    "channel": "family",
+    "text": "{days} günlük şarj alışkanlığından öğrenildi ({date})"
+  },
+  "F-UI-HOLD": {
+    "channel": "family",
+    "text": "Hastanede / seyahatte"
+  },
+  "F-UI-HOLD-KIND-HOSPITAL": {
+    "channel": "family",
+    "text": "Hastanede"
+  },
+  "F-UI-HOLD-KIND-TRAVEL": {
+    "channel": "family",
+    "text": "Seyahatte"
+  },
+  "F-UI-HOLD-HINT": {
+    "channel": "family",
+    "text": "Bu sürede kapsama hatırlatmaları durur. Yardım düğmesi ve düşme algılama her zaman çalışır."
+  },
+  "F-UI-HOLD-OFF": {
+    "channel": "family",
+    "text": "Modu kapat"
   }
 }

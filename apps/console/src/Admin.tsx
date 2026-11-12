@@ -1,5 +1,7 @@
+import type { AdminCoverageMetrics } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
+import { CoverageMetricsView } from './components/CoverageBoard';
 import { DispatchPanel } from './components/Dispatch';
 import type { AdminAnalytics, AdminCall, AdminHealth, AuditRow, DispatchView, WellnessCheck } from './lib/api';
 import type { Backend } from './lib/backend';
@@ -10,8 +12,8 @@ import { t } from './lib/i18n';
  * (kim kimi aradı, cevap, süre, ses kaydı — dinleme gerekçeli ve denetimli), 112 süreçleri, düzenli aramalar,
  * denetim kaydı. Masaüstünde tablo, telefonda kart.
  */
-type Tab = 'overview' | 'events' | 'calls' | 'dispatch' | 'wellness' | 'audit';
-const TABS: Tab[] = ['overview', 'events', 'calls', 'dispatch', 'wellness', 'audit'];
+type Tab = 'overview' | 'coverage' | 'events' | 'calls' | 'dispatch' | 'wellness' | 'audit';
+const TABS: Tab[] = ['overview', 'coverage', 'events', 'calls', 'dispatch', 'wellness', 'audit'];
 const PERIODS = [1, 7, 30, 90];
 
 const dt = (iso: string) =>
@@ -81,6 +83,7 @@ export function AdminBoard({
       <main className="admin-main">
         {caseId && <CaseFile api={api} eventId={caseId} onClose={() => setCaseId(null)} onError={setError} />}
         {tab === 'overview' && <Overview api={api} days={days} onError={setError} />}
+        {tab === 'coverage' && <CoverageTab api={api} days={days} onError={setError} />}
         {tab === 'events' && <Events api={api} days={days} onError={setError} onOpen={setCaseId} />}
         {tab === 'calls' && <Calls api={api} days={days} onError={setError} onOpen={setCaseId} />}
         {tab === 'dispatch' && <Dispatches api={api} onError={setError} />}
@@ -115,6 +118,17 @@ function Kpi({ label, value, note, warn }: { label: string; value: string | numb
       <strong>{value}</strong>
       {note && <span className="muted small">{note}</span>}
     </div>
+  );
+}
+
+/** T-085 (S7.3) kapsama ve cihaz ölçüleri (yalnız toplamlar; en çok 90 gün). */
+function CoverageTab({ api, days, onError }: Part) {
+  const [m] = useLoad<AdminCoverageMetrics>(() => api.adminCoverageMetrics(days), onError, [api, days]);
+  if (!m) return <p className="muted pad">{t('O-UI-LOGGING-IN')}</p>;
+  return (
+    <section className="sup-panel wide" aria-label={t('O-UI-ADM-TAB-COVERAGE')}>
+      <CoverageMetricsView m={m} />
+    </section>
   );
 }
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // Sahte cihaz CLI: 03-teknik-mimari.md ortak sinyal şemasına uygun sinyal üretir ve POST /v1/signals'a gönderir.
-// Kullanım: node src/index.mjs <fall|sos|heartbeat|offbody|onbody|battery|inactivity|cancel|scenario>
+// Kullanım: node src/index.mjs <fall|sos|heartbeat|offbody|onbody|battery|inactivity|cancel|scenario|pendant>
 //   [--person id] [--device id] [--no-cancel] [--api url] [--dry] [--file scenarios/x.yaml] [--time-scale 0.1]
+//   pendant (T-085 OEM sahte ortak, imzalı webhook): --event SOS|FALL|CANCEL|BATTERY|NOT_WORN|POWER|LINE|BUTTON_TEST
+//   --vendor-device FP-0001 [--pct 18] [--days 3] [--off]; PARTNER_FAKE_PENDANT_WEBHOOK_SECRET gerekir.
 // Teslim edilemeyen sinyal tamponda kalır ve yeniden denenir (gerçek cihaz gibi, A-09).
 import { createDevice, loadScenario } from './device.mjs';
+import { pendantEvent, sendPartnerEvents } from './partner.mjs';
 
 const args = process.argv.slice(2);
 const cmd =
@@ -41,6 +44,27 @@ const commands = {
   offbody: () => one('OFF_BODY', { device: { batteryPct: 63, onWrist: false, connectivity: 'BLE' } }),
   onbody: () => one('ON_BODY'),
   battery: () => one('BATTERY', { value: Number(opt('pct', 18)) }),
+  // T-085 OEM: sahte ortak merkezinden kolye / ev ünitesi olayı (cihaz önce POST /v1/vendor-links ile bağlanmalı).
+  pendant: async () => {
+    const type = String(opt('event', 'SOS'));
+    const extra =
+      type === 'BATTERY'
+        ? { battery: Number(opt('pct', 18)) }
+        : type === 'NOT_WORN'
+          ? { days: Number(opt('days', 3)) }
+          : type === 'POWER'
+            ? { mains: !args.includes('--off') }
+            : type === 'LINE'
+              ? { lineUp: !args.includes('--off') }
+              : {};
+    const ev = pendantEvent(type, String(opt('vendor-device', 'FP-0001')), extra);
+    if (args.includes('--dry')) return console.log(JSON.stringify({ events: [ev] }));
+    const r = await sendPartnerEvents({
+      api: opt('api', process.env.API_URL ?? 'http://localhost:3000/v1'),
+      events: [ev],
+    });
+    console.log(`${type} -> ${r.status} ${JSON.stringify(r.body)}`);
+  },
   scenario: () =>
     dev.scenario(loadScenario(opt('file', 'scenarios/s3-dusme-teyitsiz.yaml')), {
       timeScale: Number(opt('time-scale', 1)),

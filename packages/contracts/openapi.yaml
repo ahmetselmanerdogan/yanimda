@@ -205,6 +205,25 @@ paths:
       parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365 } }]
       responses:
         '200': { description: Analiz }
+  /admin/coverage-metrics:
+    get:
+      summary: Kapsama ve cihaz ölçüleri (yönetim). T-085 (docs/07 S7.3)
+      description: |
+        Yalnız toplamlar (kişi kimliği / adı yok). Kişi-gün başına uyanık zaman kapsama yüzdesi (ortalama, ortanca,
+        %80 altı payı, dağılım); cihaz modeli ve uygulama sürümü başına yanlış alarm oranı (olayı açan ilk cihaz;
+        SOS / düşme / hareketsizlik); cihaz sınıfı ve adaptör başına sinyal gecikmesi p50 / p95 (occurredAt →
+        receivedAt); şarj uyumu (CHARGE_END → yeniden takma; ilk hatırlatmadan önce takılanların payı); 100 kişi-gün
+        başına olay türü (test hariç); model başına pil sağlığı (cihaz-gün düşüş toplamı ortancası). SUPERVISOR veya
+        ADMIN.
+      operationId: adminCoverageMetrics
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }]
+      responses:
+        '200':
+          description: Ölçüler
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminCoverageMetrics' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /admin/audit:
     get:
       summary: Denetim kaydı (append-only), işlem öneki / kişi / kayıt süzgeci
@@ -1258,7 +1277,7 @@ paths:
       description: |
         Her supervisor.alert (O-LOCK-LOST, O-DISPATCH-NO-ARRIVAL / OPEN / ESCALATE, O-CLOSE-NO-112,
         O-CLOSE-UNREACHABLE-NO-112, O-QUEUE-UNCLAIMED, O-P1-UNCLAIMED,
-        O-WELLNESS-MISSED) çekirdek şeritten kaydedilir; tekrar teslim tekilleştirilir. O-QUEUE-UNCLAIMED: kuyrukta
+        O-WELLNESS-MISSED, T-085 O-OEM-LATENCY — eventId `partner:<kod>`, eventType PARTNER) çekirdek şeritten kaydedilir; tekrar teslim tekilleştirilir. O-QUEUE-UNCLAIMED: kuyrukta
         önceliğin üstlenme hedefi (P1 10 sn, P2 30 sn, P3 120 sn, P4 600 sn) aşılınca kuyruğa her girişte bir kez.
         O-P1-UNCLAIMED (T-087, docs/07 S5.3): gerçek P1 kuyruğa girişten ladder.unclaimedSupervisorSec (90 sn) sonra
         hâlâ üstlenilmemiş → amir çağrılır (web push), kuyruğa her girişte bir kez.
@@ -1385,6 +1404,29 @@ paths:
         '200':
           description: Kapsama
           content: { application/json: { schema: { $ref: '#/components/schemas/CoverageView' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/coverage/history:
+    get:
+      summary: Kapsama zaman çizelgesi ve uyanık zaman yüzdesi. T-085 (docs/07 S7.3, S7.4)
+      description: |
+        Son `days` (1–30, varsayılan 7) yerel günün kapsama dilimleri (`segments`: seviye ve "hastanede / seyahatte"
+        bayrağı; ilk kayıttan önceki süre dilim değildir) ve gün başına uyanık (gece penceresi dışı) dakika dağılımı
+        (`daily`): korunan (FULL / BASIC), yalnız telefon (PHONE_ONLY), YOK (NONE), hold ve bilinmeyen dakikalar.
+        Yüzdeler (0–100, bir ondalık) korunan + yalnız telefon + YOK toplamına göredir; hold ve bilinmeyen girmez;
+        ölçülemeyen günde null. `from` kişinin yerel gece yarısı. Aile uygulamasının "son 7 günün kapsama zaman
+        çizelgesi" bu uçtan çizilir. Yetki `/coverage` ile aynı.
+      operationId: getCoverageHistory
+      security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/PersonId' }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 30, default: 7 } }
+      responses:
+        '200':
+          description: Zaman çizelgesi
+          content: { application/json: { schema: { $ref: '#/components/schemas/CoverageHistory' } } }
+        '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
@@ -1524,6 +1566,148 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /webhooks/partners/{partner}:
+    post:
+      summary: OEM ortak webhook'u (imzalı, tekrar korumalı, idempotent). T-085 (docs/07 S2.5, S2.6)
+      description: |
+        Ortak merkezi (ör. hücresel / radyo kolye) olaylarını gönderir; sinyaller cihaz sinyalleriyle aynı hattan
+        (signal.signal + outbox, tek transaction) yazılır. Sır ortamdan `PARTNER_<KOD>_WEBHOOK_SECRET` (tanımsızsa 404);
+        sahte ortak FAKE_PENDANT üretimde yalnız `PARTNER_FAKE_ENABLED=true` ile açılır.
+        İmza: `X-Partner-Timestamp` (unix sn, ±300 sn), `X-Partner-Nonce` (teslim başına tek, 8–128 karakter),
+        `X-Partner-Signature: v1=<hex>` = HMAC-SHA256(sır, "<ts>.<nonce>.<ham gövde>"). Geçersiz / pencere dışı 401;
+        aynı nonce ikinci kez 409 (hiçbir şey yazılmaz; işlem 5xx ile biterse nonce serbest kalır). idempotencyKey
+        üretici olay kimliğinden türetilir: aynı olay yeni teslimle gelirse `duplicates`. Sinyal başına ret (yalnız o
+        olay; denetime yazılır): UNKNOWN_DEVICE (bağlantı yok / cihaz kaldırıldı), EVENT_INVALID (okunamayan olay),
+        UNSUPPORTED_SIGNAL (modelin profili dışında, ör. radyo kolyeden konum veya C sınıfından düşme), SCHEMA_INVALID.
+        Yeni yazılan her olayın gecikmesi (olay anı → alım) ortak gecikmesine (S2.7) örnek olur.
+        Sahte ortak gövdesi: `{ events: [{ id, type, device, at, battery?, confidence?, days?, mains?, lineUp?, lat?,
+        lng?, accuracyM? }] }`, type SOS | FALL | CANCEL | BATTERY | HEARTBEAT | WORN | NOT_WORN | POWER | LINE |
+        BUTTON_TEST | LOCATION. Takılı kanıtı `confidence` (0–1): ≥0,8 takılı, ≤0,2 takılı değil. NOT_WORN `days` →
+        OFF_BODY value (≥ pendant.notWornMinDays: KAPSAMA BOŞLUĞU P3, NOT_WORN). POWER `mains` → device.mainsPower,
+        LINE `lineUp` → device.lineOk (kapsama nedenleri).
+      operationId: partnerWebhook
+      security: []
+      parameters:
+        - { name: partner, in: path, required: true, schema: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$' } }
+        - { name: X-Partner-Timestamp, in: header, required: true, schema: { type: string } }
+        - { name: X-Partner-Nonce, in: header, required: true, schema: { type: string } }
+        - { name: X-Partner-Signature, in: header, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '202':
+          description: Alındı (sinyal başına ret listesiyle)
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerWebhookResult' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /vendor-links:
+    post:
+      summary: Ortak cihazını kişiye bağla (cihaz kaydı + üretici bağlantısı). T-085 (S2.5, S8.1, S9.3)
+      description: |
+        Kurulum ekibi (SUPERVISOR, ADMIN). Cihaz satırı ortağın modeliyle açılır (tür = ortak kodu, katalog modeli,
+        sınıf, bağlantı yolu, vücut konumu varsayılan kolyede NECK, ev ünitesinde HOME). Üretici cihaz kimliği eşleme için
+        saklanır; `vendorAccountId` yalnız alan düzeyinde şifreli (dönmez); bulut belirteci yalnız şifreli tutulur.
+        Ortağın veri bölgesi TR dışıysa `consent` (EXPLICIT_CONSENT / SCC_NOTIFIED / ADEQUACY ve geçmiş bir an) zorunlu
+        (KVKK yurt dışı aktarım). Kişi başına cihaz sınırı aşılırsa 409 `F-DEVICE-LIMIT` (aileye bildirim). Aynı üretici
+        cihazı etkin bağlıysa 409. Kaldırma: `DELETE /devices/{id}` (bağlantı REVOKED, belirteç silinir). Denetimde
+        yalnız ortak, model, veri bölgesi ve dayanak (üretici kimlikleri yok).
+      operationId: createVendorLink
+      security: [{ operatorToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [protectedPersonId, partner, model, vendorDeviceId]
+              properties:
+                protectedPersonId: { type: string, format: uuid }
+                partner: { type: string, example: FAKE_PENDANT }
+                model: { type: string, example: FAKE_PENDANT_CELL }
+                vendorDeviceId: { type: string, minLength: 1, maxLength: 200 }
+                vendorAccountId: { type: string, minLength: 1, maxLength: 200 }
+                bodyLocation: { $ref: '#/components/schemas/BodyLocation' }
+                consent:
+                  type: object
+                  required: [basis, at]
+                  properties:
+                    basis: { enum: [EXPLICIT_CONSENT, SCC_NOTIFIED, ADEQUACY] }
+                    at: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Bağlandı
+          content: { application/json: { schema: { $ref: '#/components/schemas/VendorLink' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /protected-persons/{id}/vendor-links:
+    get:
+      summary: Kişinin ortak cihaz bağlantıları (üretici kimlikleri dönmez). T-085
+      operationId: listVendorLinks
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Bağlantılar (oluşturma sırasıyla)
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/VendorLink' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /supervisor/partners:
+    get:
+      summary: Ortak gecikmesi (son 1 saat p95 / p99) ve bozulma. T-085 (S2.7, S7.2)
+      description: |
+        Tarama (PARTNER_SWEEP_MS, 60 sn) ortak başına son `partner.latencyWindowMin` dakikanın gecikmesini hesaplar.
+        En az `partner.minSamples` örnekle p99 > `partner.latencyP99Sec` (60 sn) → `degradedSince` dolar, amire
+        O-OEM-LATENCY (bozulma başına bir; supervisor.alert, eventId `partner:<kod>`, eventType PARTNER) ve o ortağın
+        cihazları kapsamada "zayıf" (neden PARTNER_LATENCY, seviye değişmez). p99 eşiğin altına inince kalkar.
+        SUPERVISOR veya ADMIN.
+      operationId: supervisorPartners
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Kayıtlı ortaklar
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PartnerHealth' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/work-orders:
+    get:
+      summary: Kolye pili iş emirleri (son tarihe göre). T-085 / T-086 (S4.9)
+      description: |
+        12 ay pilli kolyede (katalog pil ömrü ≥ pendant.longLifeBatteryH) yaşlıya pil bildirimi gitmez; haftalık pil
+        raporu %pendant.workOrderPct (20) altında veya tahmini bitime pendant.workOrderDaysBeforeEnd (30) gün kaldıysa
+        iş emri açılır (cihaz başına tek açık, son tarih replaceWithinDays = 14 gün) ve aileye F-PENDANT-BATTERY gider.
+        Pil replacedPct (80) ve üstüne çıkınca iş emri kendiliğinden kapanır (REPLACED). SUPERVISOR veya ADMIN.
+      operationId: listWorkOrders
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: status, in: query, schema: { enum: [OPEN, DONE] } }]
+      responses:
+        '200':
+          description: İş emirleri
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/WorkOrder' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/work-orders/{id}/done:
+    post:
+      summary: İş emri tamamlandı (yerinde pil değişimi; audit work_order.closed). Zaten kapalıysa 409
+      operationId: completeWorkOrder
+      security: [{ operatorToken: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Kapandı
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkOrder' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /supervisor/coverage:
     get:
       summary: Filo kapsama tablosu (amir). T-085 (S4.11, S7.2)
@@ -1537,6 +1721,26 @@ paths:
         '200':
           description: Özet
           content: { application/json: { schema: { $ref: '#/components/schemas/SupervisorCoverage' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/coverage/board:
+    get:
+      summary: Amir kapsama panosu listeleri. T-089 (docs/07 S7.2)
+      description: |
+        `noneAwake`: uyanıkken kapsama YOK ≥ coverageNone.remindMin (20 dk), en uzun önce. `chronic`: son 7 günde
+        uyanık zamanın chronicGap.protectedPct'sinden (%80) azı korunanlar ve S4.10 kronik boşluk işaretliler
+        (`chronicSince`). `offlineBridges`: yaşlının telefonu çevrimdışı, üzerinden bağlanan (BLE) cihazlar var.
+        `unreachable`: P1/P2 merdivenlerinde (test hariç) adım türü başına deneme / ulaşılan / ulaşılamayan /
+        çevrimdışı atlanan, `stalledHere` kimseye ulaşılamayan merdivenin son denenen adımı (7 ve 30 gün).
+        `unclaimedP1`: 90 sn üstlenilmeyen P1 (O-P1-UNCLAIMED, 7 gün). `dispatch112`: hareketsizlik / yerinde kontrol
+        olaylarında 112 bildirimi (7 gün). Hastanede / seyahatte modundakiler listelerde yok. Kişi yalnız görünen
+        adıyla; sağlık verisi yok. SUPERVISOR veya ADMIN.
+      operationId: supervisorCoverageBoard
+      security: [{ operatorToken: [] }]
+      responses:
+        '200':
+          description: Pano
+          content: { application/json: { schema: { $ref: '#/components/schemas/SupervisorCoverageBoard' } } }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/status:
@@ -2932,6 +3136,13 @@ components:
               properties:
                 kind: { enum: [HOSPITAL, TRAVEL] }
                 until: { type: string, format: date-time }
+        coverageToleranceMin:
+          type: integer
+          minimum: 0
+          maximum: 240
+          description: |
+            S4.10 kronik boşluk planı: kişiye özel tolerans (dk), KAPSAMA BOŞLUĞU olay eşiğine (şarj 120 dk, kapsama YOK
+            60 dk) eklenir. Değişince kronik boşluk dönemi biter, sayım yeniden başlar. Sahip (OWNER) veya yönetici.
     PersonView:
       type: object
       required: [id, displayName, language, timezone, status, medical, myRole, createdAt]
@@ -2972,6 +3183,7 @@ components:
               properties:
                 kind: { enum: [HOSPITAL, TRAVEL] }
                 until: { type: string, format: date-time }
+        coverageToleranceMin: { type: integer, description: S4.10 kişiye özel kapsama boşluğu toleransı (dk) }
         medical:
           type: object
           description: Yalnız var/yok ve rıza zamanı; içerik geri okunmaz.
@@ -3048,6 +3260,19 @@ components:
           properties: { lat: { type: number }, lng: { type: number } }
         doorAccessNote: { type: [string, 'null'] }
         medical: { oneOf: [{ $ref: '#/components/schemas/Medical' }, { type: 'null' }] }
+        sameAddress:
+          type: array
+          description: |
+            T-089 (docs/07 S7.7) aynı adreste (sunucuda normalleştirilmiş adres, aynı şehir) etkin başka korunan kişi;
+            eş ilk ulaşılacak kişi olabilir. Yalnız kimlik, görünen ad ve açık olayı — onun sağlık verisi, kapı notu,
+            numarası verilmez.
+          items:
+            type: object
+            required: [protectedPersonId, displayName, openEventId]
+            properties:
+              protectedPersonId: { type: string, format: uuid }
+              displayName: { type: string }
+              openEventId: { type: [string, 'null'], format: uuid }
     ContactView:
       type: object
       required: [id, role, priority, displayName, phoneLast2]
@@ -3075,7 +3300,22 @@ components:
             `detail` aynı kodun Türkçe metnidir.
     CoverageLevel: { enum: [FULL, BASIC, PHONE_ONLY, NIGHT, NONE] }
     CoverageReason:
-      enum: [WATCH_CHARGING, NO_ALARM_DEVICE_WORN, ALARM_DEVICE_OFFLINE, PHONE_OFFLINE, NIGHT_WINDOW, ON_HOLD]
+      description: |
+        T-085 OEM (S2.7, S4.9) bilgi nedenleri (seviyeden bağımsız): PARTNER_LATENCY ortağın gecikmesi bozuk, cihazları
+        "zayıf"; HOME_UNIT_POWER_LOSS ev ünitesinin elektriği kesildi (yedek pilde); LINE_LOSS kolyenin / ev ünitesinin
+        hattı düştü (cihaz ve ev ünitesine bağlı radyo kolye çevrimdışı). C sınıfı cihaz hiçbir nedeni değiştirmez.
+      enum:
+        [
+          WATCH_CHARGING,
+          NO_ALARM_DEVICE_WORN,
+          ALARM_DEVICE_OFFLINE,
+          PHONE_OFFLINE,
+          NIGHT_WINDOW,
+          ON_HOLD,
+          PARTNER_LATENCY,
+          HOME_UNIT_POWER_LOSS,
+          LINE_LOSS,
+        ]
     CoverageCapabilities:
       type: object
       required: [sos, fall, voice, location]
@@ -3143,7 +3383,9 @@ components:
         ]
       properties:
         id: { type: string }
-        kind: { type: string, description: 'Cihaz türü (WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE, SIMULATOR …)' }
+        kind:
+          type: string
+          description: 'Cihaz türü (WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE, SIMULATOR; T-085 OEM: ortak kodu, ör. FAKE_PENDANT)'
         category: { $ref: '#/components/schemas/DeviceCategory' }
         tier: { enum: [A, B, C], description: A alarm, B canlı izlem, C eğilim (S2.1) }
         bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
@@ -3163,6 +3405,9 @@ components:
           type: [string, 'null']
           pattern: '^\d{2}$'
           description: T-087 cihaza özel sesli arama numarasının son iki hanesi (PATCH voiceNumber); yoksa null
+        bridged:
+          type: boolean
+          description: T-089 (S7.1, S4.8) son sinyali yaşlının telefonu üzerinden (BLE köprüsü) geldi — "telefon üzerinden"
     CoverageView:
       type: object
       required: [level, since, reasons, capabilities, devices]
@@ -3172,13 +3417,35 @@ components:
         reasons: { type: array, items: { $ref: '#/components/schemas/CoverageReason' } }
         capabilities: { $ref: '#/components/schemas/CoverageCapabilities' }
         devices: { type: array, items: { $ref: '#/components/schemas/DeviceSummary' } }
+        chronicGap:
+          description: |
+            S4.10 kronik boşluk: 7 günde 5 kapsama boşluğundan sonra her boşlukta KAPSAMA BOŞLUĞU (P3) açılmaz; aileye
+            bir kez F-COVERAGE-CHRONIC, operasyona bir FOLLOW_UP (plan). Tolerans değişince veya boşluklar eşiğin
+            altına inince biter. Yoksa null.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [since]
+              properties: { since: { type: string, format: date-time } }
+        toleranceMin:
+          type: integer
+          minimum: 0
+          maximum: 240
+          description: S4.10 kişiye özel tolerans (dk), KAPSAMA BOŞLUĞU olay eşiğine (şarj 120, YOK 60) eklenir
     ChargingPlan:
       type: object
       required: [window, source, nightChargeAllowed]
+      description: |
+        T-086 (S4.3): varsayılan 19:00–21:00; 14 günlük CHARGE_START / CHARGE_END geçmişinden (en az 7 geçerli gün)
+        günde bir öğrenilir (LEARNED: başlangıç / bitiş ortancası, 15 dk'ya yuvarlanır); aile verdiyse (FAMILY)
+        dokunulmaz; gece penceresine taşan pencere öğrenilmez. Öğrenilen pencere "planlı şarj" sınıflaması, aile
+        bildirim süresi (plan dışında 60 dk) ve 18:00 kontrolünde kullanılır.
       properties:
         window: { type: string, pattern: '^\d{2}:\d{2}-\d{2}:\d{2}$', example: '19:00-21:00' }
         source: { enum: [DEFAULT, LEARNED, FAMILY] }
         nightChargeAllowed: { type: boolean }
+        learnedDays: { type: [integer, 'null'], description: Yalnız LEARNED — dayandığı geçerli gün sayısı }
+        learnedAt: { type: [string, 'null'], format: date-time, description: Yalnız LEARNED — öğrenildiği an }
     ChargingPlanInput:
       type: object
       additionalProperties: false
@@ -3204,6 +3471,229 @@ components:
         plannedCharging: { type: integer }
         total: { type: integer }
         at: { type: string, format: date-time }
+    PartnerWebhookResult:
+      type: object
+      description: T-085 ortak webhook'u yanıtı. `eventId` üreticinin olay kimliği (okunamayan olayda null).
+      required: [accepted, duplicates, rejected]
+      properties:
+        accepted: { type: integer }
+        duplicates: { type: integer }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [eventId, reason]
+            properties:
+              eventId: { type: [string, 'null'] }
+              reason: { enum: [SCHEMA_INVALID, UNSUPPORTED_SIGNAL, UNKNOWN_DEVICE, EVENT_INVALID] }
+    VendorLink:
+      type: object
+      description: T-085 ortak cihazı bağlantısı. Üretici cihaz / hesap kimliği ve belirteç dönmez.
+      required:
+        [id, partner, model, deviceId, protectedPersonId, status, dataRegion, consentAt, consentBasis, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        partner: { type: string }
+        model: { type: string }
+        deviceId: { type: string, format: uuid }
+        protectedPersonId: { type: string, format: uuid }
+        status: { enum: [ACTIVE, REVOKED] }
+        dataRegion: { type: string, pattern: '^[A-Z]{2}$' }
+        consentAt: { type: [string, 'null'], format: date-time }
+        consentBasis: { enum: [EXPLICIT_CONSENT, SCC_NOTIFIED, ADEQUACY, NOT_REQUIRED] }
+        createdAt: { type: string, format: date-time }
+    PartnerHealth:
+      type: object
+      required: [partner, samples, p95Ms, p99Ms, degradedSince, checkedAt]
+      properties:
+        partner: { type: string }
+        samples: { type: integer, description: Pencere içindeki yeni olay sayısı }
+        p95Ms: { type: [integer, 'null'] }
+        p99Ms: { type: [integer, 'null'] }
+        degradedSince: { type: [string, 'null'], format: date-time }
+        checkedAt: { type: [string, 'null'], format: date-time }
+    WorkOrder:
+      type: object
+      description: T-085 / T-086 (S4.9) operasyon iş emri — 12 ay pilli kolyenin pil değişimi.
+      required:
+        [id, kind, status, reason, deviceId, protectedPersonId, batteryPct, predictedEndAt, dueAt, createdAt, closedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { enum: [PENDANT_BATTERY] }
+        status: { enum: [OPEN, DONE] }
+        reason: { enum: [LOW_BATTERY, PREDICTED_END] }
+        deviceId: { type: string, format: uuid }
+        protectedPersonId: { type: string, format: uuid }
+        batteryPct: { type: [integer, 'null'] }
+        predictedEndAt: { type: [string, 'null'], format: date-time }
+        dueAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time }
+    CoverageDay:
+      type: object
+      description: Kişinin yerel günü başına uyanık dakika dağılımı (T-085, S7.3)
+      required:
+        [date, awakeMin, protectedMin, phoneOnlyMin, noneMin, holdMin, unknownMin, protectedPct, phoneOnlyPct, nonePct]
+      properties:
+        date: { type: string, format: date }
+        awakeMin: { type: integer }
+        protectedMin: { type: integer, description: FULL / BASIC }
+        phoneOnlyMin: { type: integer }
+        noneMin: { type: integer }
+        holdMin: { type: integer, description: Hastanede / seyahatte modu (yüzdeye girmez) }
+        unknownMin: { type: integer, description: Geçmişi bilinmeyen uyanık dakika (yüzdeye girmez) }
+        protectedPct: { type: [number, 'null'] }
+        phoneOnlyPct: { type: [number, 'null'] }
+        nonePct: { type: [number, 'null'] }
+    CoverageHistory:
+      type: object
+      required: [protectedPersonId, days, from, to, timezone, sleepWindow, segments, daily, summary]
+      properties:
+        protectedPersonId: { type: string }
+        days: { type: integer }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        timezone: { type: string }
+        sleepWindow:
+          type: object
+          properties: { start: { type: string }, end: { type: string } }
+        segments:
+          type: array
+          items:
+            type: object
+            required: [from, to, level, hold]
+            properties:
+              from: { type: string, format: date-time }
+              to: { type: string, format: date-time }
+              level: { $ref: '#/components/schemas/CoverageLevel' }
+              hold: { type: boolean }
+        daily: { type: array, items: { $ref: '#/components/schemas/CoverageDay' } }
+        summary: { description: Günlerin toplamı (CoverageDay alanları, date hariç), type: object }
+    LadderStepStat:
+      type: object
+      required: [step, attempted, reached, unreached, offlineSkipped, unreachableRate, stalledHere]
+      properties:
+        step: { type: string, example: 'CALL_CONTACT:1' }
+        attempted: { type: integer }
+        reached: { type: integer }
+        unreached: { type: integer, description: NO_ANSWER / BUSY / WRONG_NUMBER / SILENT }
+        offlineSkipped: { type: integer }
+        unreachableRate: { type: [number, 'null'], description: (ulaşılamayan + çevrimdışı) / deneme }
+        stalledHere: { type: integer }
+    SupervisorCoverageBoard:
+      type: object
+      required: [at, noneAwake, chronic, offlineBridges, unreachable, unclaimedP1, dispatch112]
+      properties:
+        at: { type: string, format: date-time }
+        noneAwake:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              since: { type: string, format: date-time }
+              awakeMin: { type: integer }
+              reasons: { type: array, items: { $ref: '#/components/schemas/CoverageReason' } }
+        chronic:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              protectedPct: { type: [number, 'null'] }
+              chronicSince: { type: [string, 'null'], format: date-time }
+              toleranceMin: { type: integer }
+        offlineBridges:
+          type: array
+          items:
+            type: object
+            properties:
+              protectedPersonId: { type: string }
+              name: { type: [string, 'null'] }
+              phoneSeenAt: { type: [string, 'null'], format: date-time }
+              bridgedDevices: { type: integer }
+        unreachable:
+          type: object
+          properties:
+            days7: { type: array, items: { $ref: '#/components/schemas/LadderStepStat' } }
+            days30: { type: array, items: { $ref: '#/components/schemas/LadderStepStat' } }
+        unclaimedP1:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string }
+              eventType: { type: string }
+              at: { type: string, format: date-time }
+              acked: { type: boolean }
+        dispatch112:
+          type: array
+          items:
+            type: object
+            properties:
+              eventId: { type: string }
+              eventType: { enum: [INACTIVITY, WELFARE_CHECK] }
+              notifiedAt: { type: string, format: date-time }
+              status: { type: string }
+              name: { type: [string, 'null'] }
+    AdminCoverageMetrics:
+      type: object
+      description: T-085 (S7.3) yalnız toplamlar; kişisel veri yok
+      required: [days, from, to, coverage, falseAlarms, latency, charging, eventsPer100PersonDays, battery]
+      properties:
+        days: { type: integer }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        coverage:
+          type: object
+          properties:
+            personDays: { type: integer }
+            avgProtectedPct: { type: [number, 'null'] }
+            medianProtectedPct: { type: [number, 'null'] }
+            belowTargetShare: { type: [number, 'null'], description: Korunan payı %80 altı kişi-gün oranı (0–1) }
+            buckets:
+              type: array
+              items: { type: object, properties: { label: { type: string }, n: { type: integer } } }
+        falseAlarms:
+          type: array
+          items:
+            type: object
+            properties:
+              model: { type: string }
+              appVersion: { type: string }
+              events: { type: integer }
+              falseAlarms: { type: integer }
+              rate: { type: number }
+        latency:
+          type: array
+          items:
+            type: object
+            properties:
+              tier: { type: string }
+              adapter: { type: string }
+              signals: { type: integer }
+              p50Sec: { type: [number, 'null'] }
+              p95Sec: { type: [number, 'null'] }
+        charging:
+          type: object
+          properties:
+            sessions: { type: integer }
+            worn: { type: integer }
+            medianToWearMin: { type: [number, 'null'] }
+            p90ToWearMin: { type: [number, 'null'] }
+            beforeReminderShare: { type: [number, 'null'] }
+        eventsPer100PersonDays: { type: object, additionalProperties: { type: number } }
+        battery:
+          type: array
+          items:
+            type: object
+            properties:
+              model: { type: string }
+              devices: { type: integer }
+              deviceDays: { type: integer }
+              medianDailyDrainPct: { type: [number, 'null'] }
     RejectedSignal:
       type: object
       description: D-01 sinyal başına ret. PII ve serbest metin yok; `reason` sabit koddur.

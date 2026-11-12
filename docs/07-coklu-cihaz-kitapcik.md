@@ -93,6 +93,17 @@ Kulaklıklar yalnız B sınıfıdır (bağlıyken nabız) ve pil ömrü \~6 saat
 - [ ] %99,9 erişilebilirlik, 1 saat içinde olay bildirimi, 7/24 irtibat
 - [ ] Yazılım güncellemesi 14 gün önceden; her büyük sürümde yeniden sertifika
 
+**Ortak devreye alma notu (T-085).** Listenin otomatikleşebilen kısmı sahte ortağa (FAKE_PENDANT) karşı API test paketidir (`apps/api/test/oem-partner.spec.ts`); gerçek ortak aynı paketi kendi test ortamında geçmelidir:
+
+- İmzalı webhook `POST /v1/webhooks/partners/{ortak}`: `X-Partner-Timestamp` (±5 dk), `X-Partner-Nonce` (teslim başına tek), `X-Partner-Signature: v1=<HMAC-SHA256(sır, "ts.nonce.gövde")>`. Sır ortamdan (`PARTNER_<KOD>_WEBHOOK_SECRET`), kodda yok.
+- Tekrar koruması: aynı nonce 409. Idempotency: aynı üretici olay kimliği yeni teslimle gelirse tekrar sayılır, olay ikinci kez açılmaz.
+- Sinyal başına ret ve denetim: bilinmeyen cihaz, okunamayan olay, model profili dışındaki sinyal (ör. radyo kolyeden konum, C sınıfından düşme).
+- SOS uçtan uca ≤15 sn: 20 SOS (ortak gecikmesi 1–10 sn) %95 zamanında kuyrukta; 10 düşme kolyeden iptalle kapanıyor.
+- Sınıf kapısı: C sınıfı hiçbir olay açmıyor, kapsamayı değiştirmiyor; B sınıfı SOS / düşme açmıyor (`oem-class.spec.ts`).
+- Canlılık: ortak, A sınıfı cihaz için en geç 15 dk'da bir canlılık (HEARTBEAT veya takılı kanıtı) göndermeli; yoksa cihaz kapsamada çevrimdışı sayılır.
+
+Gerçek donanım ister ve elle yapılır: 20 senaryolu düşme duyarlılığı, 7 günlük giyme testi, pil ömrü ve takılı algılama doğruluğu, ses / ev ünitesi sesi, %99,9 erişilebilirlik ve 7/24 irtibat, KVKK aktarım dayanağı (bağlantı kaydında `consent` olarak tutulur), güncelleme bildirimi. Bağlantı amir / yönetici tarafından `POST /v1/vendor-links` ile kurulur, `DELETE /v1/devices/{id}` ile kaldırılır.
+
 **S2.7 — Ortak gecikmesi bozulursa?** Bir ortağın gecikmesi 1 saat boyunca p99 60 sn'yi aşarsa amire O-OEM-LATENCY uyarısı gider; o ortaktan gelen cihazların kapsaması "zayıf" sayılır.
 
 **S2.8 — Google, Huawei, Garmin bulutları?** Fitbit Web API 2 Kasım 2026'da kapandı; yerine Google Health API güvenlik incelemesi isteyen kısıtlı izinlerle gelir. [Google Health](https://developers.google.com/health/about) Huawei Wear Engine sensör verisi vermiyor. [Huawei](https://developer.huawei.com/consumer/en/doc/connectivity-Guides/dev-process-0000001051058039) Garmin ve Google yalnız C sınıfı (eğilim) olarak, son aşamada girer.

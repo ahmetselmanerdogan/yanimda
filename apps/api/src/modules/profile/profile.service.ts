@@ -18,6 +18,7 @@ import { auditLog, event, familyMember, medicalSummary, protectedPerson, subscri
 import { EnrollmentService } from '../device/enrollment.service';
 import { EventService } from '../event/event.service';
 import { learningOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
+import { normalizeAddress } from './address';
 import { type Actor, listContacts, replaceContacts } from './contacts';
 import { GEOCODER, type Geocoder } from './geocoder';
 import { acceptMemberInvite, createMemberInvite, listMembers, removeMember } from './members';
@@ -55,6 +56,11 @@ export interface PersonView {
    * düşme her zaman çalışır. Süresi geçmişse null.
    */
   holdMode: { kind: HoldKind; until: string } | null;
+  /**
+   * S4.10 kronik boşluk planı: kişiye özel tolerans (dk, 0–240). KAPSAMA BOŞLUĞU olay eşiğine (şarj 120 dk, kapsama
+   * YOK 60 dk) eklenir; değişince kronik boşluk dönemi biter, sayım yeniden başlar.
+   */
+  coverageToleranceMin: number;
   medical: { present: boolean; consentAt: string | null; updatedAt: string | null };
   createdAt: string;
 }
@@ -62,6 +68,8 @@ export const HOLD_KINDS = ['HOSPITAL', 'TRAVEL'] as const;
 export type HoldKind = (typeof HOLD_KINDS)[number];
 /** Bekleme modunun en uzun süresi. */
 export const HOLD_MAX_DAYS = 180;
+/** S4.10 kişiye özel kapsama boşluğu toleransının üst sınırı (dk; migration 0035 CHECK ile aynı). */
+export const TOLERANCE_MAX_MIN = 240;
 export const BLOOD_TYPES = ['0+', '0-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'] as const;
 export interface Medical {
   conditions: string[];
@@ -78,6 +86,17 @@ export interface EventPersonCard {
   location: { lat: number; lng: number } | null;
   doorAccessNote: string | null;
   medical: Medical | null;
+  /**
+   * T-089 (S7.7) aynı adreste (normalleştirilmiş adres) etkin başka korunan kişi: yalnız ad, kimlik ve açık olayı —
+   * eş ilk ulaşılacak kişi olabilir. Onun sağlık verisi, kapı notu, numarası asla verilmez.
+   */
+  sameAddress: SameAddressPerson[];
+}
+export interface SameAddressPerson {
+  protectedPersonId: string;
+  displayName: string;
+  /** Bu kişinin açık olayı (konsol bağlantısı); yoksa null. */
+  openEventId: string | null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -202,6 +221,7 @@ export class ProfileService {
         row.holdMode && row.holdUntil && row.holdUntil > new Date()
           ? { kind: row.holdMode as HoldKind, until: row.holdUntil.toISOString() }
           : null,
+      coverageToleranceMin: row.coverageToleranceMin,
       medical: {
         present: !!med,
         consentAt: med?.consentAt.toISOString() ?? null,
@@ -227,6 +247,11 @@ export class ProfileService {
         .update(protectedPerson)
         .set({ ...patch, updatedAt: now })
         .where(eq(protectedPerson.id, id));
+      // S4.10: plan yapıldı (tolerans değişti) → kronik boşluk dönemi biter, sayım bu andan başlar.
+      if (patch.coverageToleranceMin !== undefined)
+        await tx.execute(sql`
+          UPDATE event.coverage_state SET chronic_gap_since = NULL, chronic_cleared_at = ${now.toISOString()}::timestamptz
+          WHERE protected_person_id = ${id}`);
       await this.audit(tx, actor, 'profile.person_updated', id, { fields: Object.keys(patch) });
     });
     return this.get(actor, id);
@@ -421,8 +446,37 @@ export class ProfileService {
       location: row.lat != null && row.lng != null ? { lat: row.lat, lng: row.lng } : null,
       doorAccessNote,
       medical,
+      sameAddress: await this.sameAddress(tx, row),
     };
     return card;
+  }
+
+  /** S7.7: aynı şehirde, normalleştirilmiş adresi aynı olan etkin (iptal / askıda olmayan) diğer kişiler. */
+  private async sameAddress(tx: Tx, row: Row): Promise<SameAddressPerson[]> {
+    if (!row.addressLine || !row.city) return [];
+    const key = normalizeAddress([row.addressLine, row.district, row.city]);
+    const r = (await tx.execute(sql`
+      SELECT p.id::text AS id, p.display_name, p.address_line, p.district, p.city,
+             (SELECT e.id::text FROM event.event e
+              WHERE e.protected_person_id = p.id::text AND e.state <> 'CLOSED' AND NOT e.is_test
+              ORDER BY e.created_at DESC LIMIT 1) AS open_event_id
+      FROM profile.protected_person p
+      WHERE p.id <> ${row.id}::uuid AND p.address_line IS NOT NULL
+        AND translate(lower(p.city), 'İIıŞşĞğÜüÖöÇç', 'iiissgguuoocc')
+          = translate(lower(${row.city}), 'İIıŞşĞğÜüÖöÇç', 'iiissgguuoocc') AND p.status NOT IN ('CANCELED', 'SUSPENDED')
+      ORDER BY p.created_at, p.id`)) as unknown as {
+      rows: {
+        id: string;
+        display_name: string;
+        address_line: string;
+        district: string | null;
+        city: string;
+        open_event_id: string | null;
+      }[];
+    };
+    return r.rows
+      .filter((x) => normalizeAddress([x.address_line, x.district, x.city]) === key)
+      .map((x) => ({ protectedPersonId: x.id, displayName: x.display_name, openEventId: x.open_event_id }));
   }
 
   // ---- iç ----
@@ -498,6 +552,12 @@ export class ProfileService {
           throw new BadRequestException(`holdMode.until gelecekte ve en çok ${HOLD_MAX_DAYS} gün olmalı`);
         Object.assign(p, { holdMode: oneOf(h.kind, HOLD_KINDS, 'holdMode.kind'), holdUntil: until });
       }
+    }
+    if (b.coverageToleranceMin !== undefined) {
+      const v = b.coverageToleranceMin;
+      if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > TOLERANCE_MAX_MIN)
+        throw new BadRequestException(`coverageToleranceMin 0–${TOLERANCE_MAX_MIN} arası tam sayı (dk) olmalı`);
+      p.coverageToleranceMin = v as number;
     }
     if (b.language !== undefined) p.language = oneOf(b.language, ['tr'] as const, 'language');
     if (b.timezone !== undefined) {

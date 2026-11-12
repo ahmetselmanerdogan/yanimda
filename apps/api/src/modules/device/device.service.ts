@@ -1,9 +1,23 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { CoverageCapabilities, DeviceCategory, DeviceTier, Signal, SignalSource } from '@yanimda/contracts';
+import type {
+  ConnectionPath,
+  CoverageCapabilities,
+  DeviceCategory,
+  DeviceTier,
+  Signal,
+  SignalSource,
+} from '@yanimda/contracts';
 import { inArray, sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
 import { device, deviceModel } from '../../db/schema';
+import { FakePendantAdapter } from '../partner/fake-pendant.adapter';
+import {
+  isPartnerAdapter,
+  type PartnerAdapter,
+  type PartnerGateway,
+  RecordingPartnerGateway,
+} from '../partner/partner.types';
 import { AdapterRegistry } from './adapter.registry';
 import { AndroidPhoneAdapter } from './adapters/android-phone.adapter';
 import { BleBridgedAdapter, BRIDGED_MODELS } from './adapters/ble-bridged.adapter';
@@ -12,6 +26,7 @@ import { SimulatorAdapter } from './adapters/simulator.adapter';
 import { WearOsAdapter } from './adapters/wearos.adapter';
 import {
   type DeviceAdapter,
+  type DeviceCapabilities,
   type DeviceCommand,
   type PromptRequest,
   type RingRequest,
@@ -22,13 +37,18 @@ import { PUSH, type PushOutcome, type PushPort, RecordingPush } from './push.por
 
 export const ADAPTER_REGISTRY = Symbol('ADAPTER_REGISTRY');
 
-export function defaultRegistry(push: PushPort = new RecordingPush()): AdapterRegistry {
+export function defaultRegistry(
+  push: PushPort = new RecordingPush(),
+  partners: PartnerGateway = new RecordingPartnerGateway(),
+): AdapterRegistry {
   return new AdapterRegistry([
     new WearOsAdapter(push),
     new AndroidPhoneAdapter(push),
     new IosPhoneAdapter(push),
     new SimulatorAdapter(),
     ...BRIDGED_MODELS.map((m) => new BleBridgedAdapter(m)), // T-092 telefon köprüsü
+    // T-085 OEM: sahte ortak (test / geliştirme). Webhook'u yalnız sırrı tanımlıysa açılır (PartnerWebhookService).
+    new FakePendantAdapter(partners),
   ]);
 }
 
@@ -64,6 +84,8 @@ export class DeviceService {
       .select({
         id: sql<string>`${device.id}::text`,
         kind: device.kind,
+        modelId: sql<string>`coalesce(${device.modelId}, ${device.kind})`,
+        connectionPath: device.connectionPath,
         category: sql<string | null>`coalesce(${device.category}, ${deviceModel.category})`,
         tier: sql<string | null>`coalesce(${device.tier}, ${deviceModel.tier})`,
         capabilities: deviceModel.capabilities,
@@ -77,6 +99,8 @@ export class DeviceService {
         r.id,
         {
           kind: r.kind,
+          modelId: r.modelId,
+          connectionPath: (r.connectionPath as ConnectionPath | null) ?? null,
           category: (r.category as DeviceCategory | null) ?? null,
           tier: (r.tier as DeviceTier | null) ?? null,
           caps: r.capabilities ? capsOf(r.capabilities as CatalogCapabilities) : null,
@@ -97,7 +121,7 @@ export class DeviceService {
       try {
         const p = profiles.get(raw.deviceId);
         const adapter = this.registry.for(p?.kind ?? null);
-        const s = adapter.normalize(raw);
+        const s = adapter.normalize(raw, { modelId: p?.modelId ?? null });
         return { ...s, source: sourceOf(adapter, p) };
       } catch (e) {
         if (e instanceof UnsupportedSignalError) return null;
@@ -106,8 +130,36 @@ export class DeviceService {
     });
   }
 
+  /** T-085 OEM: ortak kodu (= cihaz türü) için kayıtlı ortak adaptörü; yoksa null. */
+  partnerAdapter(partner: string): PartnerAdapter | null {
+    try {
+      const a = this.registry.for(partner);
+      return isPartnerAdapter(a) ? a : null;
+    } catch (e) {
+      if (e instanceof UnsupportedSignalError) return null;
+      throw e;
+    }
+  }
+
+  /** Kayıtlı ortak adaptörleri (gecikme taraması). */
+  partners(): PartnerAdapter[] {
+    return this.registry
+      .kinds()
+      .map((k) => this.registry.for(k))
+      .filter(isPartnerAdapter);
+  }
+
   async adapterFor(deviceId: string): Promise<DeviceAdapter> {
-    return this.registry.for((await this.kindsOf([deviceId])).get(deviceId) ?? null);
+    return (await this.resolve(deviceId)).adapter;
+  }
+
+  /** Adaptör, model ve modele özgü yetenekler (T-085 OEM: ortak cihazında komut kapısı modele göre). */
+  private async resolve(deviceId: string) {
+    const p = (await this.profilesOf([deviceId])).get(deviceId);
+    const adapter = this.registry.for(p?.kind ?? null);
+    const modelId = p?.modelId ?? null;
+    const caps: DeviceCapabilities = adapter.capabilitiesFor?.(modelId) ?? adapter.capabilities();
+    return { adapter, modelId, caps };
   }
 
   /**
@@ -115,22 +167,34 @@ export class DeviceService {
    * cihaz soru gösteremez; diğerleri push sonucu (token yok, sağlayıcı hatası …). Ulaştı mı: `delivered()`.
    */
   async promptUser(deviceId: string, req: PromptRequest): Promise<PushOutcome> {
-    const a = await this.adapterFor(deviceId);
-    if (!a.capabilities().devicePrompt) return 'unsupported';
+    const { adapter: a, modelId, caps } = await this.resolve(deviceId);
+    if (!caps.devicePrompt) return 'unsupported';
+    if (isPartnerAdapter(a))
+      return a.sendCommand(deviceId, modelId, {
+        type: 'PROMPT',
+        eventId: req.eventId,
+        tts: req.tts,
+        windowSec: req.windowSec,
+      });
     return (await a.promptUser(deviceId, req)) ?? 'sent';
   }
 
   async ring(deviceId: string, req: RingRequest): Promise<PushOutcome> {
-    const a = await this.adapterFor(deviceId);
-    if (!a.capabilities().ring) return 'unsupported';
+    const { adapter: a, modelId, caps } = await this.resolve(deviceId);
+    if (!caps.ring) return 'unsupported';
+    if (isPartnerAdapter(a)) return a.sendCommand(deviceId, modelId, { type: 'RING', eventId: req.eventId });
     return (await a.ring(deviceId, req)) ?? 'sent';
   }
 
-  /** T-089: konum iste (cihaz konum gönderebiliyorsa) veya cihaz testi (push alabiliyorsa). */
+  /**
+   * T-089: konum iste (cihaz konum gönderebiliyorsa) veya cihaz testi (push alabiliyorsa). T-085 OEM: ortak cihazında
+   * komut ortak merkezine gider ve modelin profilindeki komutlarla sınırlıdır (ör. radyo kolyede konum yok).
+   */
   async command(deviceId: string, cmd: DeviceCommand): Promise<PushOutcome> {
-    const a = await this.adapterFor(deviceId);
-    const c = a.capabilities();
-    if (cmd.type === 'LOCATE' ? !c.location : !c.ring) return 'unsupported';
+    const { adapter: a, modelId, caps } = await this.resolve(deviceId);
+    if (isPartnerAdapter(a))
+      return a.sendCommand(deviceId, modelId, cmd.type === 'LOCATE' ? { type: 'LOCATE', eventId: cmd.eventId } : cmd);
+    if (cmd.type === 'LOCATE' ? !caps.location : !caps.ring) return 'unsupported';
     return (await a.command(deviceId, cmd)) ?? 'sent';
   }
 
@@ -151,6 +215,9 @@ const capsOf = (c: CatalogCapabilities): CoverageCapabilities => ({
 
 export interface DeviceProfile {
   kind: string;
+  /** Katalog modeli (kayıttaki model, yoksa tür). */
+  modelId: string;
+  connectionPath: ConnectionPath | null;
   category: DeviceCategory | null;
   tier: DeviceTier | null;
   caps: CoverageCapabilities | null;
@@ -172,5 +239,6 @@ function sourceOf(adapter: DeviceAdapter, p?: DeviceProfile): SignalSource {
       location: c.location,
     },
     batteryLifeH: p?.batteryLifeH ?? null,
+    ...(p?.connectionPath ? { connectionPath: p.connectionPath } : {}),
   };
 }

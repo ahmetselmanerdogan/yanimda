@@ -7,13 +7,14 @@
     "start": "node src/index.mjs",
     "test": "node src/index.mjs --dry heartbeat --person pp_demo",
     "lint": "eslint src",
-    "typecheck": "node --check src/index.mjs && node --check src/device.mjs"
+    "typecheck": "node --check src/index.mjs && node --check src/device.mjs && node --check src/partner.mjs"
   },
   "dependencies": {
     "yaml": "^2.6.0"
   },
   "exports": {
     ".": "./src/device.mjs",
+    "./partner": "./src/partner.mjs",
     "./cli": "./src/index.mjs"
   }
 }

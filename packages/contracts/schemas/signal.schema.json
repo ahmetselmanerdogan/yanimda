@@ -54,6 +54,14 @@
         "charging": {
           "type": "boolean",
           "description": "T-086: cihaz şu an şarjda mı. FALL sinyali charging=true taşıyorsa yok sayılır (S3.4)."
+        },
+        "mainsPower": {
+          "type": "boolean",
+          "description": "T-085 OEM (S4.9): ev ünitesi şebeke elektriğinde mi; false = elektrik kesildi (kapsama nedeni HOME_UNIT_POWER_LOSS)."
+        },
+        "lineOk": {
+          "type": "boolean",
+          "description": "T-085 OEM (S4.9): üreticinin bildirdiği hat durumu; false = hücresel / ev ünitesi hattı düştü (cihaz çevrimdışı, LINE_LOSS)."
         }
       }
     },
@@ -68,7 +76,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Türe özel ek alanlar. CANCEL/OK: isteğe bağlı eventId (cihaz sorusunun olay kimliği); verilirse açık olayla eşleşmeli, yoksa cevap yok sayılır. T-088 (docs/07 S3.6): telefondan CANCEL/OK yalnız özel \"İyiyim\" ekranından kabul edilir (screen: IM_OK) — alarmı açan cihaz değilse. SOS/FALL: platformSosFlow: true → kaynak kendi SOS akışını (ör. Apple düşme → 112) zaten çalıştırdı; konsol O-SCRIPT-APPLE-112 gösterir. T-089 komut cevapları: TEST → trigger: \"OPERATOR\" (operatörün TEST komutu; yeni test olayı açmaz); LOCATION → trigger: \"LOCATE\", eventId (operatörün konum isteği; açık olayın konumu güncellenir). Alanlar bilerek şemada kısıtlanmaz: yanlış tipli ek alan bir SOS'u reddettirmesin."
+      "description": "Türe özel ek alanlar. CANCEL/OK: isteğe bağlı eventId (cihaz sorusunun olay kimliği); verilirse açık olayla eşleşmeli, yoksa cevap yok sayılır. T-088 (docs/07 S3.6): telefondan CANCEL/OK yalnız özel \"İyiyim\" ekranından kabul edilir (screen: IM_OK) — alarmı açan cihaz değilse. SOS/FALL: platformSosFlow: true → kaynak kendi SOS akışını (ör. Apple düşme → 112) zaten çalıştırdı; konsol O-SCRIPT-APPLE-112 gösterir. T-089 komut cevapları: TEST → trigger: \"OPERATOR\" (operatörün TEST komutu; yeni test olayı açmaz); LOCATION → trigger: \"LOCATE\", eventId (operatörün konum isteği; açık olayın konumu güncellenir). T-085 OEM: ortak cihazında vendorEventId (üretici olay kimliği; idempotencyKey ondan türetilir) ve wornConfidence (takılı kanıtı 0–1). OFF_BODY value: üreticinin \"N gündür takılmadı\" bildirimi (gün; kural paketi pendant.notWornMinDays ve üstü KAPSAMA BOŞLUĞU P3, neden NOT_WORN). Alanlar bilerek şemada kısıtlanmaz: yanlış tipli ek alan bir SOS'u reddettirmesin."
     }
   },
   "additionalProperties": false

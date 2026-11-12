@@ -18,6 +18,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -163,6 +164,18 @@ export class CoverageController {
   async coverage(@Param('id') id: string, @Req() req: ActorRequest) {
     await this.access.person(actorOf(req), id, 'read');
     return this.protection.coverage.view(id);
+  }
+
+  /**
+   * GET /v1/protected-persons/{id}/coverage/history?days=7 — T-085 (S7.3, S7.4) son `days` (1–30) yerel günün
+   * kapsama zaman çizelgesi ve gün başına uyanık zaman yüzdeleri (korunan / yalnız telefon / YOK). Aile, operasyon,
+   * kişinin kendi cihazı.
+   */
+  @Get(':id/coverage/history')
+  async history(@Param('id') id: string, @Query('days') days: string | undefined, @Req() req: ActorRequest) {
+    await this.access.person(actorOf(req), id, 'read');
+    const d = days === undefined || days === '' ? 7 : Number(days);
+    return this.protection.coverage.history(id, d);
   }
 
   /** GET /v1/protected-persons/{id}/devices */

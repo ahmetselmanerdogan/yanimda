@@ -3,12 +3,16 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { Api, DeviceCommandType, EventRecord } from '../lib/api';
 import {
+  bodyCode,
+  bodyIcon,
   categoryCode,
   commandResultCode,
   deviceLabel,
+  followUpReasonCode,
   gapReasonCode,
   lastPromptByDevice,
   levelCode,
+  locationLine,
   promptLine,
   reasonCode,
   ringAllTargets,
@@ -26,7 +30,8 @@ const REFRESH_MS = 30_000;
  * operatördeyken komutlar: "Tümünü çaldır", "Bu cihazı çaldır", "Soru gönder", "Konum iste"
  * (`POST /v1/devices/{id}/commands`; sunucu açık olayı ve yetkiyi denetler, denetime yazar). "Soru gönder"in cevabı
  * (İyiyim / yardım / cevap yok / bekleniyor) cihazın satırında ve "Cihaz sorusu cevapları" listesinde
- * (olay ayrıntısı `ladder.prompts`).
+ * (olay ayrıntısı `ladder.prompts`). T-089 Kalan: cihazın vücut konumu simgesi, "telefon üzerinden" rozeti (BLE
+ * köprüsü), konum yaşı satırı ("4 dk önce, GPS") ve S4.10 kronik boşluk takibinin nedeni.
  */
 export function DevicePanel({
   api,
@@ -88,6 +93,7 @@ export function DevicePanel({
   };
 
   const gap = event.type === 'COVERAGE_GAP' ? gapReasonCode(event.transitions) : null;
+  const followUp = event.type === 'FOLLOW_UP' ? followUpReasonCode(event.transitions) : null;
   if (!view) return null;
   return (
     <DeviceStrip
@@ -99,6 +105,7 @@ export function DevicePanel({
       busy={busy}
       note={note}
       gap={gap}
+      followUp={followUp}
       onCommand={(targets, type) => void send(targets, type)}
     />
   );
@@ -107,16 +114,20 @@ export function DevicePanel({
 /** Şeridin görünümü (durumsuz; test edilir). */
 export function DeviceStrip(p: {
   view: CoverageView;
-  event: Pick<EventRecord, 'sourceDeviceIds' | 'cancelledByDeviceId'>;
+  event: Pick<EventRecord, 'sourceDeviceIds' | 'cancelledByDeviceId'> &
+    Partial<Pick<EventRecord, 'location' | 'createdAt'>>;
   now: number;
   prompts?: DevicePromptView[];
   mine: boolean;
   busy: boolean;
   note: string | null;
   gap: string | null;
+  /** S4.10 kronik boşluk takibinin nedeni (katalog kodu); yoksa null. */
+  followUp?: string | null;
   onCommand(targets: DeviceSummary[], type: DeviceCommandType): void;
 }) {
   const { view, event, now, mine, busy, note, gap } = p;
+  const location = locationLine(event.location, event.createdAt ?? new Date(now).toISOString(), now);
   const devices = stripOrder(view.devices);
   const labels = new Map(devices.map((d) => [d.id, deviceLabel(d)]));
   const lastPrompt = lastPromptByDevice(p.prompts);
@@ -146,9 +157,19 @@ export function DeviceStrip(p: {
           </button>
         )}
       </header>
+      {location && (
+        <p className="muted small" data-testid="location-line">
+          {location}
+        </p>
+      )}
       {gap && (
         <p className="gap-reason" data-testid="gap-reason">
           {t('O-UI-GAP-REASON', { reason: t(gap) })}
+        </p>
+      )}
+      {p.followUp && (
+        <p className="gap-reason" data-testid="followup-reason">
+          {t(p.followUp)}
         </p>
       )}
       {note && (
@@ -213,8 +234,20 @@ function DeviceRow(p: {
   return (
     <li className={`device${d.online ? '' : ' offline'}`} data-testid={`device-${d.category}`}>
       <div className="device-name">
+        {d.bodyLocation && (
+          <span
+            className="body-icon"
+            role="img"
+            aria-label={t(bodyCode(d.bodyLocation))}
+            title={t(bodyCode(d.bodyLocation))}
+            data-testid={`body-${d.id}`}
+          >
+            {bodyIcon(d.bodyLocation)}{' '}
+          </span>
+        )}
         <strong>{deviceLabel(d)}</strong>
         {d.nickname && <span className="muted small"> · {t(categoryCode(d.category))}</span>}
+        {d.bodyLocation && <span className="muted small"> · {t(bodyCode(d.bodyLocation))}</span>}
       </div>
       <div className="device-facts small">
         {d.batteryPct !== null && <span>{t('O-UI-DEV-BATTERY', { pct: d.batteryPct })}</span>}
@@ -224,6 +257,11 @@ function DeviceRow(p: {
         )}
         <span className={d.online ? 'ok' : 'warn'}>{t(d.online ? 'O-UI-DEV-ONLINE' : 'O-UI-DEV-OFFLINE')}</span>
         <span className="muted">{seenText(d.lastSeenAt, p.now)}</span>
+        {d.bridged && (
+          <span className="badge-bridge" data-testid={`bridged-${d.id}`}>
+            {t('O-UI-DEV-VIA-PHONE')}
+          </span>
+        )}
         {voice && <span className="badge-voice">{voice}</span>}
         {p.source && <span className="badge-source">{t('O-UI-DEV-SOURCE')}</span>}
         {p.cancelled && <span className="badge-source">{t('O-UI-DEV-CANCELLED')}</span>}

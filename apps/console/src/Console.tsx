@@ -522,7 +522,12 @@ export function Console({
           {t('O-UI-PERSON')}
         </button>
       )}
-      <PersonPanel item={item} card={card && card.id === selected ? card.card : undefined} mine={mine} />
+      <PersonPanel
+        item={item}
+        card={card && card.id === selected ? card.card : undefined}
+        mine={mine}
+        onOpenEvent={setSelected}
+      />
       <PhoneBar
         phone={phoneState}
         call={activeCall}

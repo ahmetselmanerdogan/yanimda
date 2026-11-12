@@ -101,6 +101,31 @@ export interface ChargingParams {
   intentMin: number;
   /** Gece penceresi bittikten sonra zamanlayıcıların yeniden işlemeye başladığı süre (uyanış + 30 dk). */
   resumeAfterWakeMin?: number;
+  /** S4.3 öğrenilmiş şarj penceresi (T-086, 0035). */
+  learn?: Partial<ChargeLearnParams>;
+}
+/**
+ * S4.3: son `days` günün CHARGE_START / CHARGE_END geçmişinden günün ana şarjı (en uzun oturum, ≥ minSessionMin,
+ * ≤ maxSessionH) bulunur; en az `minDays` geçerli gün varsa başlangıç ve bitişin ortancası `roundMin`'e yuvarlanarak
+ * pencere olur (LEARNED). Aile elle verdiyse (FAMILY) dokunulmaz; gece penceresine taşan pencere öğrenilmez.
+ */
+export interface ChargeLearnParams {
+  days: number;
+  minDays: number;
+  minSessionMin: number;
+  maxSessionH: number;
+  roundMin: number;
+}
+/**
+ * S4.10 kronik boşluk: `days` günde `gaps` kapsama boşluğundan sonra her boşlukta P3 açılmaz; aileye bir kez plan
+ * bildirimi (F-COVERAGE-CHRONIC), operasyona bir takip (FOLLOW_UP). Kişiye özel tolerans (dk) olay eşiğine eklenir
+ * (en çok toleranceMaxMin). S7.2 amir listesi: son 7 günde uyanık zamanın protectedPct'sinden azı korunanlar.
+ */
+export interface ChronicGapParams {
+  gaps: number;
+  days: number;
+  toleranceMaxMin: number;
+  protectedPct: number;
 }
 /**
  * T-086 (S4.7): hiçbir SOS yolu yokken (uyanık) dk — remindMin'de hatırlatma + yaşlıya otomatik sesli arama.
@@ -158,6 +183,22 @@ export interface VitalsParams {
   trendCode: string;
 }
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
+/** T-085 OEM (S2.7): ortak gecikmesi — son latencyWindowMin dk'da en az minSamples örnekle p99 > latencyP99Sec. */
+export interface PartnerParams {
+  latencyP99Sec: number;
+  latencyWindowMin: number;
+  minSamples: number;
+}
+/** T-085 / T-086 (S4.9): uzun ömürlü pilli kolye bakımı ve üreticinin "N gündür takılmadı" bildirimi. */
+export interface PendantParams {
+  longLifeBatteryH: number;
+  workOrderPct: number;
+  workOrderDaysBeforeEnd: number;
+  replaceWithinDays: number;
+  replacedPct: number;
+  testReminderDays: number;
+  notWornMinDays: number;
+}
 export interface RulePack {
   country: string;
   version: number;
@@ -174,6 +215,9 @@ export interface RulePack {
   coverageNone?: Partial<CoverageNoneParams> & Pick<CoverageNoneParams, 'remindMin' | 'familyMin' | 'eventMin'>;
   /** T-092 değer kuralları (bayrakla kapalı). */
   vitals?: DeepPartial<VitalsParams> & { enabled: boolean };
+  partner?: PartnerParams;
+  pendant?: PendantParams;
+  chronicGap?: Partial<ChronicGapParams>;
   rules: Rule[];
 }
 
@@ -231,6 +275,19 @@ export const DEFAULT_COVERAGE_NONE: CoverageNoneParams = {
   welfareDroppedH: 2,
   welfareNoMovementH: 24,
 };
+export const DEFAULT_CHARGE_LEARN: ChargeLearnParams = {
+  days: 14,
+  minDays: 7,
+  minSessionMin: 20,
+  maxSessionH: 12,
+  roundMin: 15,
+};
+export const DEFAULT_CHRONIC_GAP: ChronicGapParams = { gaps: 5, days: 7, toleranceMaxMin: 240, protectedPct: 80 };
+export const chargeLearnOf = (pack: RulePack): ChargeLearnParams => ({
+  ...DEFAULT_CHARGE_LEARN,
+  ...pack.charging?.learn,
+});
+export const chronicGapOf = (pack: RulePack): ChronicGapParams => ({ ...DEFAULT_CHRONIC_GAP, ...pack.chronicGap });
 export const coverageOf = (pack: RulePack): CoverageParams => pack.coverage ?? DEFAULT_COVERAGE;
 export const batteryOf = (pack: RulePack): BatteryParams => pack.battery ?? DEFAULT_BATTERY;
 export const chargingOf = (pack: RulePack): ChargingParams => pack.charging ?? DEFAULT_CHARGING;
@@ -296,6 +353,21 @@ export function vitalsEnabled(pack: RulePack, env: NodeJS.ProcessEnv = process.e
   if (e === 'false') return false;
   return pack.vitals?.enabled === true;
 }
+export const DEFAULT_PARTNER: PartnerParams = { latencyP99Sec: 60, latencyWindowMin: 60, minSamples: 20 };
+export const DEFAULT_PENDANT: PendantParams = {
+  longLifeBatteryH: 2000,
+  workOrderPct: 20,
+  workOrderDaysBeforeEnd: 30,
+  replaceWithinDays: 14,
+  replacedPct: 80,
+  testReminderDays: 30,
+  notWornMinDays: 3,
+};
+export const partnerOf = (pack: RulePack): PartnerParams => pack.partner ?? DEFAULT_PARTNER;
+export const pendantOf = (pack: RulePack): PendantParams => pack.pendant ?? DEFAULT_PENDANT;
+/** Katalogdaki pil ömrü uzun (12 ay pilli kolye): yaşlıya pil bildirimi gitmez, bakım iş emri açılır (S4.9). */
+export const isLongLifeBattery = (pack: RulePack, batteryLifeH: number | null | undefined) =>
+  typeof batteryLifeH === 'number' && batteryLifeH >= pendantOf(pack).longLifeBatteryH;
 
 /** Geçerli kural paketini veren kaynak. Üretimde RulesService (sıcak yükleme); testlerde sabit paket. */
 export interface RulesProvider {

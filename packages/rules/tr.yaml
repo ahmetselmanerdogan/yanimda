@@ -53,6 +53,10 @@ charging:
   maxGapMin: 120
   intentMin: 90
   resumeAfterWakeMin: 30
+  # S4.3 (T-086, v6): son 14 günün CHARGE_START / CHARGE_END geçmişinden günün ana şarjı (en uzun oturum, 20 dk – 12 sa);
+  # en az 7 geçerli gün varsa başlangıç/bitiş ortancası 15 dk'ya yuvarlanır → pencere LEARNED. Aile verdiyse (FAMILY)
+  # dokunulmaz; gece penceresine taşan pencere öğrenilmez (gece şarjı yalnız ailenin onayıyla).
+  learn: { days: 14, minDays: 7, minSessionMin: 20, maxSessionH: 12, roundMin: 15 }
 # coverageNone (S4.7): hiçbir SOS yolu yokken (uyanık) 20 dk hatırlatma + yaşlının numarasına otomatik sesli arama
 # (V-COVERAGE-NONE, boşluk başına bir), aile 45 dk, KAPSAMA BOŞLUĞU 60 dk. YERİNDE KONTROL (P2, T-087):
 #  welfareDroppedH: takılı bir A sınıfı cihaz pili battery.warnPct'nin (%20) üzerindeyken birden sustu, 2 sa (uyanık)
@@ -61,6 +65,30 @@ charging:
 #  cihaz hareketi yok. Hastanede / seyahatte modunda (S4.10) hiçbiri çalışmaz; SOS ve düşme her zaman çalışır.
 coverageNone:
   { remindMin: 20, familyMin: 45, eventMin: 60, welfareSilentH: 6, welfareDroppedH: 2, welfareNoMovementH: 24 }
+# T-085 OEM ortakları (docs/07 S2.7): ortak başına son latencyWindowMin dakikanın gecikmesi (üretici olay anı → bizim
+# alım anımız). En az minSamples örnekle p99 latencyP99Sec'i aşarsa amire O-OEM-LATENCY (bozulma başına bir) ve o
+# ortağın cihazları kapsamada "zayıf" (PARTNER_LATENCY); p99 eşiğin altına inince bozulma kapanır.
+partner: { latencyP99Sec: 60, latencyWindowMin: 60, minSamples: 20 }
+# T-085 / T-086 uzun ömürlü pilli kolye (S4.9): katalogdaki pil ömrü longLifeBatteryH ve üstü olan cihazda yaşlıya pil
+# bildirimi gitmez (W-BAT-*); haftalık pil raporu %workOrderPct'nin altında veya tahmini bitime workOrderDaysBeforeEnd
+# gün kaldıysa operasyon iş emri (replaceWithinDays gün içinde yerinde değişim) + aileye F-PENDANT-BATTERY. Pil
+# replacedPct ve üstüne çıkınca açık iş emri kapanır. testReminderDays gündür düğme testi yoksa aylık test hatırlatması
+# (P-PENDANT-TEST). Üreticinin "N gündür takılmadı" bildirimi notWornMinDays ve üstündeyse KAPSAMA BOŞLUĞU P3 (NOT_WORN).
+pendant:
+  longLifeBatteryH: 2000
+  workOrderPct: 20
+  workOrderDaysBeforeEnd: 30
+  replaceWithinDays: 14
+  replacedPct: 80
+  testReminderDays: 30
+  notWornMinDays: 3
+# chronicGap (S4.10, v6): 7 günde 5 kapsama boşluğundan (olay eşiğine ulaşan şarj boşluğu / kapsama YOK) sonra her
+# boşlukta KAPSAMA BOŞLUĞU P3 açılmaz: kişi "kronik boşluk" olur, aileye bir kez F-COVERAGE-CHRONIC (plan: kişiye
+# özel tolerans, kolyeye geçiş, bakıcı hatırlatması), operasyona bir FOLLOW_UP. Kişiye özel tolerans (dk, profil
+# coverageToleranceMin, en çok toleranceMaxMin) olay eşiğine eklenir; değişince sayım yeniden başlar. YERİNDE KONTROL,
+# SOS ve düşme etkilenmez; hastanede / seyahatte modu hepsini susturur. protectedPct: S7.2 amir kronik boşluk listesi
+# (son 7 günde uyanık zamanın %80'inden azı korunan).
+chronicGap: { gaps: 5, days: 7, toleranceMaxMin: 240, protectedPct: 80 }
 # T-092 (docs/07 S6, S8.4) değer kuralları — BAYRAKLA KAPALI. Yazılı mevzuat görüşü (S6 giriş, S9, S10.2) alınmadan
 # `enabled: true` yapılmaz; ortam değişkeni VITALS_ENABLED (true/false) varsa paketin yerine geçer. Kapalıyken
 # davranış bugünküyle aynıdır: HEART_RATE / STEPS / SPO2 / SKIN_TEMP_DEVIATION yalnız kaydedilir, health şemasına

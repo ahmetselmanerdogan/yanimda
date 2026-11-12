@@ -1,13 +1,17 @@
 import type {
+  AdminCoverageMetrics,
   ChainView,
   CoverageView,
   EventState,
   EventType,
   EventVitalsView,
   LadderView,
+  PartnerHealth,
   StepAssessment,
   StepResult,
   SupervisorCoverage,
+  SupervisorCoverageBoard,
+  WorkOrder,
 } from '@yanimda/contracts';
 
 export interface QueueItem {
@@ -45,7 +49,14 @@ export interface EventRecord {
   operatorId?: string;
   lockUntil?: string;
   isTest: boolean;
-  location?: { lat: number; lng: number } | null;
+  /** T-088/T-089 (S3.7, S7.1): birleştirilmiş konum; `at` konumun anı, `source` GPS / ağ / telefon. */
+  location?: {
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+    source?: 'GPS' | 'NETWORK' | 'PHONE';
+    at?: string;
+  } | null;
   /** Kaynak sinyal / zamanlayıcı kimlikleri (ör. `wellness:<id>` düzenli arama). */
   sourceSignalIds?: string[];
   /** T-088: olayı bildiren cihazlar ve iptal eden cihaz (cihaz şeridinde rozet). */
@@ -61,6 +72,8 @@ export interface PersonCard {
   address: string | null;
   location: { lat: number; lng: number } | null;
   doorAccessNote: string | null;
+  /** T-089 (S7.7): aynı adreste etkin başka korunan kişi (yalnız ad ve açık olayı; sağlık verisi yok). */
+  sameAddress?: { protectedPersonId: string; displayName: string; openEventId: string | null }[];
   medical: {
     conditions: string[];
     medications: string[];
@@ -507,6 +520,8 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     supervisorCoverage: () => req<SupervisorCoverage>('GET', '/supervisor/coverage'),
     /** T-092 (S6.8): açık olayda değer grafiği (kapalı olay 403, değer yok / özellik kapalı 404). */
     vitals: (id: string) => req<EventVitalsView>('GET', `${ev(id)}/vitals`),
+    /** T-089 (S7.2) amir kapsama panosu listeleri. */
+    coverageBoard: () => req<SupervisorCoverageBoard>('GET', '/supervisor/coverage/board'),
     dashboard: () => req<SupervisorDashboard>('GET', '/supervisor/dashboard'),
     setOperatorStatus: (sub: string, status: OperatorStatus) =>
       req<{ subject: string; status: OperatorStatus }>(
@@ -522,6 +537,9 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     adminCalls: (days: number, answered?: boolean) =>
       req<AdminCall[]>('GET', `/admin/calls?days=${days}${answered === undefined ? '' : `&answered=${answered}`}`),
     adminAnalytics: (days: number) => req<AdminAnalytics>('GET', `/admin/analytics?days=${days}`),
+    /** T-085 (S7.3) kapsama ve cihaz ölçüleri (yalnız toplamlar). */
+    adminCoverageMetrics: (days: number) =>
+      req<AdminCoverageMetrics>('GET', `/admin/coverage-metrics?days=${Math.min(days, 90)}`),
     adminHealth: () => req<AdminHealth>('GET', '/admin/health'),
     adminEvents: (days: number, q?: string) =>
       req<
@@ -542,6 +560,12 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
     adminCase: (id: string) => req<AdminCase>('GET', `/admin/events/${encodeURIComponent(id)}/case`),
     alerts: (open = true) => req<SupervisorAlertView[]>('GET', `/supervisor/alerts${open ? '?open=1' : ''}`),
     ackAlert: (id: string) => req<SupervisorAlertView>('POST', `/supervisor/alerts/${encodeURIComponent(id)}/ack`, {}),
+    // T-085 OEM (S2.7, S4.9): ortak gecikmesi ve kolye pili iş emirleri (amir).
+    supervisorPartners: () => req<PartnerHealth[]>('GET', '/supervisor/partners'),
+    workOrders: (status: 'OPEN' | 'DONE' = 'OPEN') =>
+      req<WorkOrder[]>('GET', `/supervisor/work-orders?status=${status}`),
+    completeWorkOrder: (id: string) =>
+      req<WorkOrder>('POST', `/supervisor/work-orders/${encodeURIComponent(id)}/done`, {}),
     pushConfig: () => req<{ enabled: boolean; publicKey: string | null }>('GET', '/push/web/config'),
     pushSubscribe: (sub: PushSubscriptionJSON) => req<{ enabled: boolean }>('POST', '/push/web/subscriptions', sub),
     pushUnsubscribe: (endpoint: string) => req<void>('DELETE', '/push/web/subscriptions', { endpoint }),
