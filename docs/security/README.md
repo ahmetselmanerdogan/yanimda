@@ -9,6 +9,7 @@ Güncel durum: **%62,9 (127/202), hedef karşılanmıyor; doğrulanmış kritik 
 | [sizma-testi-plani.md](sizma-testi-plani.md) | Dış sızma testi: kapsam, kurallar, staging hesapları, WSTG/MASVS yöntemi, takvim, raporlama, acil durdurma |
 | [sertifika-sabitleme.md](sertifika-sabitleme.md) | Mobil SPKI sabitleme (Android/Wear OS, iOS, Flutter), rotasyon, test listesi; root/jailbreak uyarısı ve önerilen katalog anahtarları |
 | [sirlar.md](sirlar.md) | Sır envanteri, KMS/Vault, "`.env` üretimde yok", `FIELD_ENC_KEYS` / `DEVICE_TOKEN_SECRET` rotasyonu, sızıntı müdahalesi, `health` şeması DB rol tasarımı |
+| [altyapi-kanit.md](altyapi-kanit.md) | ASVS paket B (altyapı) ve F (`consumers` realm) için gereksinim → dosya:satır kanıt tablosu, oturum süresi risk kabulü, gerçek ortamda yapılacak doğrulamalar |
 
 Betik: [`scripts/security/spki-pin.sh`](../../scripts/security/spki-pin.sh) — bir host'un zincirindeki her
 sertifikanın veya yerel PEM/DER/CSR/anahtar dosyasının SPKI pin'ini (`sha256/<base64>`) yazar.
