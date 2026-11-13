@@ -109,10 +109,9 @@ Uçtan uca + kaos API log'ları ve yük koşularının log'ları `apps/api/test/
 
 ## 5. Risk ve öneriler (uygulama kodu bu PR'da değişmedi)
 
-- **Outbox tek işçi, genel FIFO:** her heartbeat de outbox'a yazılıyor ve tek işçi satırları id sırasıyla işliyor;
-  başarısız satır arkasındakileri bekletiyor (`outbox.worker.ts`). Bu yükte birikim en çok 11 satırdı, sorun yok; ama
-  işçi yavaşlarsa veya bir heartbeat satırı tekrar tekrar düşerse SOS heartbeat'lerin arkasında bekler. Sıra yalnız
-  kişi başına gerekli: kişiye göre bölümleme veya SOS/FALL için öncelikli şerit önerilir (Kafka v2.0'a kadar).
+- **Outbox tek işçi, genel FIFO:** ~~her heartbeat de outbox'a yazılıyor ve tek işçi satırları id sırasıyla işliyor;
+  başarısız satır arkasındakileri bekletiyor.~~ **Giderildi (2026-11-13, migration 0038):** kişi başına sıra, 32 bölüm
+  paralel, acil satır önce; ölçüm `docs/test-reports/2026-11-13-outbox-olcek.md`.
 - **Node `keepAliveTimeout`:** API vekilin boşta bekleme süresinden uzun tutmalı (ör. 65 sn) ya da vekil < 5 sn
   bırakmalı (Caddy'de yapıldı). Doğrudan bağlanan istemciler için API tarafında da ayar önerilir.
 - **Ayrı sağlık ucu yok:** yük betiği ve compose sağlık kontrolü `GET /v1/queue` 401'ine bakıyor; `/health` ve
