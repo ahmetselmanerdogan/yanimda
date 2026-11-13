@@ -98,6 +98,8 @@ export const api = {
     ),
   removeMember: (at: string, personId: string, memberId: string) =>
     call<void>('DELETE', `/protected-persons/${personId}/members/${memberId}`, undefined, bearer(at)),
+  // T-081 (ASVS 8.3.2, KVKK m.11) kişisel veri dışa aktarma: içerik yalnız dosyaya yazılır, saklanmaz.
+  dataExport: (at: string) => call<unknown>('GET', '/family/data-export', undefined, bearer(at)),
   acceptMemberInvite: (at: string, code: string) =>
     call<{ protectedPersonId: string; memberId: string; role: 'MEMBER' }>(
       'POST',
