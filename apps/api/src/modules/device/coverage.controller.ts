@@ -34,7 +34,7 @@ import { ProtectionService } from '../event/protection.service';
 import { ladderOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
-import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import { BridgedDeviceService } from './bridged.service';
 import { DeviceService } from './device.service';
 import type { PromptRequest } from './device.types';
@@ -44,7 +44,8 @@ import { delivered, type PushOutcome } from './push.port';
 /**
  * T-085 / T-086 kapsama ve cihaz uçlarının çağıranı: kişinin kendi cihaz token'ı, operasyon (OIDC operations
  * OPERATOR / SUPERVISOR / ADMIN), aile (consumers FAMILY; kişiye OWNER veya MEMBER olarak bağlı) veya betikler için
- * `x-admin-token`. Bearer önce cihaz token'ı olarak denenir (HMAC; Keycloak token'ı imzayı geçemez), olmazsa OIDC.
+ * `x-admin-token` (yalnız geliştirme/test; üretimde yok sayılır, T-081 G-4). Bearer önce cihaz token'ı olarak
+ * denenir (HMAC; Keycloak token'ı imzayı geçemez), olmazsa OIDC.
  */
 export type CoverageActor =
   | { kind: 'DEVICE'; personId: string; deviceId: string }
@@ -71,7 +72,7 @@ export class CoverageAccessGuard implements CanActivate {
     const h = req.headers.authorization;
     const auth = Array.isArray(h) ? h[0] : h;
     if (!auth) {
-      if (!req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled() || !req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
       this.shared.canActivate(ctx);
       req.coverageActor = { kind: 'ADMIN' };
       return true;

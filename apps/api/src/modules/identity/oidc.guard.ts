@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import { OidcVerifier, type Role, TokenError, type UserPrincipal } from './oidc-verifier';
 
 export const ROLES_KEY = 'yanimda:roles';
@@ -63,8 +63,9 @@ export async function authenticate(verifier: OidcVerifier, req: UserRequest): Pr
 }
 
 /**
- * Yönetici uçları: OIDC ADMIN rolü veya (betikler, CI için) `x-admin-token` = ADMIN_TOKEN.
- * Bearer gelirse yalnız OIDC denenir; geçersizse paylaşılan token'a düşülmez.
+ * Yönetici uçları: OIDC ADMIN rolü veya (yalnız geliştirme/test betikleri, CI için) `x-admin-token` = ADMIN_TOKEN.
+ * Bearer gelirse yalnız OIDC denenir; geçersizse paylaşılan token'a düşülmez. Üretimde paylaşılan yol yok (T-081 G-4):
+ * Bearer'sız istek 401.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -73,7 +74,10 @@ export class AdminGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<UserRequest>();
-    if (!req.headers.authorization) return this.shared.canActivate(ctx);
+    if (!req.headers.authorization) {
+      if (!adminTokenEnabled()) throw new UnauthorizedException('Giriş gerekli');
+      return this.shared.canActivate(ctx);
+    }
     req.user = await authenticate(this.verifier, req);
     if (!req.user.roles.includes('ADMIN')) throw new ForbiddenException('Yönetici yetkisi gerekli');
     return true;

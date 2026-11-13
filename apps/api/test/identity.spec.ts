@@ -161,4 +161,15 @@ describe('AdminGuard', () => {
     expect(await g().canActivate(ctx({ 'x-admin-token': 'dogru-token-123' }).c)).toBe(true);
     expect(await status(g().canActivate(ctx({}).c))).toBe(403);
   });
+  it('T-081 G-4: üretimde x-admin-token yok sayılır (401), OIDC ADMIN çalışır', async () => {
+    const env = process.env.NODE_ENV;
+    process.env.ADMIN_TOKEN = 'dogru-token-123';
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(await status(g().canActivate(ctx({ 'x-admin-token': 'dogru-token-123' }).c))).toBe(401);
+      expect(await g().canActivate(ctx(bearer(idp.token({ roles: ['ADMIN'] }))).c)).toBe(true);
+    } finally {
+      process.env.NODE_ENV = env;
+    }
+  });
 });

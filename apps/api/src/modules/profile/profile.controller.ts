@@ -23,7 +23,7 @@ import {
 import { RateLimit } from '../../common/rate-limit';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
-import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import type { Actor } from './contacts';
 import { ProfileService } from './profile.service';
 
@@ -34,7 +34,8 @@ const actorOf = (req: ActorRequest) => req.actor!;
 
 /**
  * Profil uçları: aile (consumers realm, FAMILY) kendi kişileri için; yönetici (OIDC ADMIN veya betikler için
- * `x-admin-token`) hepsi için. Bearer gelirse yalnız OIDC denenir. Operatör profil düzenlemez (olay kartı ayrı).
+ * `x-admin-token`; üretimde kapalı, T-081 G-4) hepsi için. Bearer gelirse yalnız OIDC denenir. Operatör profil
+ * düzenlemez (olay kartı ayrı).
  */
 @Injectable()
 export class ProfileGuard implements CanActivate {
@@ -44,7 +45,7 @@ export class ProfileGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<ActorRequest>();
     if (!req.headers.authorization) {
-      if (!req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled() || !req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
       const ok = this.shared.canActivate(ctx);
       req.actor = { kind: 'ADMIN' };
       return ok;

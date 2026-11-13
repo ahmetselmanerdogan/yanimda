@@ -1,5 +1,6 @@
 import { Global, Logger, Module } from '@nestjs/common';
 
+import { assertAdminTokenPolicy } from '../rules/admin-token.guard';
 import { AdminGuard, OidcGuard } from './oidc.guard';
 import { oidcConfigFromEnv, OidcVerifier } from './oidc-verifier';
 
@@ -10,6 +11,7 @@ import { oidcConfigFromEnv, OidcVerifier } from './oidc-verifier';
     {
       provide: OidcVerifier,
       useFactory: () => {
+        assertAdminTokenPolicy(); // T-081 G-4 (main.ts da açılışta denetler)
         const v = new OidcVerifier(oidcConfigFromEnv());
         if (!v.enabled)
           new Logger('Identity').warn('KEYCLOAK_URL / OIDC_*_ISSUER yok: kullanıcı girişi gerektiren uçlar 401 döner.');

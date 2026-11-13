@@ -2851,7 +2851,10 @@ components:
       type: apiKey
       in: header
       name: x-admin-token
-      description: Betikler/CI için paylaşılan yönetici anahtarı (ADMIN_TOKEN). Bearer gelirse yalnız OIDC denenir.
+      description: >-
+        Yalnız geliştirme/test ve CI betikleri için paylaşılan yönetici anahtarı (ADMIN_TOKEN). Bearer gelirse yalnız
+        OIDC denenir. Üretimde (NODE_ENV=production) bu şema devre dışıdır: başlık yok sayılır (401 / 403) ve
+        ADMIN_TOKEN tanımlıysa API açılmaz (T-081 G-4); yönetici yalnız OIDC ADMIN (operatorToken, MFA).
     userToken:
       type: http
       scheme: bearer

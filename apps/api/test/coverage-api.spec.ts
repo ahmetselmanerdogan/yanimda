@@ -417,4 +417,20 @@ describe('CoverageAccessGuard', () => {
       ),
     ).toBe(403);
   });
+
+  it('x-admin-token: geliştirmede ADMIN; T-081 G-4 üretimde yok sayılır (401)', async () => {
+    const prev = { token: process.env.ADMIN_TOKEN, env: process.env.NODE_ENV };
+    process.env.ADMIN_TOKEN = 'dogru-token-123';
+    try {
+      const x = ctx({ 'x-admin-token': 'dogru-token-123' });
+      await guard().canActivate(x.c);
+      expect(x.r.coverageActor).toEqual({ kind: 'ADMIN' });
+      process.env.NODE_ENV = 'production';
+      expect(await status(guard().canActivate(ctx({ 'x-admin-token': 'dogru-token-123' }).c))).toBe(401);
+    } finally {
+      process.env.NODE_ENV = prev.env;
+      if (prev.token === undefined) delete process.env.ADMIN_TOKEN;
+      else process.env.ADMIN_TOKEN = prev.token;
+    }
+  });
 });
