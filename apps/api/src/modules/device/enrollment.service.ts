@@ -28,7 +28,13 @@ import { ProtectionService } from '../event/protection.service';
 import { chargingOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
 import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
-import { DEVICE_TOKEN_REFRESH_BEFORE_SEC, deviceTokenSecret, signDeviceToken, verifyDeviceToken } from './device-token';
+import {
+  DEVICE_TOKEN_REFRESH_BEFORE_SEC,
+  type DeviceTokenKeyring,
+  deviceTokenKeyring,
+  signDeviceToken,
+  verifyDeviceToken,
+} from './device-token';
 
 export const INVITE_TTL_MS = 15 * 60_000;
 /** Aynı IP'den 15 dk içinde en fazla bu kadar hatalı kod (6 hane = 10⁶ olasılık; kaba kuvveti durdurur). */
@@ -126,19 +132,19 @@ const str = (v: unknown, max: number) => (typeof v === 'string' && v.length > 0 
 export class EnrollmentService {
   private readonly log = new Logger('Enrollment');
   private readonly rules: RulesProvider;
-  private readonly secret: string;
+  private readonly secret: string | DeviceTokenKeyring;
 
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Pick<Redis, 'incr' | 'expire' | 'get'>,
     @Inject(ProtectionService) private readonly protection: Pick<ProtectionService, 'settingsOf'>,
     @Optional() @Inject(RULES) rules?: RulesProvider,
-    @Optional() @Inject('DEVICE_TOKEN_SECRET') secret?: string,
+    @Optional() @Inject('DEVICE_TOKEN_SECRET') secret?: string | DeviceTokenKeyring,
     /** T-085: sınır aşımında aileye F-DEVICE-LIMIT. */
     @Optional() @Inject(OutboxBus) private readonly outbox?: Pick<OutboxBus, 'publish'>,
   ) {
     this.rules = rules ?? staticRules(loadRulePack());
-    this.secret = secret ?? deviceTokenSecret();
+    this.secret = secret ?? deviceTokenKeyring();
   }
 
   // MARK: Davet (T-040 parçası)

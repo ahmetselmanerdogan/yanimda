@@ -13,9 +13,9 @@ Kaynak: `apps/api/src` içinde `process.env.*` ve `env.*` erişimleri; açıklam
 | --- | --- | --- | --- | --- | --- |
 | `DATABASE_URL` (parola içerir) | Postgres/TimescaleDB | `src/db/client.ts` | Zorunlu | 90 gün veya Vault dinamik kimlik (saatlik) | Tüm veriler (sağlık alanları şifreli) |
 | `REDIS_URL` (parola/TLS) | İdempotency, BullMQ, WS yayını | `src/core.module.ts` | Zorunlu | 90 gün | Zamanlayıcı/kuyruk manipülasyonu |
-| `FIELD_ENC_KEYS` | Tıbbi özet + kapı notu AES-256-GCM | `src/common/field-cipher.ts` | Zorunlu (yoksa açılmaz) | Yılda bir yeni `kid` (§3) | Sağlık verisi çözülebilir (DB'ye de erişim gerekir) |
-| `DEVICE_TOKEN_SECRET` (≥ 32 kr.) | Cihaz token'ı HS256 | `src/modules/device/device-token.ts` | Zorunlu (yoksa açılmaz) | Yalnız sızıntıda (§4; çoklu anahtar desteği yok) | Her cihaz adına sahte sinyal/SOS |
-| `ADMIN_TOKEN` | Betik/CI yönetici uçları | `src/modules/rules/admin-token.guard.ts` | **Yasak**: doluysa üretim API'si açılmaz (OIDC ADMIN yeter) | Yalnız yerel/CI (iş başına rastgele) | MFA'sız yönetici: tüm profiller, kural yükleme |
+| `FIELD_ENC_KEYS` | Tıbbi özet, kapı notu, OEM üretici hesap kimliği AES-256-GCM | `src/common/field-cipher.ts` | Zorunlu (yoksa açılmaz) | Yılda bir yeni `kid` (§4.1; yeniden şifreleme işi var) | Sağlık verisi çözülebilir (DB'ye de erişim gerekir) |
+| `DEVICE_TOKEN_SECRETS` (`kid:sır,…`; her sır ≥ 32 kr.) / eski tek `DEVICE_TOKEN_SECRET` | Cihaz token'ı HS256, başlıkta `kid` | `src/modules/device/device-token.ts` | Biri zorunlu (yoksa açılmaz) | Planlı: 12 ay örtüşmeli `kid` rotasyonu (§4.2); sızıntıda anında | Her cihaz adına sahte sinyal/SOS |
+| `ADMIN_TOKEN` | Yalnız geliştirme/test betikleri, CI | `src/modules/rules/admin-token.guard.ts` | **Yasak**: doluysa API açılmaz; `x-admin-token` yok sayılır (T-081 G-4) | — (üretimde yok) | MFA'sız yönetici: tüm profiller, kural yükleme |
 | `TWILIO_AUTH_TOKEN` | Twilio REST + webhook imzası | `src/modules/telephony/twilio.ts` | CPaaS açıksa | 180 gün (Twilio ikincil token ile kesintisiz) | Sahte webhook, arama/SMS (maliyet) |
 | `TWILIO_ACCOUNT_SID` | Hesap kimliği | aynı | CPaaS açıksa | — (kimlik) | Tek başına düşük |
 | `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | Konsol yazılım telefonu Voice token'ı | `src/modules/telephony/voice-token.ts` | Softphone açıksa | 180 gün | Sahte operatör Voice token'ı |
@@ -50,7 +50,7 @@ Vault denetim kaydında. Geliştiriciler üretim sırrını görmez.
 | Uygulama `.env` okumaz (dotenv yok) | ✅ | `apps/api/package.json` bağımlılıkları; `src/main.ts` |
 | `.env` git'e girmez | ✅ | `.gitignore` (`.env`, her dizinde) |
 | İmaja girmez | ⚠️ | `.dockerignore` yalnız kökteki `.env`, `.env.*`'i dışlar; `apps/api/.env` gibi alt dizin dosyaları yapı aşamasına (`COPY . .`) girer. Çalışma imajına `pnpm deploy` paket listesiyle (`.gitignore`'a uyar) taşınmaması beklenir, doğrulanmadı. Öneri: `**/.env` ve `**/.env.*` (+ `!**/.env.example`). |
-| Üretimde zorunlu sırlar yoksa açılmaz | ✅ | `field-cipher.ts` (`FIELD_ENC_KEYS`), `device-token.ts` (`DEVICE_TOKEN_SECRET` ≥ 32), `oidc-verifier.ts` (MFA kapatılamaz), `telephony.module.ts` (sahte CPaaS yasak). İmaj `NODE_ENV=production` (`apps/api/Dockerfile`). |
+| Üretimde zorunlu sırlar yoksa açılmaz | ✅ | `field-cipher.ts` (`FIELD_ENC_KEYS`), `device-token.ts` (`DEVICE_TOKEN_SECRETS` / `DEVICE_TOKEN_SECRET` ≥ 32), `admin-token.guard.ts` (`ADMIN_TOKEN` doluysa açılmaz), `oidc-verifier.ts` (MFA kapatılamaz), `telephony.module.ts` (sahte CPaaS yasak). İmaj `NODE_ENV=production` (`apps/api/Dockerfile`). |
 | Tek makine üretim kurulumu | ⚠️ | Çalışma ağacındaki (commit edilmemiş, T-083) `infra/docker-compose.prod.yml` `env_file: [.env.prod]` kullanıyor. Kabul koşulu: dosya repoda yok, dağıtım anında sır deposundan üretilir, izin 600, yedeklere/imaja girmez; tercihen `secrets:` ile dosya olarak bağlanır. |
 | CI denetimi | öneri | CI güvenlik işlerinde: (a) repoda `.env.example` dışında `.env*` izlenmiyor, (b) imajda `find / -name '.env*'` boş, (c) gizli anahtar taraması. |
 
@@ -70,37 +70,77 @@ Planlı rotasyon (örnek: `k1` → `k2`):
    Yazan hâlâ `k1`. (Bu faz, kayan dağıtım sırasında `k2`'yi henüz bilmeyen bir örneğin `k2` ile yazılmış veriyi
    okuyamaması durumunu önler.)
 3. Tüm örnekler yeni sürümde mi → **Faz 2 — yazanı değiştir:** `FIELD_ENC_KEYS="k2:<yeni>,k1:<eski>"`.
-4. **Yeniden şifreleme:** Kodda yalnız `FieldCipher.isStale()` yardımcısı var; toplu yeniden şifreleme işi **yok**
-   (izleyen kod görevi). O gelene kadar eski anahtar kaldırılamaz. Kalan eski kayıtlar:
-   ```sql
-   SELECT count(*) FROM health.medical_summary WHERE ciphertext NOT LIKE 'v1:k2:%';
-   SELECT count(*) FROM profile.protected_person
-    WHERE door_access_note_enc IS NOT NULL AND door_access_note_enc NOT LIKE 'v1:k2:%';
+4. **Yeniden şifreleme (T-081):** Faz 2 tüm örneklerde etkinken, aynı `FIELD_ENC_KEYS` (yazar ilk sırada) ve
+   `DATABASE_URL` ile bir kez çalıştırılır (`src/common/field-reencrypt.ts`, `src/db/cli.ts`):
+   ```sh
+   # Kubernetes Job / tek seferlik konteyner (üretim imajı; tsx yok)
+   node dist/db/cli.js field-keys                 # alan başına kid dağılımı (önce durum)
+   node dist/db/cli.js reencrypt --dry-run        # yazmadan say
+   node dist/db/cli.js reencrypt --batch 500      # yeniden yaz
+   # Geliştirme: pnpm --filter @yanimda/api db:reencrypt -- --dry-run
    ```
-5. İki sayı da 0 → `FIELD_ENC_KEYS="k2:<yeni>"`, eski anahtar sır deposunda devre dışı (silme değil: yedeklerden
-   geri dönüş için süreli saklama, KVKK saklama süresiyle uyumlu).
+   Kapsam: `health.medical_summary.ciphertext`, `profile.protected_person.door_access_note_enc`,
+   `device.vendor_link.vendor_account_enc` (FieldCipher kullanan tüm alanlar; yeni şifreli sütun eklenip
+   `ENCRYPTED_FIELDS` güncellenmezse `test/field-reencrypt.spec.ts` düşer). Davranış: birincil anahtar sırasıyla
+   toplu; yarıda kesilirse yeniden çalıştırmak kaldığı yerden sürer; idempotent (ikinci çalıştırma 0 satır yazar);
+   satır `UPDATE … WHERE sütun = <eski değer>` ile yazılır, arada uygulama yazdıysa ezilmez ("atlanan"); AAD
+   değişmez. Çıktı yalnız sayılar (eski / yeniden yazılan / atlanan / çözülemeyen); düz metin hiçbir yere yazılmaz.
+   Çözülemeyen satır (anahtar listede yok veya bozuk) varsa çıkış kodu 2; kimlikleri `--show-failed` ile görülür ve
+   incelenir (eski anahtar bu satırlar çözülene / silinene kadar kaldırılmaz).
+5. `field-keys` çıktısında yalnız yeni `kid` kaldı (ve `reencrypt` 0 eski satır buldu) → `FIELD_ENC_KEYS="k2:<yeni>"`,
+   eski anahtar sır deposunda devre dışı (silme değil: yedeklerden geri dönüş için süreli saklama, KVKK saklama
+   süresiyle uyumlu). Yedekten geri dönülürse geri dönen veride eski `kid` olabilir: eski anahtar geçici olarak
+   listeye eklenip adım 4 yeniden çalıştırılır.
 
 Doğrulama: rotasyon sonrası bir test kişisinde olay kartı (`GET /v1/events/{id}/person`) tıbbi özeti gösteriyor;
 log'da `Tıbbi özet çözülemedi` yok.
 
-### 4.2 `DEVICE_TOKEN_SECRET`
+### 4.2 `DEVICE_TOKEN_SECRETS` / `DEVICE_TOKEN_SECRET` (çoklu anahtar, `kid`)
 
-Durum: tek anahtar, token başlığında `kid` yok (`device-token.ts`: başlık sabit `{"alg":"HS256","typ":"JWT"}`,
-doğrulama birebir başlık karşılaştırır). Anahtar değişirse **tüm cihaz token'ları anında geçersiz** olur (401);
-cihazlar yeni davet koduyla yeniden eşleşmek zorundadır. Yaşlı kullanıcılar için ağır bir işlem — bu yüzden planlı
-rotasyon yapılmaz, yalnız sızıntıda.
+Biçim (`src/modules/device/device-token.ts`, T-081 G-7): `DEVICE_TOKEN_SECRETS="<kid>:<sır>[,<kid>:<sır>]"`. **İlki
+imzalar** ve token başlığına `kid` yazılır (`{"alg":"HS256","typ":"JWT","kid":"k2027a"}`); **hepsi doğrular**. Her sır
+en az 32 karakter; `kid` `[A-Za-z0-9_-]{1,32}`, tekil. Biçim bozuksa API açılmaz (hata mesajında sır yok).
 
-Acil rotasyon:
+- Ayrılmış `kid` **`legacy`**: bu girdi `kid`'siz (eski biçim) token'ları imzalar/doğrular. Başlığında `kid: legacy`
+  olan token reddedilir.
+- Geriye uyum: yalnız `DEVICE_TOKEN_SECRET` varsa davranış eskisiyle aynıdır (başlık `kid`'siz). İkisi birlikte
+  verilirse `DEVICE_TOKEN_SECRET`, listede `legacy` yoksa sona eklenmiş `legacy` girdisi sayılır; listede farklı bir
+  `legacy` varsa API açılmaz.
+- Başlık kanonik biçimde değilse (alan sırası/ek alan, `alg` ≠ HS256), `kid` bilinmiyorsa veya `kid`'siz token için
+  `legacy` anahtarı yoksa token reddedilir (401).
+- BLE adres özeti: `BLE_ADDRESS_PEPPER` boşsa köprülü cihaz adres özeti tek `DEVICE_TOKEN_SECRET` ile hesaplanır
+  (döndürülen liste ile değil). `DEVICE_TOKEN_SECRET` kaldırılacaksa önce `BLE_ADDRESS_PEPPER` onun değerine
+  eşitlenir (özetler değişmez); üretimde ikisi de yoksa API açılmaz.
 
-1. Yeni sır: `openssl rand -hex 32` → sır deposu.
-2. Tüm API örneklerini yeni sırla yeniden başlat (eski sır hiçbir örnekte kalmamalı).
-3. Operasyon: etkin kişilerin ailelerine yeniden eşleşme bildirimi (katalog metniyle), destek hattı hazır; saatlik
+Token 1 yıl geçerli; istemci bitişe 30 gün kala yeniler (`POST /v1/devices/{id}/token`); yenileme her zaman o anki
+imzalayanla imzalar. Eski anahtar, onunla imzalanmış son token'ın süresi dolana kadar (en çok 12 ay) listede kalır.
+
+Planlı rotasyon — ilk geçiş (tek `DEVICE_TOKEN_SECRET` → `k2027a`):
+
+1. Anahtar üret (sır deposunda, kimsenin terminaline düşmeden): `echo "k2027a:$(openssl rand -hex 32)"`.
+2. `BLE_ADDRESS_PEPPER` boşsa eski `DEVICE_TOKEN_SECRET` değerine eşitle.
+3. **Faz 1 — okuyabilir hale getir:** `DEVICE_TOKEN_SECRETS="legacy:<eski>,k2027a:<yeni>"` ile tüm örnekleri yeniden
+   başlat. İmzalayan hâlâ eski (`kid`'siz) — kayan dağıtımda yeni anahtarı henüz bilmeyen örnek token reddetmez.
+4. Tüm örnekler yeni listede → **Faz 2 — imzalayanı değiştir:** `DEVICE_TOKEN_SECRETS="k2027a:<yeni>,legacy:<eski>"`.
+   Yeni kayıt ve yenilemeler `kid: k2027a` ile çıkar.
+5. **Bekle (≤ 12 ay):** `kid`'siz token'lar yenilendikçe azalır (bitişe 30 gün kala yenileme). Kalan sayı bugün API'de
+   ölçülmüyor (izleyen iş: `kid` başına doğrulama sayacı); güvenli yol tam 12 ay + 1 gün beklemektir.
+6. **Faz 3 — eskiyi kaldır:** `DEVICE_TOKEN_SECRETS="k2027a:<yeni>"`, `DEVICE_TOKEN_SECRET` boş; eski sır sır
+   deposunda devre dışı. Kalan eski token'lar 401 alır, cihaz yeniden eşleşir (beklenen ≈ 0).
+
+Sonraki rotasyonlar (`k2027a` → `k2028a`): Faz 1 `"k2027a:<eski>,k2028a:<yeni>"` → Faz 2 `"k2028a:<yeni>,k2027a:<eski>"`
+→ ≤ 12 ay → Faz 3 `"k2028a:<yeni>"`.
+
+Doğrulama: rotasyon sonrası test cihazı token yeniler; yeni token başlığındaki `kid` yeni anahtar; 401 oranı değişmez.
+
+Acil rotasyon (sızıntı) — sızan anahtar **hemen** listeden çıkar; o anahtarla imzalı token'lar anında 401, etkilenen
+cihazlar yeni davet koduyla yeniden eşleşmek zorundadır (yaşlı kullanıcılar için ağır; yalnız sızıntıda):
+
+1. Yeni sır → sır deposu; `DEVICE_TOKEN_SECRETS="<yeni kid>:<yeni>[,<sızmamış diğerleri>]"` (sızan `legacy` ise
+   `DEVICE_TOKEN_SECRET` de boşaltılır); tüm örnekleri yeniden başlat — sızan anahtar hiçbir örnekte kalmamalı.
+2. Operasyon: etkilenen kişilerin ailelerine yeniden eşleşme bildirimi (katalog metniyle), destek hattı hazır; saatlik
    "sessiz cihaz" uyarılarının toplu artacağı amire önceden bildirilir.
-4. İzleme: 401 oranı, yeniden eşleşen cihaz sayısı, koruması düşen kişi sayısı (`protection` durumu).
-
-İzleyen kod görevi (öneri): `DEVICE_TOKEN_SECRETS="kid:sır,…"` + başlıkta `kid`; yeni token ilk anahtarla, doğrulama
-hepsiyle. Token 1 yıllık ve bitişe 30 gün kala yenilendiği için planlı rotasyon en geç 12 ay örtüşmeyle (veya
-istemciye "şimdi yenile" sinyaliyle) kesintisiz yapılabilir.
+3. İzleme: 401 oranı, yeniden eşleşen cihaz sayısı, koruması düşen kişi sayısı (`protection` durumu).
 
 ### 4.3 Diğerleri (kısa)
 
@@ -110,7 +150,9 @@ istemciye "şimdi yenile" sinyaliyle) kesintisiz yapılabilir.
   yap → eskisini sil. Webhook imzası tek token'la doğrulandığı için geçiş anı tek dağıtımdır.
 - **S3, FCM, APNs:** önce yeni anahtar eklenir (sağlayıcılar aynı anda iki anahtara izin verir), dağıtım, sonra
   eskisi iptal.
-- **`ADMIN_TOKEN`:** üretimde tanımlanamaz (API açılmaz); yerel/CI'da iş başına rastgele, rotasyon gerekmez.
+- **`ADMIN_TOKEN`:** üretimde tanımlanamaz (`NODE_ENV=production` + dolu → API açılmaz; `admin-token.guard.ts`
+  `assertAdminTokenPolicy`, CI `image` işi denetler). Üretim betikleri Keycloak hizmet hesabı (OIDC ADMIN) kullanır.
+  Geliştirme/CI'da iş başına rastgele (`ci.yml` `console-e2e`).
 
 ## 5. Sır sızıntısı olay müdahalesi
 
@@ -126,10 +168,10 @@ istemciye "şimdi yenile" sinyaliyle) kesintisiz yapılabilir.
 
 | Sır | İlk eylem |
 | --- | --- |
-| `FIELD_ENC_KEYS` | DB erişimi de sızdı mı? Yeni anahtarla Faz 1–2 + acil yeniden şifreleme (araç yoksa elle betik); eski anahtar imha. |
-| `DEVICE_TOKEN_SECRET` | §4.2 acil rotasyon; sahte sinyal analizi (`signal.signal`, beklenmeyen `SOS`). |
+| `FIELD_ENC_KEYS` | DB erişimi de sızdı mı? Yeni anahtarla Faz 1–2 + acil yeniden şifreleme (`cli.js reencrypt`, §4.1 adım 4); eski anahtar imha. |
+| `DEVICE_TOKEN_SECRETS` / `DEVICE_TOKEN_SECRET` | §4.2 acil rotasyon (yalnız sızan `kid`); sahte sinyal analizi (`signal.signal`, beklenmeyen `SOS`). |
 | `TWILIO_*` | Token döndür; Twilio'da giden arama/SMS geçmişi; maliyet uyarısı. |
-| `ADMIN_TOKEN` | Değeri boşalt (yönetici uçları yalnız OIDC); `audit.log` ve kural yükleme geçmişi. |
+| `ADMIN_TOKEN` | Üretimde kullanılamaz (T-081); geliştirme/staging dışı bir ortamda sızdıysa değeri boşalt, `audit.log` ve kural yükleme geçmişi. |
 | DB parolası | Rol parolası değiştir, bağlantıları düşür (`pg_terminate_backend`), ağ erişimini doğrula. |
 
 ## 6. `health` şeması erişimi (T-081 (3))

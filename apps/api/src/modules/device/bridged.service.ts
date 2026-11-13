@@ -37,9 +37,10 @@ const DEFAULT_LOCATION: Record<BridgedDeviceModel, BodyLocation | null> = {
 };
 
 /**
- * Sunucu tarafı anahtar: BLE_ADDRESS_PEPPER (≥ 32 karakter), yoksa cihaz token anahtarı (üretimde zorunlu). Saklanan
- * değer HMAC-SHA256(anahtar, "<telefonId>:<istemci özeti>"): ham MAC hiç gelmez, istemci özeti de saklanmaz; aynı
- * cihaz başka telefonda başka değer üretir (kişiler arası eşleştirme yok).
+ * Sunucu tarafı anahtar: BLE_ADDRESS_PEPPER (≥ 32 karakter), yoksa tek DEVICE_TOKEN_SECRET (döndürülen
+ * DEVICE_TOKEN_SECRETS değil; üretimde biri zorunlu). Saklanan değer HMAC-SHA256(anahtar, "<telefonId>:<istemci
+ * özeti>"): ham MAC hiç gelmez, istemci özeti de saklanmaz; aynı cihaz başka telefonda başka değer üretir (kişiler
+ * arası eşleştirme yok).
  */
 export function bridgeAddressKey(env: NodeJS.ProcessEnv = process.env): string {
   const p = env.BLE_ADDRESS_PEPPER;

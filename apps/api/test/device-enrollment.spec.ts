@@ -1,8 +1,16 @@
+import { createHmac } from 'node:crypto';
+
 import type { ExecutionContext } from '@nestjs/common';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { bridgeAddressKey } from '../src/modules/device/bridged.service';
 import { CompanionService } from '../src/modules/device/companion.service';
-import { signDeviceToken, verifyDeviceToken } from '../src/modules/device/device-token';
+import {
+  deviceTokenKeyring,
+  parseDeviceTokenSecrets,
+  signDeviceToken,
+  verifyDeviceToken,
+} from '../src/modules/device/device-token';
 import { DeviceTokenGuard, SignalAuthGuard } from '../src/modules/device/device-token.guard';
 import {
   type DevicePrincipal,
@@ -86,6 +94,134 @@ describe('cihaz token (HS256)', () => {
     const none = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
     expect(verifyDeviceToken(`${none}.${token.split('.')[1]}.`, SECRET, T0)).toBeNull();
     expect(verifyDeviceToken('abc', SECRET, T0)).toBeNull();
+  });
+});
+
+/** T-081 G-7 (ASVS 1.6.3): `DEVICE_TOKEN_SECRETS` çoklu anahtar + başlıkta `kid`; eski tek anahtarla geriye uyumlu. */
+describe('cihaz token anahtar döndürme (kid)', () => {
+  const c = { sub: DEV, pp: PERSON, kind: 'IOS_PHONE' };
+  const NEW = 'yeni-anahtar-2027-0123456789abcdef0123';
+  const OLD2 = 'eski-anahtar-2026-0123456789abcdef0123';
+  const hdr = (t: string) => JSON.parse(Buffer.from(t.split('.')[0]!, 'base64url').toString()) as object;
+
+  it('tek DEVICE_TOKEN_SECRET: başlık değişmez (kid yok), eski token doğrulanır', () => {
+    const ring = deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRET: SECRET });
+    const { token } = signDeviceToken(c, ring, T0);
+    expect(hdr(token)).toEqual({ alg: 'HS256', typ: 'JWT' });
+    // Bu değişiklikten önce üretilmiş token (string anahtar = eski API) yeni anahtarlıkla doğrulanır.
+    expect(verifyDeviceToken(signDeviceToken(c, SECRET, T0).token, ring, T0)).toMatchObject({ sub: DEV });
+  });
+
+  it('DEVICE_TOKEN_SECRETS: ilki imzalar (kid başlıkta), hepsi doğrular; kid’siz token eski anahtarla', () => {
+    const before = deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `k2026:${OLD2}` });
+    const oldKid = signDeviceToken(c, before, T0).token;
+    expect(hdr(oldKid)).toEqual({ alg: 'HS256', typ: 'JWT', kid: 'k2026' });
+    const legacyTok = signDeviceToken(c, SECRET, T0).token;
+
+    const ring = deviceTokenKeyring({
+      NODE_ENV: 'production',
+      DEVICE_TOKEN_SECRETS: `k2027:${NEW}, k2026:${OLD2}`,
+      DEVICE_TOKEN_SECRET: SECRET,
+    });
+    const fresh = signDeviceToken(c, ring, T0).token;
+    expect(hdr(fresh)).toEqual({ alg: 'HS256', typ: 'JWT', kid: 'k2027' });
+    for (const t of [fresh, oldKid, legacyTok]) expect(verifyDeviceToken(t, ring, T0)).toMatchObject({ sub: DEV });
+
+    // Eski anahtar listeden çıkınca onunla imzalı token'lar reddedilir; kid'siz token eski tek anahtar yoksa reddedilir.
+    const after = deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `k2027:${NEW}` });
+    expect(verifyDeviceToken(fresh, after, T0)).not.toBeNull();
+    expect(verifyDeviceToken(oldKid, after, T0)).toBeNull();
+    expect(verifyDeviceToken(legacyTok, after, T0)).toBeNull();
+  });
+
+  it('ilk geçiş fazları: legacy:<eski>,yeni → legacy imzalar (kid yok); sonra yeni başa; sonra eski çıkar', () => {
+    const legacyTok = signDeviceToken(c, SECRET, T0).token;
+    // Faz 1: imzalayan değişmez (kid'siz) → henüz yeni listeyi bilmeyen örnekler de yeni token'ları doğrular.
+    const p1 = deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `legacy:${SECRET},k2027:${NEW}` });
+    const t1 = signDeviceToken(c, p1, T0).token;
+    expect(hdr(t1)).toEqual({ alg: 'HS256', typ: 'JWT' });
+    expect(verifyDeviceToken(t1, SECRET, T0)).not.toBeNull();
+    // Faz 2: yeni anahtar imzalar; Faz 1'de dağıtılmış örnekler onu zaten doğrular.
+    const p2 = deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `k2027:${NEW},legacy:${SECRET}` });
+    const t2 = signDeviceToken(c, p2, T0).token;
+    expect(hdr(t2)).toMatchObject({ kid: 'k2027' });
+    for (const ring of [p1, p2])
+      for (const t of [legacyTok, t1, t2]) expect(verifyDeviceToken(t, ring, T0)).not.toBeNull();
+    // `kid: legacy` başlığı kabul edilmez (ayrılmış ad).
+    const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT', kid: 'legacy' })).toString('base64url');
+    const [, p] = legacyTok.split('.');
+    const sig = createHmac('sha256', SECRET).update(`${h}.${p}`).digest('base64url');
+    expect(verifyDeviceToken(`${h}.${p}.${sig}`, p2, T0)).toBeNull();
+    // DEVICE_TOKEN_SECRET ile listedeki legacy çelişirse açılmaz.
+    expect(() =>
+      deviceTokenKeyring({ NODE_ENV: 'test', DEVICE_TOKEN_SECRETS: `legacy:${NEW}`, DEVICE_TOKEN_SECRET: SECRET }),
+    ).toThrow(/farklı/);
+  });
+
+  it('kid sahteciliği: bilinmeyen kid, başka anahtarın kid’i, kanonik olmayan başlık, alg:none → null', () => {
+    const ring = deviceTokenKeyring({ NODE_ENV: 'test', DEVICE_TOKEN_SECRETS: `a:${NEW},b:${OLD2}` });
+    const tok = signDeviceToken(c, ring, T0).token;
+    const [, p, s] = tok.split('.');
+    const h = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    expect(verifyDeviceToken(`${h({ alg: 'HS256', typ: 'JWT', kid: 'b' })}.${p}.${s}`, ring, T0)).toBeNull();
+    expect(verifyDeviceToken(`${h({ alg: 'HS256', typ: 'JWT', kid: 'zz' })}.${p}.${s}`, ring, T0)).toBeNull();
+    expect(verifyDeviceToken(`${h({ typ: 'JWT', alg: 'HS256', kid: 'a' })}.${p}.${s}`, ring, T0)).toBeNull();
+    expect(verifyDeviceToken(`${h({ alg: 'none', typ: 'JWT', kid: 'a' })}.${p}.`, ring, T0)).toBeNull();
+    expect(verifyDeviceToken(`${h({ alg: 'HS256', typ: 'JWT', kid: 'a', x: 1 })}.${p}.${s}`, ring, T0)).toBeNull();
+    // kid'li token, kid'siz eski anahtarlıkla (DEVICE_TOKEN_SECRETS bilmeyen örnek) doğrulanmaz.
+    expect(verifyDeviceToken(tok, NEW, T0)).toBeNull();
+  });
+
+  it('biçim ve uzunluk: her sır ≥ 32, kid [A-Za-z0-9_-] tekil; üretimde biri zorunlu; hata sırrı içermez', () => {
+    expect(() => parseDeviceTokenSecrets('k1:kisa')).toThrow(/biçimi/);
+    expect(() => parseDeviceTokenSecrets(`:${NEW}`)).toThrow();
+    expect(() => parseDeviceTokenSecrets(`k 1:${NEW}`)).toThrow();
+    expect(() => parseDeviceTokenSecrets(`k1:${NEW},k1:${OLD2}`)).toThrow();
+    expect(() => parseDeviceTokenSecrets(' , ')).toThrow(/boş/);
+    expect(parseDeviceTokenSecrets(`k1:${NEW}:ek`).get('k1')).toBe(`${NEW}:ek`);
+    expect(() => deviceTokenKeyring({ NODE_ENV: 'production' })).toThrow(/zorunlu/);
+    expect(() => deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRET: 'kisa' })).toThrow(/kısa/);
+    expect(() => deviceTokenKeyring({ NODE_ENV: 'test', DEVICE_TOKEN_SECRETS: 'k1:kisa-sir' })).toThrow();
+    try {
+      deviceTokenKeyring({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: 'k1:gizli-ama-kisa' });
+    } catch (e) {
+      expect(String(e)).not.toContain('gizli-ama-kisa');
+    }
+    expect(deviceTokenKeyring({ NODE_ENV: 'test' }).signer.secret.length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('BLE adres özeti yedeği döndürmeden etkilenmez: yalnız DEVICE_TOKEN_SECRETS varsa üretimde pepper gerekir', () => {
+    expect(bridgeAddressKey({ NODE_ENV: 'production', DEVICE_TOKEN_SECRET: SECRET })).toBe(SECRET);
+    expect(() => bridgeAddressKey({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `k1:${NEW}` })).toThrow(
+      /BLE_ADDRESS_PEPPER/,
+    );
+    expect(
+      bridgeAddressKey({ NODE_ENV: 'production', DEVICE_TOKEN_SECRETS: `k1:${NEW}`, BLE_ADDRESS_PEPPER: OLD2 }),
+    ).toBe(OLD2);
+  });
+
+  it('EnrollmentService anahtarlıkla: yeni token kid’li, eski kid’siz token hâlâ geçerli (kesintisiz döndürme)', async () => {
+    const legacySvc = svc;
+    const inv = await legacySvc.createInvite(PERSON, T0);
+    const r = (await legacySvc.enroll(enrollBody(inv.code), '10.0.0.1', T0)).body;
+    const ring = deviceTokenKeyring({
+      NODE_ENV: 'test',
+      DEVICE_TOKEN_SECRETS: `k2027:${NEW}`,
+      DEVICE_TOKEN_SECRET: SECRET,
+    });
+    const rotated = new EnrollmentService(
+      h.db,
+      h.redis as never,
+      new ProtectionService(h.db, h.outbox),
+      staticRules(loadRulePack()),
+      ring,
+    );
+    expect(await rotated.authenticate(`Bearer ${r.token}`, later(1))).toMatchObject({ deviceId: DEV });
+    const next = rotated.issueToken({ deviceId: DEV, protectedPersonId: PERSON, kind: 'IOS_PHONE' }, later(2));
+    expect(hdr(next.token)).toMatchObject({ kid: 'k2027' });
+    expect(await rotated.authenticate(`Bearer ${next.token}`, later(3))).toMatchObject({ deviceId: DEV });
+    // Döndürme öncesi örnek (yalnız eski anahtar) kid'li yeni token'ı kabul etmez → Faz 1'de önce okuyucular güncellenir.
+    expect(await status(legacySvc.authenticate(`Bearer ${next.token}`, later(3)))).toBe(401);
   });
 });
 

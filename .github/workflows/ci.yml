@@ -257,6 +257,17 @@ jobs:
           mb=$((bytes / 1024 / 1024))
           echo "İmaj boyutu: ${mb} MB"
           [ "$mb" -lt "$MAX_IMAGE_MB" ] || { echo "::error::İmaj ${mb} MB, sınır ${MAX_IMAGE_MB} MB"; exit 1; }
+      - name: Üretim imajı ADMIN_TOKEN ile açılmaz (T-081 G-4)
+        # Paylaşılan x-admin-token yolu yalnız geliştirme/test içindir (console-e2e, test:e2e NODE_ENV=test koşar).
+        run: |
+          set +e
+          out=$(timeout 60 docker run --name admin-refuse -e ADMIN_TOKEN=ci-refuse-me "$IMAGE" 2>&1); code=$?
+          set -e
+          docker rm -f admin-refuse >/dev/null 2>&1 || true
+          if [ "$code" = 0 ] || [ "$code" = 124 ] || ! grep -q 'ADMIN_TOKEN üretimde tanımlanamaz' <<<"$out"; then
+            echo "::error::Üretim imajı ADMIN_TOKEN ile açıldı veya beklenen hata yok (çıkış $code)"; echo "$out"; exit 1
+          fi
+          echo "Reddedildi (çıkış $code)"
       - name: TimescaleDB uzantıları (infra/init.sql, docker-compose ile aynı)
         run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
       - name: İmaj açılıyor (migration'lar gerçek TimescaleDB'ye)
