@@ -80,8 +80,13 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
   async run(at?: Date): Promise<{ assigned: number; missed: number }> {
     const clock = () => at ?? new Date();
     const now = clock();
-    const missed = await this.expireOffers(now);
-    if (!(await this.enabled())) return { assigned: 0, missed };
+    // Boşta tek küçük sorgu: bayrak kapalı ve süresi dolan teklif yoksa başka sorgu yok.
+    const [st] = await this.rows<{ enabled: boolean; due: boolean }>(sql`
+      SELECT coalesce((SELECT enabled FROM event.supervisor_flag WHERE key = 'auto_assign'), false) AS enabled,
+             EXISTS (SELECT 1 FROM event.assignment
+                     WHERE outcome IS NULL AND expires_at <= ${now.toISOString()}::timestamptz) AS due`);
+    const missed = st?.due ? await this.expireOffers(now) : 0;
+    if (!st?.enabled) return { assigned: 0, missed };
 
     const queue = await this.rows<{ id: string }>(sql`
       SELECT id::text AS id FROM event.event WHERE state = 'OPERATOR_QUEUE'
