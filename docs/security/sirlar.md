@@ -15,7 +15,7 @@ Kaynak: `apps/api/src` içinde `process.env.*` ve `env.*` erişimleri; açıklam
 | `REDIS_URL` (parola/TLS) | İdempotency, BullMQ, WS yayını | `src/core.module.ts` | Zorunlu | 90 gün | Zamanlayıcı/kuyruk manipülasyonu |
 | `FIELD_ENC_KEYS` | Tıbbi özet + kapı notu AES-256-GCM | `src/common/field-cipher.ts` | Zorunlu (yoksa açılmaz) | Yılda bir yeni `kid` (§3) | Sağlık verisi çözülebilir (DB'ye de erişim gerekir) |
 | `DEVICE_TOKEN_SECRET` (≥ 32 kr.) | Cihaz token'ı HS256 | `src/modules/device/device-token.ts` | Zorunlu (yoksa açılmaz) | Yalnız sızıntıda (§4; çoklu anahtar desteği yok) | Her cihaz adına sahte sinyal/SOS |
-| `ADMIN_TOKEN` | Betik/CI yönetici uçları | `src/modules/rules/admin-token.guard.ts` | **Boş bırakılmalı** (OIDC ADMIN yeter) | Kullanılıyorsa 30 gün | MFA'sız yönetici: tüm profiller, kural yükleme |
+| `ADMIN_TOKEN` | Betik/CI yönetici uçları | `src/modules/rules/admin-token.guard.ts` | **Yasak**: doluysa üretim API'si açılmaz (OIDC ADMIN yeter) | Yalnız yerel/CI (iş başına rastgele) | MFA'sız yönetici: tüm profiller, kural yükleme |
 | `TWILIO_AUTH_TOKEN` | Twilio REST + webhook imzası | `src/modules/telephony/twilio.ts` | CPaaS açıksa | 180 gün (Twilio ikincil token ile kesintisiz) | Sahte webhook, arama/SMS (maliyet) |
 | `TWILIO_ACCOUNT_SID` | Hesap kimliği | aynı | CPaaS açıksa | — (kimlik) | Tek başına düşük |
 | `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | Konsol yazılım telefonu Voice token'ı | `src/modules/telephony/voice-token.ts` | Softphone açıksa | 180 gün | Sahte operatör Voice token'ı |
@@ -110,7 +110,7 @@ istemciye "şimdi yenile" sinyaliyle) kesintisiz yapılabilir.
   yap → eskisini sil. Webhook imzası tek token'la doğrulandığı için geçiş anı tek dağıtımdır.
 - **S3, FCM, APNs:** önce yeni anahtar eklenir (sağlayıcılar aynı anda iki anahtara izin verir), dağıtım, sonra
   eskisi iptal.
-- **`ADMIN_TOKEN`:** üretimde boş. Doluysa: yeni değer → dağıtım → eski geçersiz (tek değer; örtüşme yok).
+- **`ADMIN_TOKEN`:** üretimde tanımlanamaz (API açılmaz); yerel/CI'da iş başına rastgele, rotasyon gerekmez.
 
 ## 5. Sır sızıntısı olay müdahalesi
 

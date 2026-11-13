@@ -16,7 +16,7 @@ Ortam: **staging** (üretimle aynı imaj ve yapılandırma, sentetik veri). Alan
 
 | Bileşen | Hedef | Öncelikli konular |
 | --- | --- | --- |
-| REST API | `https://api.staging.yanimda.app/v1/*` | Yetki/IDOR (`/events/{id}`, `/events/{id}/person`, `/protected-persons/{id}/*`, `/devices/{id}/*`), cihaz eşleştirme kaba kuvveti ve DoS (`POST /devices/enroll`, G-1), token'sız/sahte sinyal (`POST /signals`, G-3), hız sınırı (G-2), JWT doğrulama (alg, iss, aud, typ, realm karışımı), `x-admin-token` (G-4), hata yanıtlarında bilgi sızıntısı |
+| REST API | `https://api.staging.yanimda.app/v1/*` | Yetki/IDOR (`/events/{id}`, `/events/{id}/person`, `/protected-persons/{id}/*`, `/devices/{id}/*`), cihaz eşleştirme kaba kuvveti ve DoS (`POST /devices/enroll`, G-1), token'sız/sahte sinyal (`POST /signals`, G-3), hız sınırı (G-2), JWT doğrulama (alg, iss, aud, typ, realm karışımı), `x-admin-token` üretimde kapalı mı (G-4), hata yanıtlarında bilgi sızıntısı |
 | WebSocket | `wss://api.staging.yanimda.app/v1/ws/queue` | Kimliksiz bağlantıdan veri alma, süresi dolmuş/yanlış realm token'ı, token yenilemede kimlik değiştirme, büyük/bozuk mesaj, bağlantı tüketme |
 | Operatör konsolu | `https://console.staging.yanimda.app` | XSS (olay notu, kişi adı, adres alanları), CSP/başlıklar (G-5), oturum ve çıkış, token saklama, eğitim modu ayrımı |
 | Keycloak | `https://auth.staging.yanimda.app` (`operations`, `consumers`) | OTP atlatma, kaba kuvvet ve hesap kilitleme, yönlendirme URI'leri (G-20), parola politikası (G-9), kullanıcı sayımı, yönetici konsolunun dışarıdan erişimi |
@@ -61,7 +61,7 @@ Staging, test başlamadan bir hafta önce dondurulur (imaj etiketi ve rule pack 
 | `consumers` realm: FAMILY | 2 aile × 1 | Aile A ↔ aile B çapraz erişim testleri |
 | Korunan kişi | Aile başına 2 | Sentetik ad/adres/telefon, sahte tıbbi özet |
 | Cihaz | Kişi başına 1 saat + 1 telefon | Eşleştirme kodları test sırasında aile hesabıyla üretilir |
-| `x-admin-token` | — | Staging'de **tanımlı** (G-4'ü test etmek için), test sonunda döndürülür |
+| `x-admin-token` | — | **Tanımsız**: staging `NODE_ENV=production`, API `ADMIN_TOKEN` doluyken açılmaz ve başlığı yok sayar (G-4 kapandı). Test: başlıkla yönetici uçları 401/403 |
 
 Hesap bilgileri şifreli kanaldan (parola yöneticisi paylaşımı) iletilir; e-postayla gönderilmez. Mobil derlemeler
 staging pin setiyle (`sertifika-sabitleme.md` §3) ve ek olarak pin'siz bir "test" varyantıyla verilir (sunucu
