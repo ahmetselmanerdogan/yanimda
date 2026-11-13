@@ -1,6 +1,6 @@
 /** Mesaj kataloğu (02-prd.md "Mesaj kataloğu"). Kullanıcıya giden her metin buradan gelir. */
 export interface Message {
-  channel: 'watch' | 'phone' | 'family' | 'console' | 'voice' | 'sms';
+  channel: 'watch' | 'phone' | 'family' | 'console' | 'voice' | 'sms' | 'auth';
   text: string;
   action?: string;
 }

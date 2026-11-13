@@ -1,3 +1,5 @@
 # Ortama özgü sırlar (şablon: .env.prod.example)
 .env.prod
 .env.*.local
+# Ortama özgü iç CA paketi (yönetilen RDS/DCS sunucu CA'ları; INTERNAL_CA_FILE) — sır değil ama ortama özgü
+tls/

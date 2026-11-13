@@ -1,0 +1,82 @@
+# Üretim (T-081): global.environment=production → templates/validate.yaml güvenlik ön koşullarını zorlar.
+# Alan adı, CIDR ve imaj etiketleri örnek; gerçek değerler dağıtım hattında (-f values-production.yaml --set …).
+global:
+  domain: yanimda.example
+  environment: production
+  internalCa:
+    configMap: yanimda-internal-ca
+    key: ca.pem
+  # Küme içi mTLS (ingress→pod, Prometheus→metrik): Linkerd kuruluysa açın (ASVS 9.2.2).
+  podAnnotations: {}
+
+api:
+  replicas: 3
+  image:
+    tag: '0.1.0'
+  # Secret (Vault: yanimda/yanimda/yanimda-api) DATABASE_URL ...?sslmode=verify-full, REDIS_URL rediss://<acl>:…@…
+  env:
+    NODE_ENV: production
+    # Migration açılışta (advisory lock). Ayrı migrator rolü/Job'u: sirlar.md §6.2 (izleyen görev).
+    DB_MIGRATE_ON_START: 'true'
+    SIMULATOR_ENABLED: 'false'
+    OIDC_AUDIENCE: yanimda-api
+    OIDC_REQUIRE_MFA: 'true'
+    COUNTRY_CODE: TR
+    S3_ENDPOINT: https://obs.tr-west-1.myhuaweicloud.com
+    S3_BUCKET: yanimda-prod-recordings
+    S3_REGION: tr-west-1
+    S3_ENSURE_BUCKET: 'false'
+    RECORDING_RETENTION_DAYS: '365'
+    CPAAS_PROVIDER: twilio
+    CPAAS_WEBHOOK_BASE: https://api.yanimda.example
+
+console:
+  image:
+    tag: '0.1.0'
+
+keycloak:
+  replicas: 2
+  db:
+    url: jdbc:postgresql://10.30.1.10:5432/keycloak?sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem
+  realmConfigMap: yanimda-realms
+  realm:
+    sslRequired: all
+  smtp:
+    host: smtp.yanimda.example
+    user: keycloak
+  readOnlyRootFilesystem: true
+
+timescaledb:
+  enabled: false
+
+redis:
+  enabled: false
+
+minio:
+  enabled: false
+
+synthetic:
+  enabled: true
+  personIds: '00000000-0000-7000-8000-000000000001,00000000-0000-7000-8000-000000000002,00000000-0000-7000-8000-000000000003'
+  pushgatewayUrl: http://prometheus-pushgateway.monitoring:9091
+
+networkPolicy:
+  enabled: true
+  egress:
+    enabled: true
+    datastoreCidrs: [10.30.1.0/24]
+
+externalSecrets:
+  enabled: true
+  storeRef:
+    name: yanimda-vault
+    kind: ClusterSecretStore
+
+serviceMonitor:
+  enabled: true
+
+prometheusRule:
+  enabled: true
+
+grafanaDashboard:
+  enabled: true

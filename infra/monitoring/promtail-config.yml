@@ -32,3 +32,15 @@ scrape_configs:
           expression: '\s(?P<level>LOG|WARN|ERROR|DEBUG|VERBOSE)\s'
       - labels:
           level:
+      # T-081 (ASVS 9.2.5): arka uç TLS hataları → promtail_custom_backend_tls_errors_total (Prometheus "promtail"
+      # işi, BackendTlsErrors uyarısı). Node kodları safeError ile loglanır (ör. Error(SELF_SIGNED_CERT_IN_CHAIN));
+      # ioredis mesajı, Keycloak JDBC (PKIX / SSL error). Yalnız eşleşen ifade sayılır, içerik etiket olmaz.
+      - regex:
+          expression: '(?P<tls_error>(?i:CERT_[A-Z_]+|UNABLE_TO_VERIFY_[A-Z_]+|SELF_SIGNED_CERT[A-Z_]*|ERR_TLS_[A-Z_]+|ERR_SSL_[A-Z_]+|self[- ]signed certificate|certificate has expired|PKIX path|SSLHandshakeException|SSL error))'
+      - metrics:
+          backend_tls_errors_total:
+            type: Counter
+            description: 'Arka uç TLS doğrulama/el sıkışma hatası içeren log satırları'
+            source: tls_error
+            config:
+              action: inc

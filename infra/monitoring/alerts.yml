@@ -158,6 +158,26 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: VPS boş bellek %10 altında
+      # T-081 (ASVS 7.3.4): saat eşitleme (chrony, user_data.sh.tftpl). Log/olay zaman damgaları buna dayanır.
+      - alert: ClockNotSynchronised
+        expr: min_over_time(node_timex_sync_status[5m]) == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.instance }} saati NTP ile eşitlenmiyor'
+      - alert: ClockSkew
+        expr: abs(node_timex_offset_seconds) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.instance }} saat sapması 50 ms üstünde'
+      # T-081 (ASVS 9.2.5): arka uç TLS doğrulama/el sıkışma hataları (Postgres verify-full, rediss, JDBC) log'dan
+      # sayılır (promtail-config.yml metrics aşaması); sertifika değişimi/MITM belirtisi.
+      - alert: BackendTlsErrors
+        expr: sum by (service) (increase(promtail_custom_backend_tls_errors_total[10m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }} arka uç TLS hatası logladı (sertifika doğrulanamadı / el sıkışma)'
 
   - name: yanimda-synthetic
     rules:

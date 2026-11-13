@@ -2,7 +2,8 @@
   "realm": "operations",
   "displayName": "Yanımda Operasyon",
   "enabled": true,
-  "sslRequired": "external",
+  "sslRequired": "${YANIMDA_KC_SSL_REQUIRED:external}",
+  "loginTheme": "yanimda",
   "registrationAllowed": false,
   "resetPasswordAllowed": false,
   "rememberMe": false,
@@ -15,7 +16,7 @@
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 3600,
   "ssoSessionMaxLifespan": 43200,
-  "passwordPolicy": "length(12) and notUsername and passwordHistory(5)",
+  "passwordPolicy": "length(12) and notUsername and passwordHistory(5) and passwordBlacklist(yanimda-blacklist.txt)",
   "otpPolicyType": "totp",
   "otpPolicyAlgorithm": "HmacSHA1",
   "otpPolicyDigits": 6,
@@ -123,13 +124,16 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
-      "rootUrl": "http://localhost:5173",
+      "rootUrl": "${YANIMDA_CONSOLE_URL:http://localhost:5173}",
       "baseUrl": "/",
-      "redirectUris": ["http://localhost:5173/*", "http://127.0.0.1:5173/*"],
+      "redirectUris": [
+        "${YANIMDA_CONSOLE_URL:http://localhost:5173}/*",
+        "${YANIMDA_CONSOLE_EXTRA_REDIRECT:http://127.0.0.1:5173/*}"
+      ],
       "webOrigins": ["+"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*##http://127.0.0.1:5173/*",
+        "post.logout.redirect.uris": "${YANIMDA_CONSOLE_URL:http://localhost:5173}/*##${YANIMDA_CONSOLE_EXTRA_REDIRECT:http://127.0.0.1:5173/*}",
         "client.session.idle.timeout": "3600",
         "client.session.max.lifespan": "43200"
       },
@@ -185,9 +189,14 @@
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": false,
   "smtpServer": {
-    "host": "mailhog",
-    "port": "1025",
-    "from": "noreply@yanimda.local",
-    "fromDisplayName": "Yanımda Operasyon"
+    "host": "${YANIMDA_KC_SMTP_HOST:mailhog}",
+    "port": "${YANIMDA_KC_SMTP_PORT:1025}",
+    "from": "${YANIMDA_KC_SMTP_FROM:noreply@yanimda.local}",
+    "fromDisplayName": "Yanımda Operasyon",
+    "starttls": "${YANIMDA_KC_SMTP_STARTTLS:false}",
+    "ssl": "${YANIMDA_KC_SMTP_SSL:false}",
+    "auth": "${YANIMDA_KC_SMTP_AUTH:false}",
+    "user": "${YANIMDA_KC_SMTP_USER:}",
+    "password": "${YANIMDA_KC_SMTP_PASSWORD:}"
   }
 }

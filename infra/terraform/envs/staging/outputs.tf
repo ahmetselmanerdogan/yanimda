@@ -10,6 +10,14 @@ output "redis_address" {
   value = module.env.redis_address
 }
 
+output "redis_app_user" {
+  value = module.env.redis_app_user
+}
+
+output "kms_key_id" {
+  value = module.env.kms_key_id
+}
+
 output "recordings_bucket" {
   value = module.env.recordings_bucket
 }

@@ -2,17 +2,22 @@
   "realm": "consumers",
   "displayName": "Yanımda",
   "enabled": true,
-  "sslRequired": "external",
+  "sslRequired": "${YANIMDA_KC_SSL_REQUIRED:external}",
+  "loginTheme": "yanimda",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "bruteForceProtected": true,
   "failureFactor": 10,
   "permanentLockout": false,
   "accessTokenLifespan": 300,
-  "ssoSessionIdleTimeout": 2592000,
-  "ssoSessionMaxLifespan": 7776000,
-  "offlineSessionIdleTimeout": 7776000,
-  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(3)",
+  "ssoSessionIdleTimeout": 1209600,
+  "ssoSessionMaxLifespan": 2592000,
+  "offlineSessionIdleTimeout": 1209600,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 2592000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(3) and passwordBlacklist(yanimda-blacklist.txt)",
   "internationalizationEnabled": true,
   "supportedLocales": ["tr"],
   "defaultLocale": "tr",
@@ -38,7 +43,10 @@
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["app.yanimda.family:/oauth2redirect", "http://localhost:5174/*"],
+      "redirectUris": [
+        "app.yanimda.family:/oauth2redirect",
+        "${YANIMDA_FAMILY_APP_EXTRA_REDIRECT:http://localhost:5174/*}"
+      ],
       "webOrigins": ["+"],
       "attributes": {
         "pkce.code.challenge.method": "S256"
@@ -69,11 +77,13 @@
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:5175/*"],
+      "redirectUris": ["${YANIMDA_FAMILY_WEB_URL:http://localhost:5175}/*"],
       "webOrigins": ["+"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5175/*"
+        "post.logout.redirect.uris": "${YANIMDA_FAMILY_WEB_URL:http://localhost:5175}/*",
+        "client.session.idle.timeout": "1800",
+        "client.session.max.lifespan": "43200"
       },
       "fullScopeAllowed": true,
       "defaultClientScopes": ["basic", "profile", "roles", "web-origins", "acr", "email"],
@@ -117,10 +127,15 @@
     }
   ],
   "smtpServer": {
-    "host": "mailhog",
-    "port": "1025",
-    "from": "noreply@yanimda.local",
-    "fromDisplayName": "Yanımda"
+    "host": "${YANIMDA_KC_SMTP_HOST:mailhog}",
+    "port": "${YANIMDA_KC_SMTP_PORT:1025}",
+    "from": "${YANIMDA_KC_SMTP_FROM:noreply@yanimda.local}",
+    "fromDisplayName": "Yanımda",
+    "starttls": "${YANIMDA_KC_SMTP_STARTTLS:false}",
+    "ssl": "${YANIMDA_KC_SMTP_SSL:false}",
+    "auth": "${YANIMDA_KC_SMTP_AUTH:false}",
+    "user": "${YANIMDA_KC_SMTP_USER:}",
+    "password": "${YANIMDA_KC_SMTP_PASSWORD:}"
   },
   "components": {
     "org.keycloak.userprofile.UserProfileProvider": [

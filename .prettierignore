@@ -6,4 +6,6 @@ pnpm-lock.yaml
 docs
 # Helm şablonları Go template içerir, YAML değil (T-083)
 infra/helm/*/templates
+# T-081: infra/keycloak/generate.mjs çıktısı (CI --check birebir karşılaştırır)
+infra/keycloak/themes/yanimda/login/resources/js/strength-i18n.js
 .next

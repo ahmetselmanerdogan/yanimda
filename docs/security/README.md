@@ -15,6 +15,7 @@ Güncel durum: **%62,9 (127/202), hedef karşılanmıyor; doğrulanmış kritik 
 | [hesap-kurtarma.md](hesap-kurtarma.md) | Parola ve OTP kaybında kurtarma: operations (yönetici destekli, dört göz), consumers (self-servis), kimlik doğrulama adımları (2.5.6, 2.5.7) |
 | [dns-envanteri.md](dns-envanteri.md) | DNS envanteri, sökme sırası, aylık alt alan adı devralma denetimi (10.3.3) |
 | [risk-kabulleri.md](risk-kabulleri.md) | Risk kabulü kaydı: bellekte silme (8.3.6), consumers oturum süreleri (3.3.2), `sessionStorage` token (8.2.2) — hepsi sahip onayı bekliyor |
+| [altyapi-kanit.md](altyapi-kanit.md) | ASVS paket B (altyapı) ve F (`consumers` realm) için gereksinim → dosya:satır kanıt tablosu, oturum süresi risk kabulü, gerçek ortamda yapılacak doğrulamalar |
 
 Betik: [`scripts/security/spki-pin.sh`](../../scripts/security/spki-pin.sh) — bir host'un zincirindeki her
 sertifikanın veya yerel PEM/DER/CSR/anahtar dosyasının SPKI pin'ini (`sha256/<base64>`) yazar.

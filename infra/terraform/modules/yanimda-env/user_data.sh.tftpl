@@ -5,7 +5,17 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg unattended-upgrades fail2ban
+apt-get install -y ca-certificates curl gnupg unattended-upgrades fail2ban chrony
+
+# T-081 (ASVS 7.3.4): saat eşitleme (chrony, bulut iç NTP) ve UTC. Log/metrik zaman damgaları UTC; sapma
+# node_exporter timex → Prometheus ClockNotSynchronised/ClockSkew uyarıları (infra/monitoring/alerts.yml).
+timedatectl set-timezone UTC
+mkdir -p /etc/chrony/sources.d
+: > /etc/chrony/sources.d/yanimda.sources
+for s in ${ntp_servers}; do echo "server $s iburst" >> /etc/chrony/sources.d/yanimda.sources; done
+systemctl enable --now chrony
+chronyc reload sources || systemctl restart chrony
+chronyc makestep || true
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc

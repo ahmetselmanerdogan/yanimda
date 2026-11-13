@@ -35,7 +35,7 @@ bir sonraki kod görevinde kaldırılmalı.
 
 | Ortam | Kaynak | Uygulamaya ulaşma |
 | --- | --- | --- |
-| Kubernetes (üretim, staging) | Vault (KV v2, KMS auto-unseal) veya bulut Secrets Manager; anahtar şifreleme KMS'te | External Secrets Operator → `Secret` → `envFrom.secretRef` / dosya olarak `volumeMount` (`*_FILE` biçimleri). `Secret` etcd'de KMS ile şifreli. |
+| Kubernetes (üretim, staging) | Vault (KV v2, KMS auto-unseal) veya bulut Secrets Manager; anahtar şifreleme KMS'te | External Secrets Operator → `Secret` → `envFrom.secretRef` / dosya olarak `volumeMount` (`*_FILE` biçimleri). `Secret` etcd'de KMS ile şifreli. Şablon (T-081): `infra/helm/yanimda/templates/externalsecrets.yaml` (`externalSecrets.enabled`; production'da zorunlu, `templates/validate.yaml`). |
 | Docker Compose (yerel olmayan tek makine kurulumları) | `docker secret` veya repo **dışındaki** `env_file:` (izin 600, sahibi servis kullanıcısı) | Repo içinde `.env` yok. |
 | Yerel geliştirme | `infra/docker-compose.yml` sabit geliştirme parolaları (`yanimda/yanimda`, `admin/admin`, `minio12345`) | Yalnız `localhost`. Bu değerler başka hiçbir ortamda kullanılamaz. |
 | CI | İş başına rastgele (`openssl rand`), `::add-mask::` (`.github/workflows/ci.yml`, `image` ve `console-e2e` işleri) | Kalıcı sır yok. |

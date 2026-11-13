@@ -5,11 +5,24 @@
 global:
   # Genel alan adı: api.<domain>, console.<domain>, auth.<domain>, aile.<domain>
   domain: yanimda.example
+  # development | staging | production. production'da güvenlik ön koşulları şablon aşamasında zorlanır
+  # (templates/validate.yaml): küme içi TLS'siz veri depoları kapalı, NetworkPolicy giriş+çıkış açık, External
+  # Secrets açık, iç CA bağlı, Keycloak sslRequired=all, DB adresi sslmode=verify-full.
+  environment: development
   imagePullSecrets: []
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
+  # Tüm pod'lara eklenecek açıklamalar. Küme içi mTLS (ingress→pod, Prometheus→metrik) için servis ağı, ör.
+  # linkerd.io/inject: enabled (docs/security/altyapi-kanit.md, ASVS 9.2.2).
+  podAnnotations: {}
+  # Yönetilen Postgres/Redis sunucu sertifikalarını doğrulayan iç CA paketi (PEM, birden çok sertifika olabilir).
+  # ConfigMap'teki `key` kaplara /etc/yanimda/tls/<key> olarak bağlanır; API'de NODE_EXTRA_CA_CERTS (rediss://) ve
+  # PGSSLMODE=verify-full, Keycloak'ta JDBC sslrootcert bu dosyadır. Boş = bağlanmaz.
+  internalCa:
+    configMap: ''
+    key: ca.pem
 
 nameOverride: ''
 fullnameOverride: ''
@@ -104,7 +117,34 @@ keycloak:
     username: ''
   bootstrapAdminUser: admin
   # Realm içe aktarma: infra/keycloak/realm-*.json'dan oluşturulan ConfigMap adı (README). Boş = içe aktarma yok.
+  # Realm dosyalarındaki ${YANIMDA_*:varsayılan} yer tutucuları aşağıdaki değerlerden ortam değişkeni olarak gelir
+  # (Keycloak içe aktarmada çözer). İçe aktarma yalnız realm yoksa çalışır: var olan realm için README "Keycloak".
   realmConfigMap: ''
+  realm:
+    # external (yalnız özel ağ dışı HTTPS) | all (her istek HTTPS; production'da zorunlu)
+    sslRequired: external
+    # Boş: https://console.<domain> / https://aile.<domain>. Yönlendirme ve çıkış adresleri yalnız bu kökenler.
+    consoleUrl: ''
+    familyWebUrl: ''
+    # Mobil aile uygulamasının ikinci yönlendirme girdisi (geliştirmede localhost:5174; üretimde uygulama şeması)
+    familyAppExtraRedirect: app.yanimda.family:/oauth2redirect
+  # Realm e-postaları (şüpheli giriş/parola değişikliği bildirimi). Parola: existingSecret KC_SMTP_PASSWORD (isteğe bağlı).
+  smtp:
+    host: ''
+    port: '587'
+    from: ''
+    starttls: 'true'
+    ssl: 'false'
+    auth: 'true'
+    user: ''
+  # Parola kara listesi (ASVS 2.1.7). Boş: chart içindeki tohum liste (files/password-blacklist.txt →
+  # infra/keycloak/password-blacklists/yanimda-blacklist.txt). Büyük ihlal listesi için önceden oluşturulmuş ConfigMap
+  # (anahtar: yanimda-blacklist.txt; infra/README.md "Kara liste"). 1 MiB ConfigMap sınırına dikkat.
+  passwordBlacklist:
+    existingConfigMap: ''
+  # Kök dosya sistemi salt okunur: Quarkus derleme çıktısı (lib/quarkus) initContainer ile emptyDir'e kopyalanır,
+  # data ve /tmp emptyDir (docker --read-only ile Keycloak 26.0 `start` doğrulandı).
+  readOnlyRootFilesystem: true
   resources:
     requests: { cpu: 250m, memory: 768Mi }
     limits: { cpu: '1', memory: 1536Mi }
@@ -133,8 +173,9 @@ redis:
     repository: redis
     tag: 7.4-alpine
     pullPolicy: IfNotPresent
-  # Secret anahtarı: REDIS_PASSWORD
+  # Secret anahtarı: REDIS_PASSWORD. Varsayılan kullanıcı kapalı; API REDIS_URL'i redis://<aclUsername>:<parola>@…
   existingSecret: yanimda-redis
+  aclUsername: yanimda
   storage:
     size: 2Gi
     storageClassName: ''
@@ -188,8 +229,10 @@ synthetic:
 ingress:
   enabled: true
   className: nginx
+  # TLS sürüm/takım, HSTS ve OCSP denetleyici düzeyinde: infra/helm/ingress-nginx-values.yaml (ASVS 9.1.2/9.1.3).
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
     nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
     nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
   # İngress denetleyicisinin ad alanı (NetworkPolicy için)
@@ -199,6 +242,17 @@ networkPolicy:
   enabled: true
   # Prometheus'un çalıştığı ad alanı: yalnız buradan metrik portlarına erişim
   monitoringNamespace: monitoring
+  # Çıkış (egress) izin listesi (T-081, ASVS 1.14.5). Kapalıyken çıkış serbest. production'da zorunlu.
+  egress:
+    enabled: false
+    dnsNamespace: kube-system
+    # Yönetilen Postgres/Redis'in iç ağı (Terraform subnet_cidr); portlar: Postgres, Redis (DCS TLS 6379)
+    datastoreCidrs: []
+    datastorePorts: [5432, 6379]
+    # Dış HTTPS: Twilio, FCM, APNs (443), OBS, auth.<domain> (JWKS). Sağlayıcılar sabit IP vermediği için genelde 0.0.0.0/0.
+    httpsCidrs: [0.0.0.0/0]
+    smtpCidrs: [0.0.0.0/0]
+    smtpPorts: [587, 465]
 
 serviceMonitor:
   enabled: false
@@ -215,3 +269,28 @@ grafanaDashboard:
   enabled: false
   labels:
     grafana_dashboard: '1'
+
+# T-081 (ASVS 6.4.1, 2.10.3; docs/security/sirlar.md §2): existingSecret'ları External Secrets Operator üretir.
+# Kaynak Vault KV v2 (Vault KMS/HSM ile auto-unseal; denetim kaydı açık); Kubernetes Secret'ları etcd'de KMS ile
+# şifreli (küme ayarı). Her Secret Vault'ta <keyPrefix>/<secret adı> yolundaki tüm anahtarlardan oluşur.
+externalSecrets:
+  enabled: false
+  apiVersion: external-secrets.io/v1
+  refreshInterval: 1h
+  # Boş: yanimda/<Release.Namespace>  → ör. yanimda/yanimda-staging/yanimda-api
+  keyPrefix: ''
+  # Var olan (Cluster)SecretStore. vault.create=true ise bu ad ile ad alanında SecretStore oluşturulur.
+  storeRef:
+    name: yanimda-vault
+    kind: SecretStore
+  vault:
+    create: false
+    server: https://vault.vault.svc:8200
+    path: secret
+    version: v2
+    # Vault Kubernetes kimlik doğrulaması: rol yalnız bu ServiceAccount'a, yalnız <keyPrefix>/* okuma politikası.
+    authMountPath: kubernetes
+    role: yanimda
+    serviceAccount: yanimda-external-secrets
+    # Vault sunucu sertifikasının CA'sı (ConfigMap, anahtar ca.crt). Boş: sistem güven deposu.
+    caConfigMap: ''

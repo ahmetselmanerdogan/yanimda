@@ -1,0 +1,30 @@
+# T-081 (ASVS 9.1.1–9.1.3, 14.3.3, 14.4.5): Kubernetes giriş denetleyicisi (ingress-nginx Helm chart'ı) TLS
+# politikası. Uygulama chart'ı (infra/helm/yanimda) her Ingress'te force-ssl-redirect ister; protokol/takım/HSTS
+# denetleyici düzeyindedir:
+#   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx -f infra/helm/ingress-nginx-values.yaml
+# Not: ingress-nginx projesi 2026'da bakım dışı (Kubernetes SIG Network duyurusu). Gateway API tabanlı bir
+# denetleyiciye geçişte aynı politika (TLS 1.2+, ECDHE+AEAD, HSTS, sürüm başlığı yok) taşınmalıdır.
+controller:
+  config:
+    ssl-protocols: TLSv1.2 TLSv1.3
+    ssl-ciphers: ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
+    ssl-ecdh-curve: X25519:prime256v1:secp384r1
+    ssl-prefer-server-ciphers: 'true'
+    ssl-session-tickets: 'false'
+    enable-ocsp: 'true'
+    hsts: 'true'
+    hsts-max-age: '31536000'
+    hsts-include-subdomains: 'true'
+    hsts-preload: 'false'
+    server-tokens: 'false'
+    hide-headers: X-Powered-By,Server
+    allow-snippet-annotations: 'false'
+    # Gerçek istemci IP'si yalnız denetleyicinin önündeki yük dengeleyiciden (PROXY protokolü / güvenilen CIDR)
+    use-forwarded-headers: 'false'
+    compute-full-forwarded-for: 'true'
+    log-format-escape-json: 'true'
+  metrics:
+    enabled: true
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
