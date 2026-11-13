@@ -3882,6 +3882,90 @@
     "channel": "family",
     "text": "Henüz haftalık özet yok. Saat birkaç gün takılınca burada görünür."
   },
+  "F-UI-VITAL-SETTINGS": {
+    "channel": "family",
+    "text": "Nabız ve oksijen ayarları"
+  },
+  "F-UI-VITAL-SETTINGS-OFF": {
+    "channel": "family",
+    "text": "Nabız ve oksijen uyarıları henüz kullanımda değil. Kullanıma açıldığında kişiye özel eşikleri ve eğilim bildirimlerini buradan ayarlayabilirsiniz."
+  },
+  "F-UI-VITAL-SETTINGS-HINT": {
+    "channel": "family",
+    "text": "Eşikleri yalnız doktor önerisiyle değiştirin. Boş bırakılan alanda genel eşik kullanılır."
+  },
+  "F-UI-VITAL-PERSONAL": {
+    "channel": "family",
+    "text": "Kişiye özel eşikler"
+  },
+  "F-UI-VITAL-LOW-HR": {
+    "channel": "family",
+    "text": "Düşük nabız eşiği"
+  },
+  "F-UI-VITAL-HIGH-HR": {
+    "channel": "family",
+    "text": "Yüksek nabız eşiği (dinlenirken)"
+  },
+  "F-UI-VITAL-SPO2-LOW": {
+    "channel": "family",
+    "text": "Düşük oksijen okuması eşiği"
+  },
+  "F-UI-VITAL-DEFAULT": {
+    "channel": "family",
+    "text": "Genel eşik: {value}"
+  },
+  "F-UI-VITAL-RANGE": {
+    "channel": "family",
+    "text": "{min} ile {max} arasında bir sayı girin"
+  },
+  "F-UI-VITAL-COPD": {
+    "channel": "family",
+    "text": "KOAH profili"
+  },
+  "F-UI-VITAL-COPD-HINT": {
+    "channel": "family",
+    "text": "KOAH tanısı varsa oksijen okuması için genel eşik {value} olur."
+  },
+  "F-UI-VITAL-CONSENT": {
+    "channel": "family",
+    "text": "Aile olarak bu kişiye özel eşiği onaylıyoruz"
+  },
+  "F-UI-VITAL-DOCTOR-NOTE": {
+    "channel": "family",
+    "text": "Bu eşik için doktor notu var"
+  },
+  "F-UI-VITAL-DOCTOR-NOTE-REF": {
+    "channel": "family",
+    "text": "Doktor notu belge numarası (isteğe bağlı)"
+  },
+  "F-UI-VITAL-CONSENT-NEEDED": {
+    "channel": "family",
+    "text": "Kişiye özel eşik için aile onayı ve doktor notu gerekir."
+  },
+  "F-UI-VITAL-CONSENT-GIVEN": {
+    "channel": "family",
+    "text": "Aile onayı: {date}"
+  },
+  "F-UI-VITAL-RESET": {
+    "channel": "family",
+    "text": "Genel eşiklere dön"
+  },
+  "F-UI-VITAL-LEARNING": {
+    "channel": "family",
+    "text": "Saat {date} tarihine kadar alışılmış değerleri öğreniyor; bu sürede okumalar nedeniyle kontrol araması yapılmaz."
+  },
+  "F-UI-VITAL-MUTE": {
+    "channel": "family",
+    "text": "Eğilim bildirimlerini sustur"
+  },
+  "F-UI-VITAL-MUTE-HINT": {
+    "channel": "family",
+    "text": "Haftalık eğilim bildirimleri gelmez. Alışılmadık okuma nedeniyle yapılan kontrol aramaları ve sonuçları yine bildirilir."
+  },
+  "F-UI-VITAL-SETTINGS-INVALID": {
+    "channel": "family",
+    "text": "Ayarlar kaydedilemedi. Değerleri ve onayları kontrol edip yeniden deneyin."
+  },
   "P-SENSORS": {
     "channel": "phone",
     "text": "Telefonunuza bağlı nabız ve oksijen ölçerler.",
