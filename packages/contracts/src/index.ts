@@ -585,6 +585,21 @@ export interface WeeklyTrendsView {
   outcomes: { eventId: string; type: EventType; outcome: string; at: string }[];
 }
 
+/** GET|PUT /protected-persons/{id}/vital-settings (S6.7). Eşik null → genel eşik (`defaults`). */
+export interface VitalSettings {
+  /** Değer kuralları açık mı; kapalıyken PUT 404. */
+  enabled: boolean;
+  lowHr: number | null;
+  highHr: number | null;
+  spo2Low: number | null;
+  copd: boolean;
+  trendsMuted: boolean;
+  familyConsentAt: string | null;
+  doctorNote: boolean;
+  learningUntil: string | null;
+  defaults: { lowHr: number; highHr: number; spo2Low: number; spo2LowCopd: number };
+}
+
 /** GET /supervisor/vital-reviews (S6.7): amirin eşik incelemesi kuyruğu; değer yok. */
 export interface VitalReview {
   id: string;

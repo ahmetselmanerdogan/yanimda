@@ -2804,6 +2804,7 @@ paths:
         doktor notunun işareti; belge içeriği tutulmaz, isteğe bağlı `doctorNoteRef` belge referansı). Eksikse 400.
         null → genel eşiğe döner. `trendsMuted` aileye P4 eğilim bildirimini susturur (P3 olaylar susturulamaz).
         MEMBER 403 (F-MEMBER-OWNER-ONLY). Değişiklik denetime yazılır (değerler ve referans yazılmaz).
+        Değer kuralları kapalıyken (bayrak; mevzuat görüşü öncesi) 404 — hiçbir ayar saklanmaz.
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       requestBody:
         required: true
@@ -4165,6 +4166,8 @@ components:
               at: { type: string, format: date-time }
     VitalSettings:
       type: object
+      required:
+        [enabled, lowHr, highHr, spo2Low, copd, trendsMuted, familyConsentAt, doctorNote, learningUntil, defaults]
       properties:
         enabled: { type: boolean, description: Değer kuralları açık mı (bayrak) }
         lowHr: { type: [integer, 'null'] }
@@ -4177,6 +4180,7 @@ components:
         learningUntil: { type: [string, 'null'], format: date-time, description: İlk örnekten sonra 14 gün }
         defaults:
           type: object
+          required: [lowHr, highHr, spo2Low, spo2LowCopd]
           properties:
             lowHr: { type: integer }
             highHr: { type: integer }

@@ -967,6 +967,8 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
    * null → genel eşiğe döner. `trendsMuted` aile P4 eğilim bildirimini susturur (P3 susturulamaz).
    */
   async setSettings(person: string, body: unknown, actorId: string, now = this.clock()) {
+    // Kapalıyken (mevzuat görüşü öncesi) kişiye özel eşik veya susturma saklanmaz; GET `enabled: false` gösterir.
+    if (!this.enabled()) throw new NotFoundException('Değer ayarları kapalı');
     if (typeof body !== 'object' || body === null || Array.isArray(body))
       throw new BadRequestException('Nesne bekleniyor');
     const b = body as Record<string, unknown>;
