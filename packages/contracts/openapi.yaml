@@ -1935,6 +1935,31 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /family/data-export:
+    get:
+      summary: Kişisel veriyi dışa aktar (KVKK m.11 erişim hakkı, ASVS 8.3.2). T-081
+      description: |
+        Aile hesabının (consumers FAMILY) kendi verisi ve üyesi olduğu (OWNER veya MEMBER) korunan kişilerin verisi,
+        tek JSON (`Content-Disposition: attachment`). Yeni okuma yetkisi açmaz: kişi bölümleri aynı hesabın mevcut
+        aile uçlarından okuyabildiğinin toplamıdır. Tıbbi özet içeriği verilmez (yalnız olay anında operatöre
+        çözülür; burada var/yok + rıza zamanı), rehberde numaranın son 2 hanesi, olayda konum / operatör / not yok;
+        bilerek verilmeyenler `withheld` kodlarıyla listelenir (docs/security/saklama.md). Her indirme audit.log'a
+        `privacy.data_exported` olarak yalnız kimlik ve sayılarla yazılır. Yönetici (OIDC ADMIN, `x-admin-token`) 403.
+        Kullanıcı başına saatte 5.
+      operationId: exportMyData
+      security: [{ userToken: [] }]
+      responses:
+        '200':
+          description: Dışa aktarma dosyası
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="yanimda-data-export.json"' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataExport' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /protected-persons/{id}/learning:
     get:
       summary: Öğrenme modu ve kişiye özel eşikler (profil raporu özeti). D-06, T-070
@@ -3728,6 +3753,171 @@ components:
         relation: { type: [string, 'null'], maxLength: 50 }
         createdAt: { type: string, format: date-time }
         isMe: { type: boolean, description: Kayıt isteği yapan hesaba mı ait }
+    DataExport:
+      type: object
+      description: T-081 (8.3.2) kişisel veri dışa aktarma. Metin yok; kodlar ve kayıtlar.
+      required: [format, generatedAt, account, persons, withheld]
+      properties:
+        format: { const: yanimda.data-export.v1 }
+        generatedAt: { type: string, format: date-time }
+        account:
+          type: object
+          required: [subject, memberships, pushTargets, memberInvitesCreated, feedback, notifications]
+          properties:
+            subject: { type: string, description: consumers realm `sub` (ad / e-posta / telefon Keycloak'ta) }
+            memberships:
+              type: array
+              items:
+                type: object
+                properties:
+                  protectedPersonId: { type: string, format: uuid }
+                  role: { enum: [OWNER, MEMBER] }
+                  relation: { type: [string, 'null'] }
+                  since: { type: string, format: date-time }
+            pushTargets:
+              type: array
+              description: Token yok
+              items:
+                type: object
+                properties:
+                  platform: { type: string }
+                  updatedAt: { type: string, format: date-time }
+            memberInvitesCreated:
+              type: array
+              description: Kod yok (yalnız sha256 saklanır)
+              items:
+                type: object
+                properties:
+                  protectedPersonId: { type: string, format: uuid }
+                  createdAt: { type: string, format: date-time }
+                  expiresAt: { type: string, format: date-time }
+                  usedAt: { type: [string, 'null'], format: date-time }
+            feedback:
+              type: array
+              items:
+                type: object
+                properties:
+                  eventId: { type: string, format: uuid }
+                  real: { type: boolean }
+                  at: { type: string, format: date-time }
+            notifications:
+              type: array
+              description: Bu hesabın push hedeflerine giden bildirimler (en yeni önce, ≤ 1000); katalog kodu, metin yok
+              maxItems: 1000
+              items:
+                type: object
+                properties:
+                  code: { type: string }
+                  channel: { type: string }
+                  status: { type: string }
+                  protectedPersonId: { type: string }
+                  eventId: { type: [string, 'null'], format: uuid }
+                  createdAt: { type: string, format: date-time }
+                  deliveredAt: { type: [string, 'null'], format: date-time }
+        persons:
+          type: array
+          items: { $ref: '#/components/schemas/DataExportPerson' }
+        withheld:
+          type: array
+          description: Bilerek dışa aktarılmayan sınıflar (docs/security/saklama.md)
+          items:
+            enum:
+              [
+                MEDICAL_CONTENT,
+                CONTACT_PHONE_FULL,
+                HEALTH_VITALS,
+                CALL_RECORDINGS,
+                AUDIT_LOG,
+                OPERATOR_DATA,
+                LOCATION_HISTORY,
+              ]
+    DataExportPerson:
+      type: object
+      required: [profile, members, contacts, devices, events, dailySummaries, subscriptions, consents]
+      properties:
+        profile: { $ref: '#/components/schemas/PersonView' }
+        members: { type: array, items: { $ref: '#/components/schemas/MemberView' } }
+        contacts: { type: array, items: { $ref: '#/components/schemas/ContactView' } }
+        devices:
+          type: array
+          description: Push token'ı ve cihaz numarası yok
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              kind: { type: string }
+              modelId: { type: [string, 'null'] }
+              category: { type: [string, 'null'] }
+              tier: { type: [string, 'null'] }
+              nickname: { type: [string, 'null'] }
+              bodyLocation: { type: [string, 'null'] }
+              osVersion: { type: [string, 'null'] }
+              appVersion: { type: [string, 'null'] }
+              enrolledAt: { type: [string, 'null'], format: date-time }
+              lastSeenAt: { type: [string, 'null'], format: date-time }
+              revokedAt: { type: [string, 'null'], format: date-time }
+              retiredAt: { type: [string, 'null'], format: date-time }
+        events:
+          type: array
+          description: En yeni önce, ≤ 1000; konum, operatör ve notlar yok
+          maxItems: 1000
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              type: { type: string }
+              priority: { type: integer }
+              isTest: { type: boolean }
+              state: { type: string }
+              createdAt: { type: string, format: date-time }
+              closedAt: { type: [string, 'null'], format: date-time }
+              outcome: { type: [string, 'null'] }
+        dailySummaries:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              steps: { type: [integer, 'null'] }
+              hrMin: { type: [integer, 'null'] }
+              hrAvg: { type: [integer, 'null'] }
+              hrMax: { type: [integer, 'null'] }
+              wristMinutes: { type: integer }
+        subscriptions:
+          type: array
+          items:
+            type: object
+            properties:
+              plan: { type: string }
+              status: { type: string }
+              countryCode: { type: string }
+              startedAt: { type: string, format: date-time }
+              trialEndsAt: { type: [string, 'null'], format: date-time }
+              renewsAt: { type: [string, 'null'], format: date-time }
+              canceledAt: { type: [string, 'null'], format: date-time }
+        consents:
+          type: object
+          properties:
+            kvkk:
+              type: array
+              items:
+                type: object
+                properties:
+                  noticeVersion: { type: [string, 'null'] }
+                  explicitConsentAt: { type: [string, 'null'], format: date-time }
+            medicalConsentAt: { type: [string, 'null'], format: date-time }
+            vendorLinks:
+              type: array
+              description: Üretici bulutu aktarım dayanağı; hesap kimliği yok
+              items:
+                type: object
+                properties:
+                  partner: { type: string }
+                  dataRegion: { type: string }
+                  consentBasis: { type: string }
+                  consentAt: { type: [string, 'null'], format: date-time }
+                  createdAt: { type: string, format: date-time }
+                  revokedAt: { type: [string, 'null'], format: date-time }
     Signal:
       $ref: './schemas/signal.schema.json'
     CallView:
