@@ -1,7 +1,7 @@
 # Güvenlik (T-081)
 
 Görev: `docs/TASKS-DETAY.md` → T-081. Kabul: ASVS L2 kontrol listesi ≥ %90, kritik bulgu 0.
-Güncel durum: **%62,9 (127/202), hedef karşılanmıyor; doğrulanmış kritik bulgu 0** (G-1 yüksek, kritiğe yakın) — ayrıntı ve %90 yol haritası `asvs-l2.md`'de.
+Güncel durum: **%92,6 (187/202), hedef (%90) repodaki kanıtla karşılandı; doğrulanmış kritik bulgu 0** — kalan 15 satır ve gerçek ortam doğrulamaları `asvs-l2.md` (üçüncü tur) ve `altyapi-kanit.md`'de; sızma testi bekliyor (G-1 dağıtık saldırgan önce).
 
 | Belge | İçerik |
 | --- | --- |
