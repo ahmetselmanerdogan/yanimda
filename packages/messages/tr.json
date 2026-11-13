@@ -4321,5 +4321,45 @@
   "F-UI-HOLD-OFF": {
     "channel": "family",
     "text": "Modu kapat"
+  },
+  "K-PWD-STRENGTH-LABEL": {
+    "channel": "auth",
+    "text": "Parola gücü: {level}"
+  },
+  "K-PWD-STRENGTH-0": {
+    "channel": "auth",
+    "text": "Çok zayıf"
+  },
+  "K-PWD-STRENGTH-1": {
+    "channel": "auth",
+    "text": "Zayıf"
+  },
+  "K-PWD-STRENGTH-2": {
+    "channel": "auth",
+    "text": "Orta"
+  },
+  "K-PWD-STRENGTH-3": {
+    "channel": "auth",
+    "text": "İyi"
+  },
+  "K-PWD-STRENGTH-4": {
+    "channel": "auth",
+    "text": "Güçlü"
+  },
+  "K-PWD-HINT-LENGTH": {
+    "channel": "auth",
+    "text": "En az {min} karakter kullanın."
+  },
+  "K-PWD-HINT-COMMON": {
+    "channel": "auth",
+    "text": "Yaygın bir kelime, tekrar veya sıra (1234, qwerty gibi) içeriyor; kolay tahmin edilir."
+  },
+  "K-PWD-HINT-GENERAL": {
+    "channel": "auth",
+    "text": "En güçlüsü uzun bir parola cümlesidir: birbiriyle ilgisiz birkaç kelimeyi arka arkaya yazın."
+  },
+  "K-PWD-BLACKLISTED": {
+    "channel": "auth",
+    "text": "Bu parola çok yaygın veya sızdırılmış parolalar listesinde. Lütfen başka bir parola seçin."
   }
 }
