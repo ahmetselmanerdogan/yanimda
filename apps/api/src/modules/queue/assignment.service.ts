@@ -73,7 +73,13 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
     return r[0]?.enabled === true;
   }
 
-  async run(now = new Date()): Promise<{ assigned: number; missed: number }> {
+  /**
+   * Bir tur. `at` verilirse (testler) her zaman o an kullanılır; verilmezse her adım gerçek saati okur: yük altında
+   * tur saniyeler sürebilir, teklif anı ve kabul son anı turun başlangıcından değil teklifin yazıldığı andan sayılır.
+   */
+  async run(at?: Date): Promise<{ assigned: number; missed: number }> {
+    const clock = () => at ?? new Date();
+    const now = clock();
     const missed = await this.expireOffers(now);
     if (!(await this.enabled())) return { assigned: 0, missed };
 
@@ -93,9 +99,9 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
           op,
           async (tx) => {
             checked = true;
-            return this.reserve(tx, ev.id, op, now);
+            return this.reserve(tx, ev.id, op, clock());
           },
-          now,
+          clock(),
         );
         if (ok) {
           assigned++;
@@ -139,11 +145,18 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
                       WHERE c.operator_id = o.subject AND ${liveCallSql(now, callStalenessFromEnv())})`;
   }
 
-  /** Olayın transaction'ında: operatörü kilitle, hâlâ uygunsa teklifi yaz. */
+  /**
+   * Olayın transaction'ında: önce operatör satırını kilitle, SONRA uygunluğu ayrı sorguyla denetle. Tek sorguda
+   * (`... AND NOT EXISTS (...) FOR UPDATE`) Postgres kilidi bekledikten sonra yalnız satırın kendi sütunlarını yeniden
+   * denetler; alt sorgular eski anlık görüntüyle kalır ve diğer sunucunun az önce yazdığı teklifi görmez (4 API
+   * sunuculu ölçümde aynı operatöre üst üste teklif). READ COMMITTED'da ikinci sorgu kilitten sonraki taze görüntüdür.
+   */
   private async reserve(tx: Tx, eventId: string, op: string, now: Date): Promise<boolean> {
+    await tx.execute(sql`SELECT 1 FROM identity.operator WHERE subject = ${op} FOR UPDATE`);
     const r = (await tx.execute(sql`
-      SELECT o.subject FROM identity.operator o WHERE o.subject = ${op} AND ${this.eligible(now)}
-      FOR UPDATE OF o`)) as unknown as { rows: unknown[] };
+      SELECT o.subject FROM identity.operator o WHERE o.subject = ${op} AND ${this.eligible(now)}`)) as unknown as {
+      rows: unknown[];
+    };
     if (r.rows.length !== 1) return false;
     await tx
       .insert(assignment)
