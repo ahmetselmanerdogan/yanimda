@@ -655,6 +655,17 @@ export const supervisorFlag = eventSchema.table('supervisor_flag', {
   changedBy: text('changed_by'),
 });
 
+/** 0039: otomatik atama teklifi; outcome null = operatörün kabulünü bekliyor. */
+export const assignment = eventSchema.table('assignment', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  eventId: uuid('event_id').notNull(),
+  operatorId: text('operator_id').notNull(),
+  offeredAt: timestamptz('offered_at').notNull(),
+  expiresAt: timestamptz('expires_at').notNull(),
+  outcome: text('outcome'),
+  decidedAt: timestamptz('decided_at'),
+});
+
 /** 0022: 112 bildirim ve intikal takibi. */
 export const dispatch = eventSchema.table('dispatch', {
   eventId: uuid('event_id').primaryKey(),

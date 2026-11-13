@@ -51,6 +51,13 @@ export interface SlaBreach {
   operatorId: string | null;
 }
 
+export interface AutoAssignState {
+  enabled: boolean;
+  changedAt: string | null;
+  changedBy: string | null;
+  last24h: { offered: number; accepted: number; missed: number; acceptP50Sec: number | null };
+}
+
 export interface SupervisorDashboard {
   at: string;
   queue: { priority: number; waiting: number; oldestWaitSec: number | null }[];
@@ -73,6 +80,8 @@ export interface SupervisorDashboard {
   slaBreaches: SlaBreach[];
   sla: { claimSec: number; firstCallSec: number };
   overflow: { enabled: boolean; changedAt: string | null; changedBy: string | null };
+  /** 0039 otomatik atama: bayrak ve son 24 saatin teklifleri (kabul / cevapsız, kabul süresi). */
+  autoAssign: AutoAssignState;
   /** İnceleme bulgusu 8: bekleyen gelen SOS aramaları (kuyrukta / çalıyor / yönlendiriliyor). */
   inbound: InboundSummary;
 }
@@ -164,6 +173,7 @@ export class SupervisorService {
       slaBreaches: await this.breaches(now, claims),
       sla: { claimSec: CLAIM_SLA_SEC, firstCallSec: FIRST_CALL_SLA_SEC },
       overflow: await this.overflow(),
+      autoAssign: await this.autoAssign(now),
       inbound: await this.inbound(now),
     };
   }
@@ -270,6 +280,26 @@ export class SupervisorService {
       });
     });
     return this.overflow();
+  }
+
+  /** PUT /v1/supervisor/auto-assign — otomatik atama bayrağı (0039). */
+  async setAutoAssign(enabled: unknown, by: string, now = new Date()) {
+    if (typeof enabled !== 'boolean') throw new BadRequestException('enabled (true/false) gerekli');
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(supervisorFlag)
+        .values({ key: 'auto_assign', enabled, changedAt: now, changedBy: by })
+        .onConflictDoUpdate({ target: supervisorFlag.key, set: { enabled, changedAt: now, changedBy: by } });
+      await tx.insert(auditLog).values({
+        actorKind: 'OPERATOR',
+        actorId: by,
+        action: 'supervisor.auto_assign',
+        entityType: 'flag',
+        entityId: 'auto_assign',
+        data: { enabled },
+      });
+    });
+    return this.autoAssign(now);
   }
 
   // ---- iç ----
@@ -468,6 +498,31 @@ export class SupervisorService {
     return out
       .sort((a, b) => Number(b.live) - Number(a.live) || b.at.localeCompare(a.at) || a.kind.localeCompare(b.kind))
       .slice(0, BREACH_LIMIT);
+  }
+
+  private async autoAssign(now: Date): Promise<AutoAssignState> {
+    const [f] = await this.q<{ enabled: boolean; changed_at: Date | string; changed_by: string | null }>(
+      sql`SELECT enabled, changed_at, changed_by FROM event.supervisor_flag WHERE key = 'auto_assign'`,
+    );
+    const since = new Date(now.getTime() - 24 * 3600_000).toISOString();
+    const [s] = await this.q<{ offered: number; accepted: number; missed: number; p50: number | null }>(sql`
+      SELECT count(*)::int AS offered,
+             count(*) FILTER (WHERE outcome = 'ACCEPTED')::int AS accepted,
+             count(*) FILTER (WHERE outcome = 'MISSED')::int AS missed,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM decided_at - offered_at))
+               FILTER (WHERE outcome = 'ACCEPTED') AS p50
+      FROM event.assignment WHERE offered_at >= ${since}::timestamptz`);
+    return {
+      enabled: f?.enabled ?? false,
+      changedAt: f ? iso(f.changed_at) : null,
+      changedBy: f?.changed_by ?? null,
+      last24h: {
+        offered: s?.offered ?? 0,
+        accepted: s?.accepted ?? 0,
+        missed: s?.missed ?? 0,
+        acceptP50Sec: s?.p50 == null ? null : Math.round(Number(s.p50) * 10) / 10,
+      },
+    };
   }
 
   private async overflow(): Promise<SupervisorDashboard['overflow']> {
