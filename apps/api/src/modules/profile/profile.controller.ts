@@ -20,10 +20,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit } from '../../common/rate-limit';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
 import { OidcVerifier } from '../identity/oidc-verifier';
-import { AdminTokenGuard } from '../rules/admin-token.guard';
+import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import type { Actor } from './contacts';
 import { ProfileService } from './profile.service';
 
@@ -34,7 +35,8 @@ const actorOf = (req: ActorRequest) => req.actor!;
 
 /**
  * Profil uçları: aile (consumers realm, FAMILY) kendi kişileri için; yönetici (OIDC ADMIN veya betikler için
- * `x-admin-token`) hepsi için. Bearer gelirse yalnız OIDC denenir. Operatör profil düzenlemez (olay kartı ayrı).
+ * `x-admin-token`; üretimde kapalı, T-081 G-4) hepsi için. Bearer gelirse yalnız OIDC denenir. Operatör profil
+ * düzenlemez (olay kartı ayrı).
  */
 @Injectable()
 export class ProfileGuard implements CanActivate {
@@ -44,7 +46,7 @@ export class ProfileGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<ActorRequest>();
     if (!req.headers.authorization) {
-      if (!req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled() || !req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
       const ok = this.shared.canActivate(ctx);
       req.actor = { kind: 'ADMIN' };
       return ok;
@@ -65,7 +67,7 @@ export class ProfileController {
   constructor(@Inject(ProfileService) private readonly profile: ProfileService) {}
 
   @Post()
-  create(@Body() body: unknown, @Req() req: ActorRequest) {
+  create(@Body(new OpenApiBody('createProtectedPerson')) body: unknown, @Req() req: ActorRequest) {
     return this.profile.create(actorOf(req), body);
   }
 
@@ -86,13 +88,17 @@ export class ProfileController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  update(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('updateProtectedPerson')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     return this.profile.update(actorOf(req), id, body);
   }
 
   /** PUT /v1/protected-persons/{id}/medical — rıza zamanı zorunlu; içerik geri okunmaz. */
   @Put(':id/medical')
-  medical(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  medical(@Param('id') id: string, @Body(new OpenApiBody('setMedical')) body: unknown, @Req() req: ActorRequest) {
     return this.profile.setMedical(actorOf(req), id, body);
   }
 
@@ -104,7 +110,7 @@ export class ProfileController {
 
   /** PUT /v1/protected-persons/{id}/contacts — [{role, priority?, displayName?, phone}]; CONTACT sıralı 1–5. */
   @Put(':id/contacts')
-  contacts(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  contacts(@Param('id') id: string, @Body(new OpenApiBody('setContacts')) body: unknown, @Req() req: ActorRequest) {
     return this.profile.setContacts(actorOf(req), id, body);
   }
 
@@ -136,7 +142,11 @@ export class ProfileController {
   /** POST /v1/protected-persons/{id}/members/invite → { code, expiresAt, relation } (72 sa, tek kullanım; OWNER). */
   @Post(':id/members/invite')
   @RateLimit({ name: 'member-invite', limit: 10, windowSec: 3600, by: 'param:id' })
-  memberInvite(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  memberInvite(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('createMemberInvite')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     return this.profile.createMemberInvite(actorOf(req), id, body ?? {});
   }
 
@@ -160,7 +170,7 @@ export class FamilyMembersController {
 
   @Post('accept')
   @RateLimit({ name: 'member-accept', limit: 10, windowSec: 3600, by: 'user' })
-  accept(@Body() body: unknown, @Req() req: ActorRequest) {
+  accept(@Body(new OpenApiBody('acceptMemberInvite')) body: unknown, @Req() req: ActorRequest) {
     return this.profile.acceptMemberInvite(actorOf(req), body);
   }
 }

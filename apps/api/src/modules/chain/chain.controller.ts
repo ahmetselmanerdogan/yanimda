@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { ChainService } from './chain.service';
 import { DispatchService } from './dispatch.service';
@@ -98,21 +99,26 @@ export class ChainController {
   /** POST /v1/events/{id}/chain/steps/{n}/result — sıra zorunlu (409), SKIPPED gerekçe ister. */
   @Post(':id/chain/steps/:n/result')
   @HttpCode(200)
-  result(@Param('id') id: string, @Param('n', ParseIntPipe) n: number, @Req() req: UserRequest, @Body() body: unknown) {
+  result(
+    @Param('id') id: string,
+    @Param('n', ParseIntPipe) n: number,
+    @Req() req: UserRequest,
+    @Body(new OpenApiBody('stepResult')) body: unknown,
+  ) {
     return this.chain.stepResult(id, n, userOf(req).sub, body);
   }
 
   /** POST /v1/events/{id}/escalate-112 — gerekçe zorunlu; kalan adımlar atlanır. */
   @Post(':id/escalate-112')
   @HttpCode(200)
-  escalate(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+  escalate(@Param('id') id: string, @Req() req: UserRequest, @Body(new OpenApiBody('escalate112')) body: unknown) {
     return this.chain.escalate112(id, userOf(req).sub, body);
   }
 
   /** POST /v1/events/{id}/close — sonuç zorunlu, not ≤ 2000. */
   @Post(':id/close')
   @HttpCode(204)
-  async close(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+  async close(@Param('id') id: string, @Req() req: UserRequest, @Body(new OpenApiBody('closeEvent')) body: unknown) {
     await this.chain.close(id, userOf(req).sub, body);
   }
 }

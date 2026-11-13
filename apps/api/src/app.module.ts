@@ -14,6 +14,7 @@ import { LearningModule } from './modules/learning/learning.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NotifyModule } from './modules/notify/notify.module';
 import { PartnerModule } from './modules/partner/partner.module';
+import { PrivacyModule } from './modules/privacy/privacy.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { ReportModule } from './modules/report/report.module';
@@ -53,6 +54,7 @@ import { WellnessModule } from './modules/wellness/wellness.module';
     ScreeningModule,
     VitalsModule, // T-092: bayrakla kapalı (vitals.enabled / VITALS_ENABLED)
     PartnerModule,
+    PrivacyModule, // T-081: veri dışa aktarma (8.3.2) + saklama temizliği (8.3.8)
   ],
 })
 export class AppModule {}

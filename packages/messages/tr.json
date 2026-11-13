@@ -30,6 +30,10 @@
     "text": "Yanımda arıyor.",
     "action": "Cevapla"
   },
+  "W-CALL-END": {
+    "channel": "watch",
+    "text": "Aramayı bitir"
+  },
   "W-CALL-PHONE": {
     "channel": "watch",
     "text": "Yanımda arıyor. Telefonunuzu açın."
@@ -188,6 +192,10 @@
     "text": "Yardım için 3 saniye basılı tutun.",
     "action": "YARDIM"
   },
+  "P-SOS-HOLD-VO": {
+    "channel": "phone",
+    "text": "Yardım çağırmak için iki kez dokunun."
+  },
   "P-SOS-SENT": {
     "channel": "phone",
     "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak."
@@ -201,6 +209,10 @@
     "text": "Bir süredir hareket etmediniz. İyi misiniz?",
     "action": "İyiyim"
   },
+  "P-PROMPT-LEFT": {
+    "channel": "phone",
+    "text": "{sec} saniye kaldı."
+  },
   "P-INACT-OK": {
     "channel": "phone",
     "text": "Teşekkürler. İyi olduğunuzu ilettik."
@@ -209,6 +221,10 @@
     "channel": "phone",
     "text": "Aileniz size 6 haneli bir kod gönderdi. Kodu buraya yazın.",
     "action": "Eşleştir"
+  },
+  "P-PAIR-CODE": {
+    "channel": "phone",
+    "text": "Eşleştirme kodu"
   },
   "P-PAIR-WRONG": {
     "channel": "phone",
@@ -2263,6 +2279,18 @@
     "channel": "family",
     "text": "Aile davet kodum var"
   },
+  "F-WEB-DATA-EXPORT": {
+    "channel": "family",
+    "text": "Verilerimi indir"
+  },
+  "F-WEB-DATA-EXPORT-HINT": {
+    "channel": "family",
+    "text": "Hesabınızın ve yakınınızın kayıtlı bilgilerinin bir kopyasını dosya olarak indirin. Tıbbi bilgiler güvenlik için dosyaya eklenmez."
+  },
+  "F-WEB-DATA-EXPORT-DONE": {
+    "channel": "family",
+    "text": "Verileriniz indirildi."
+  },
   "F-WEB-MEMBERS-ACCEPT-TITLE": {
     "channel": "family",
     "text": "Aile davetini kabul et"
@@ -3870,6 +3898,90 @@
     "channel": "family",
     "text": "Henüz haftalık özet yok. Saat birkaç gün takılınca burada görünür."
   },
+  "F-UI-VITAL-SETTINGS": {
+    "channel": "family",
+    "text": "Nabız ve oksijen ayarları"
+  },
+  "F-UI-VITAL-SETTINGS-OFF": {
+    "channel": "family",
+    "text": "Nabız ve oksijen uyarıları henüz kullanımda değil. Kullanıma açıldığında kişiye özel eşikleri ve eğilim bildirimlerini buradan ayarlayabilirsiniz."
+  },
+  "F-UI-VITAL-SETTINGS-HINT": {
+    "channel": "family",
+    "text": "Eşikleri yalnız doktor önerisiyle değiştirin. Boş bırakılan alanda genel eşik kullanılır."
+  },
+  "F-UI-VITAL-PERSONAL": {
+    "channel": "family",
+    "text": "Kişiye özel eşikler"
+  },
+  "F-UI-VITAL-LOW-HR": {
+    "channel": "family",
+    "text": "Düşük nabız eşiği"
+  },
+  "F-UI-VITAL-HIGH-HR": {
+    "channel": "family",
+    "text": "Yüksek nabız eşiği (dinlenirken)"
+  },
+  "F-UI-VITAL-SPO2-LOW": {
+    "channel": "family",
+    "text": "Düşük oksijen okuması eşiği"
+  },
+  "F-UI-VITAL-DEFAULT": {
+    "channel": "family",
+    "text": "Genel eşik: {value}"
+  },
+  "F-UI-VITAL-RANGE": {
+    "channel": "family",
+    "text": "{min} ile {max} arasında bir sayı girin"
+  },
+  "F-UI-VITAL-COPD": {
+    "channel": "family",
+    "text": "KOAH profili"
+  },
+  "F-UI-VITAL-COPD-HINT": {
+    "channel": "family",
+    "text": "KOAH tanısı varsa oksijen okuması için genel eşik {value} olur."
+  },
+  "F-UI-VITAL-CONSENT": {
+    "channel": "family",
+    "text": "Aile olarak bu kişiye özel eşiği onaylıyoruz"
+  },
+  "F-UI-VITAL-DOCTOR-NOTE": {
+    "channel": "family",
+    "text": "Bu eşik için doktor notu var"
+  },
+  "F-UI-VITAL-DOCTOR-NOTE-REF": {
+    "channel": "family",
+    "text": "Doktor notu belge numarası (isteğe bağlı)"
+  },
+  "F-UI-VITAL-CONSENT-NEEDED": {
+    "channel": "family",
+    "text": "Kişiye özel eşik için aile onayı ve doktor notu gerekir."
+  },
+  "F-UI-VITAL-CONSENT-GIVEN": {
+    "channel": "family",
+    "text": "Aile onayı: {date}"
+  },
+  "F-UI-VITAL-RESET": {
+    "channel": "family",
+    "text": "Genel eşiklere dön"
+  },
+  "F-UI-VITAL-LEARNING": {
+    "channel": "family",
+    "text": "Saat {date} tarihine kadar alışılmış değerleri öğreniyor; bu sürede okumalar nedeniyle kontrol araması yapılmaz."
+  },
+  "F-UI-VITAL-MUTE": {
+    "channel": "family",
+    "text": "Eğilim bildirimlerini sustur"
+  },
+  "F-UI-VITAL-MUTE-HINT": {
+    "channel": "family",
+    "text": "Haftalık eğilim bildirimleri gelmez. Alışılmadık okuma nedeniyle yapılan kontrol aramaları ve sonuçları yine bildirilir."
+  },
+  "F-UI-VITAL-SETTINGS-INVALID": {
+    "channel": "family",
+    "text": "Ayarlar kaydedilemedi. Değerleri ve onayları kontrol edip yeniden deneyin."
+  },
   "P-SENSORS": {
     "channel": "phone",
     "text": "Telefonunuza bağlı nabız ve oksijen ölçerler.",
@@ -3950,7 +4062,8 @@
   },
   "P-PERM-BLUETOOTH-IOS": {
     "channel": "phone",
-    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin."
+    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin.",
+    "action": "İzin ver"
   },
   "O-OEM-LATENCY": {
     "channel": "console",
@@ -4321,5 +4434,45 @@
   "F-UI-HOLD-OFF": {
     "channel": "family",
     "text": "Modu kapat"
+  },
+  "K-PWD-STRENGTH-LABEL": {
+    "channel": "auth",
+    "text": "Parola gücü: {level}"
+  },
+  "K-PWD-STRENGTH-0": {
+    "channel": "auth",
+    "text": "Çok zayıf"
+  },
+  "K-PWD-STRENGTH-1": {
+    "channel": "auth",
+    "text": "Zayıf"
+  },
+  "K-PWD-STRENGTH-2": {
+    "channel": "auth",
+    "text": "Orta"
+  },
+  "K-PWD-STRENGTH-3": {
+    "channel": "auth",
+    "text": "İyi"
+  },
+  "K-PWD-STRENGTH-4": {
+    "channel": "auth",
+    "text": "Güçlü"
+  },
+  "K-PWD-HINT-LENGTH": {
+    "channel": "auth",
+    "text": "En az {min} karakter kullanın."
+  },
+  "K-PWD-HINT-COMMON": {
+    "channel": "auth",
+    "text": "Yaygın bir kelime, tekrar veya sıra (1234, qwerty gibi) içeriyor; kolay tahmin edilir."
+  },
+  "K-PWD-HINT-GENERAL": {
+    "channel": "auth",
+    "text": "En güçlüsü uzun bir parola cümlesidir: birbiriyle ilgisiz birkaç kelimeyi arka arkaya yazın."
+  },
+  "K-PWD-BLACKLISTED": {
+    "channel": "auth",
+    "text": "Bu parola çok yaygın veya sızdırılmış parolalar listesinde. Lütfen başka bir parola seçin."
   }
 }

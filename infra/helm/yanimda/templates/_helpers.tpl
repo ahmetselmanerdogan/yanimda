@@ -57,6 +57,27 @@ capabilities:
 {{- printf "%s.%s" .sub .root.Values.global.domain -}}
 {{- end -}}
 
+{{/* İç CA paketi (global.internalCa): yönetilen Postgres/Redis sunucu sertifikası doğrulaması (verify-full, rediss) */}}
+{{- define "yanimda.internalCaMount" -}}
+{{- if .Values.global.internalCa.configMap }}
+- name: internal-ca
+  mountPath: /etc/yanimda/tls
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "yanimda.internalCaVolume" -}}
+{{- if .Values.global.internalCa.configMap }}
+- name: internal-ca
+  configMap:
+    name: {{ .Values.global.internalCa.configMap }}
+{{- end }}
+{{- end -}}
+
+{{- define "yanimda.internalCaPath" -}}
+{{- printf "/etc/yanimda/tls/%s" .Values.global.internalCa.key -}}
+{{- end -}}
+
 {{/* OIDC issuer'ları: değer verilmemişse auth.<domain>/realms/<realm> */}}
 {{- define "yanimda.issuer" -}}
 {{- printf "https://auth.%s/realms/%s" .root.Values.global.domain .realm -}}

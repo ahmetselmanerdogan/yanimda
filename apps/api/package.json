@@ -12,6 +12,8 @@
     "db:migrate": "tsx src/db/cli.ts migrate",
     "db:rollback": "tsx src/db/cli.ts rollback",
     "db:seed": "tsx src/db/cli.ts seed",
+    "db:field-keys": "tsx src/db/cli.ts field-keys",
+    "db:reencrypt": "tsx src/db/cli.ts reencrypt",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "stack:local": "tsx test/e2e/stack-cli.ts"
   },

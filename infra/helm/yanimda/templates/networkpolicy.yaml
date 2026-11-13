@@ -1,16 +1,27 @@
 {{- /*
-Giriş (ingress) NetworkPolicy'leri:
+NetworkPolicy'ler (T-083, T-081: ASVS 1.14.5, 1.14.1):
+  Giriş (ingress):
   - Bu sürümün tüm pod'ları için varsayılan RED; aşağıdaki izinler tek tek açılır.
   - api/console/family-web/keycloak HTTP: yalnız Ingress denetleyicisi ad alanından.
   - Postgres/Redis/MinIO: yalnız yanimda.app/db-client=true pod'larından (api, worker, keycloak).
   - Metrik portları (api/worker 9464, keycloak 9000): yalnız izleme ad alanından.
-Çıkış (egress) kısıtı yok (Twilio/FCM/APNs/OBS dış uçları); README "Takip".
+  - Keycloak kopyaları arası (replicas > 1): JGroups 7800/57800 yalnız Keycloak pod'larından.
+  Çıkış (egress, networkPolicy.egress.enabled):
+  - Varsayılan RED; tüm pod'lara yalnız küme DNS'i.
+  - api/worker: küme içi veri depoları, yönetilen Postgres/Redis (datastoreCidrs), dış HTTPS (httpsCidrs: Twilio,
+    FCM, APNs, OBS, auth.<domain> JWKS), Keycloak pod'u.
+  - keycloak: Postgres (küme içi veya datastoreCidrs), SMTP (smtpCidrs/smtpPorts), diğer Keycloak kopyaları.
+  - synthetic: dış HTTPS (genel uçlar) + izleme ad alanındaki Pushgateway.
+  - console/family-web/veri depoları: DNS dışında çıkış yok.
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 {{- $root := . }}
+{{- $np := .Values.networkPolicy }}
 {{- $ingressNs := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.ingress.controllerNamespace)) }}
-{{- $monNs := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .Values.networkPolicy.monitoringNamespace)) }}
+{{- $monNs := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" $np.monitoringNamespace)) }}
 {{- $dbClients := dict "podSelector" (dict "matchLabels" (dict "yanimda.app/db-client" "true" "app.kubernetes.io/instance" .Release.Name)) }}
+{{- $kcPods := dict "podSelector" (dict "matchLabels" (include "yanimda.selectorLabels" (dict "root" . "component" "keycloak") | fromYaml)) }}
+{{- $egress := and $np.egress $np.egress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,7 +32,20 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
-  policyTypes: [Ingress]
+  policyTypes: [Ingress{{ if $egress }}, Egress{{ end }}]
+  {{- if $egress }}
+  egress:
+    # Küme DNS'i (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.egress.dnsNamespace }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+  {{- end }}
 {{- $rules := list }}
 {{- if .Values.api.enabled }}
 {{- $rules = append $rules (dict "component" "api" "rules" (list (dict "from" (list $ingressNs) "port" "http") (dict "from" (list $monNs) "port" "metrics"))) }}
@@ -36,7 +60,15 @@ spec:
 {{- $rules = append $rules (dict "component" "family-web" "rules" (list (dict "from" (list $ingressNs) "port" "http"))) }}
 {{- end }}
 {{- if .Values.keycloak.enabled }}
-{{- $rules = append $rules (dict "component" "keycloak" "rules" (list (dict "from" (list $ingressNs) "port" "http") (dict "from" (list $monNs) "port" "management"))) }}
+{{- $kcRules := list (dict "from" (list $ingressNs) "port" "http") (dict "from" (list $monNs) "port" "management") }}
+{{- if gt (int .Values.keycloak.replicas) 1 }}
+{{- $kcRules = append $kcRules (dict "from" (list $kcPods) "port" 7800) }}
+{{- $kcRules = append $kcRules (dict "from" (list $kcPods) "port" 57800) }}
+{{- end }}
+{{- if .Values.api.enabled }}
+{{- $kcRules = append $kcRules (dict "from" (list $dbClients) "port" "http") }}
+{{- end }}
+{{- $rules = append $rules (dict "component" "keycloak" "rules" $kcRules) }}
 {{- end }}
 {{- if .Values.timescaledb.enabled }}
 {{- $rules = append $rules (dict "component" "timescaledb" "rules" (list (dict "from" (list $dbClients) "port" "postgres"))) }}
@@ -69,5 +101,69 @@ spec:
         - port: {{ .port }}
           protocol: TCP
     {{- end }}
+{{- end }}
+{{- if $egress }}
+{{- $e := $np.egress }}
+{{- $pod := dict }}
+{{- range $c := list "timescaledb" "redis" "minio" "keycloak" }}
+{{- $_ := set $pod $c (dict "podSelector" (dict "matchLabels" (include "yanimda.selectorLabels" (dict "root" $root "component" $c) | fromYaml))) }}
+{{- end }}
+{{- $cidrs := dict "datastore" (list) "https" (list) "smtp" (list) }}
+{{- range $e.datastoreCidrs }}{{ $_ := set $cidrs "datastore" (append $cidrs.datastore (dict "ipBlock" (dict "cidr" .))) }}{{ end }}
+{{- range $e.httpsCidrs }}{{ $_ := set $cidrs "https" (append $cidrs.https (dict "ipBlock" (dict "cidr" .))) }}{{ end }}
+{{- range $e.smtpCidrs }}{{ $_ := set $cidrs "smtp" (append $cidrs.smtp (dict "ipBlock" (dict "cidr" .))) }}{{ end }}
+{{- $out := list }}
+{{- if .Values.api.enabled }}
+{{- $apiRules := list }}
+{{- if .Values.timescaledb.enabled }}{{ $apiRules = append $apiRules (dict "to" (list $pod.timescaledb) "ports" (list 5432)) }}{{ end }}
+{{- if .Values.redis.enabled }}{{ $apiRules = append $apiRules (dict "to" (list $pod.redis) "ports" (list 6379)) }}{{ end }}
+{{- if .Values.minio.enabled }}{{ $apiRules = append $apiRules (dict "to" (list $pod.minio) "ports" (list 9000)) }}{{ end }}
+{{- if .Values.keycloak.enabled }}{{ $apiRules = append $apiRules (dict "to" (list $pod.keycloak) "ports" (list 8080)) }}{{ end }}
+{{- if $cidrs.datastore }}{{ $apiRules = append $apiRules (dict "to" $cidrs.datastore "ports" $e.datastorePorts) }}{{ end }}
+{{- if $cidrs.https }}{{ $apiRules = append $apiRules (dict "to" $cidrs.https "ports" (list 443)) }}{{ end }}
+{{- $out = append $out (dict "component" "api" "rules" $apiRules) }}
+{{- if .Values.worker.enabled }}{{ $out = append $out (dict "component" "worker" "rules" $apiRules) }}{{ end }}
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+{{- $kcOut := list }}
+{{- if .Values.timescaledb.enabled }}{{ $kcOut = append $kcOut (dict "to" (list $pod.timescaledb) "ports" (list 5432)) }}{{ end }}
+{{- if $cidrs.datastore }}{{ $kcOut = append $kcOut (dict "to" $cidrs.datastore "ports" (list 5432)) }}{{ end }}
+{{- if $cidrs.smtp }}{{ $kcOut = append $kcOut (dict "to" $cidrs.smtp "ports" $e.smtpPorts) }}{{ end }}
+{{- if gt (int .Values.keycloak.replicas) 1 }}{{ $kcOut = append $kcOut (dict "to" (list $pod.keycloak) "ports" (list 7800 57800)) }}{{ end }}
+{{- $out = append $out (dict "component" "keycloak" "rules" $kcOut) }}
+{{- end }}
+{{- if .Values.synthetic.enabled }}
+{{- $synOut := list }}
+{{- if $cidrs.https }}{{ $synOut = append $synOut (dict "to" $cidrs.https "ports" (list 443)) }}{{ end }}
+{{- $synOut = append $synOut (dict "to" (list $monNs) "ports" (list 9091)) }}
+{{- $out = append $out (dict "component" "synthetic" "rules" $synOut) }}
+{{- end }}
+{{- range $r := $out }}
+{{- if $r.rules }}
+{{- $ctx := dict "root" $root "component" $r.component }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "yanimda.component" $ctx }}-egress
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- range $r.rules }}
+    - to:
+        {{- toYaml .to | nindent 8 }}
+      ports:
+        {{- range .ports }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

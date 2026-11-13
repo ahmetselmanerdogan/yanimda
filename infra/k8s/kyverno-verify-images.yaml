@@ -1,0 +1,44 @@
+# T-081 (ASVS 14.1.5, 10.3.2, 14.2.4): yalnız release-image.yml'in cosign ile anahtarsız imzaladığı API imajı
+# çalışabilir (imza + SBOM tasdiki Rekor şeffaflık kaydında). İmzasız/başka iş akışınca imzalanmış imaj reddedilir;
+# etiket digest'e sabitlenir (mutateDigest). Kyverno kümede kurulu olmalı:
+#   kubectl apply -f infra/k8s/kyverno-verify-images.yaml
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: yanimda-verify-images
+  annotations:
+    policies.kyverno.io/title: Yanımda imaj imzası
+    policies.kyverno.io/description: ghcr.io/<owner>/yanimda-* imajları cosign anahtarsız imza ve SPDX SBOM tasdiki ister.
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+    - name: cosign-keyless
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [yanimda-staging, yanimda]
+      verifyImages:
+        - imageReferences: ['ghcr.io/ahmetselmanerdogan/yanimda-api*']
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: https://token.actions.githubusercontent.com
+                    subjectRegExp: '^https://github\.com/ahmetselmanerdogan/yanimda/\.github/workflows/release-image\.yml@refs/(heads/main|tags/v.*)$'
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          attestations:
+            - type: https://spdx.dev/Document
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: https://token.actions.githubusercontent.com
+                        subjectRegExp: '^https://github\.com/ahmetselmanerdogan/yanimda/\.github/workflows/release-image\.yml@refs/(heads/main|tags/v.*)$'
+                        rekor:
+                          url: https://rekor.sigstore.dev

@@ -62,6 +62,11 @@ scrape_configs:
     static_configs:
       - targets: ['loki:3100']
 
+  # Log kaynaklı sayaçlar (promtail_custom_backend_tls_errors_total; T-081 ASVS 9.2.5)
+  - job_name: promtail
+    static_configs:
+      - targets: ['promtail:9080']
+
   # Dış uçlar (TLS dahil, genel DNS üzerinden). Hedef listesi ortama özgü: targets/blackbox-*.yml
   # (örnek: targets/blackbox-http.yml.example). Dosya yoksa hedef yok, yapılandırma yine geçerli.
   - job_name: blackbox-http

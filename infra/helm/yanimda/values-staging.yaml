@@ -1,10 +1,16 @@
 # Staging: küme içi Timescale/Redis/MinIO yerine yönetilen hizmetler (Terraform çıktıları api Secret'ında).
 global:
   domain: staging.yanimda.example
+  environment: staging
+  # Yönetilen RDS + DCS sunucu CA'ları (PEM paketi): kubectl create configmap yanimda-internal-ca --from-file=ca.pem
+  internalCa:
+    configMap: yanimda-internal-ca
+    key: ca.pem
 
 api:
   image:
     tag: '0.1.0'
+  # Secret (Vault: yanimda/yanimda-staging/yanimda-api) DATABASE_URL ...?sslmode=verify-full, REDIS_URL rediss://<acl>:…@…
   env:
     NODE_ENV: production
     DB_MIGRATE_ON_START: 'true'
@@ -26,8 +32,13 @@ console:
 
 keycloak:
   db:
-    url: jdbc:postgresql://10.20.1.10:5432/keycloak?sslmode=require
+    url: jdbc:postgresql://10.20.1.10:5432/keycloak?sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem
   realmConfigMap: yanimda-realms
+  realm:
+    sslRequired: all
+  smtp:
+    host: smtp.staging.yanimda.example
+    user: keycloak
 
 timescaledb:
   enabled: false
@@ -42,6 +53,18 @@ synthetic:
   enabled: true
   personIds: '00000000-0000-7000-8000-000000000001,00000000-0000-7000-8000-000000000002,00000000-0000-7000-8000-000000000003'
   pushgatewayUrl: http://prometheus-pushgateway.monitoring:9091
+
+networkPolicy:
+  egress:
+    enabled: true
+    # infra/terraform modules/yanimda-env subnet_cidr (RDS + DCS)
+    datastoreCidrs: [10.20.1.0/24]
+
+externalSecrets:
+  enabled: true
+  vault:
+    create: true
+    server: https://vault.staging.yanimda.example:8200
 
 serviceMonitor:
   enabled: true

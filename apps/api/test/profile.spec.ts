@@ -516,4 +516,17 @@ describe('ProfileGuard', () => {
     expect(await run({ 'x-admin-token': 'dogru-token-123' })).toEqual({ kind: 'ADMIN' });
     expect(await run(bearer('bozuk'))).toBe(401);
   });
+  it('T-081 G-4: üretimde x-admin-token yok sayılır → 401; ADMIN_TOKEN tanımsızsa da 401', async () => {
+    const env = process.env.NODE_ENV;
+    process.env.ADMIN_TOKEN = 'dogru-token-123';
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(await run({ 'x-admin-token': 'dogru-token-123' })).toBe(401);
+      expect(await run(bearer(idp.token({ sub: 'adm-1', roles: ['ADMIN'] })))).toEqual({ kind: 'ADMIN', id: 'adm-1' });
+    } finally {
+      process.env.NODE_ENV = env;
+    }
+    delete process.env.ADMIN_TOKEN;
+    expect(await run({ 'x-admin-token': 'dogru-token-123' })).toBe(401);
+  });
 });

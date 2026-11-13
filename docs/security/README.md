@@ -1,7 +1,7 @@
 # Güvenlik (T-081)
 
 Görev: `docs/TASKS-DETAY.md` → T-081. Kabul: ASVS L2 kontrol listesi ≥ %90, kritik bulgu 0.
-Güncel durum: **%62,9 (127/202), hedef karşılanmıyor; doğrulanmış kritik bulgu 0** (G-1 yüksek, kritiğe yakın) — ayrıntı ve %90 yol haritası `asvs-l2.md`'de.
+Güncel durum: **%92,6 (187/202), hedef (%90) repodaki kanıtla karşılandı; doğrulanmış kritik bulgu 0** — kalan 15 satır ve gerçek ortam doğrulamaları `asvs-l2.md` (üçüncü tur) ve `altyapi-kanit.md`'de; sızma testi bekliyor (G-1 dağıtık saldırgan önce).
 
 | Belge | İçerik |
 | --- | --- |
@@ -9,6 +9,13 @@ Güncel durum: **%62,9 (127/202), hedef karşılanmıyor; doğrulanmış kritik 
 | [sizma-testi-plani.md](sizma-testi-plani.md) | Dış sızma testi: kapsam, kurallar, staging hesapları, WSTG/MASVS yöntemi, takvim, raporlama, acil durdurma |
 | [sertifika-sabitleme.md](sertifika-sabitleme.md) | Mobil SPKI sabitleme (Android/Wear OS, iOS, Flutter), rotasyon, test listesi; root/jailbreak uyarısı ve önerilen katalog anahtarları |
 | [sirlar.md](sirlar.md) | Sır envanteri, KMS/Vault, "`.env` üretimde yok", `FIELD_ENC_KEYS` / `DEVICE_TOKEN_SECRET` rotasyonu, sızıntı müdahalesi, `health` şeması DB rol tasarımı |
+| [tehdit-modeli.md](tehdit-modeli.md) | STRIDE tehdit modeli, güven sınırı diyagramı (1.1.4), bileşen güvenlik analizi (1.1.5), izleme |
+| [sdlc.md](sdlc.md) | Uygulanan güvenli SDLC: aşama başına etkinlik ve kanıt dosyası, CI kapıları, inceleme, bağımlılık, sürüm imzası (1.1.1) |
+| [saklama.md](saklama.md) | Veri sınıfı başına saklama süresi ve mekanizma, temizlik işi, kişisel veri dışa aktarma kararı, KVKK başvuru süreci (8.3.2, 8.3.8) |
+| [hesap-kurtarma.md](hesap-kurtarma.md) | Parola ve OTP kaybında kurtarma: operations (yönetici destekli, dört göz), consumers (self-servis), kimlik doğrulama adımları (2.5.6, 2.5.7) |
+| [dns-envanteri.md](dns-envanteri.md) | DNS envanteri, sökme sırası, aylık alt alan adı devralma denetimi (10.3.3) |
+| [risk-kabulleri.md](risk-kabulleri.md) | Risk kabulü kaydı: bellekte silme (8.3.6), consumers oturum süreleri (3.3.2), `sessionStorage` token (8.2.2) — hepsi sahip onayı bekliyor |
+| [altyapi-kanit.md](altyapi-kanit.md) | ASVS paket B (altyapı) ve F (`consumers` realm) için gereksinim → dosya:satır kanıt tablosu, oturum süresi risk kabulü, gerçek ortamda yapılacak doğrulamalar |
 
 Betik: [`scripts/security/spki-pin.sh`](../../scripts/security/spki-pin.sh) — bir host'un zincirindeki her
 sertifikanın veya yerel PEM/DER/CSR/anahtar dosyasının SPKI pin'ini (`sha256/<base64>`) yazar.

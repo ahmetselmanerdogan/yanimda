@@ -31,11 +31,16 @@ services:
     image: quay.io/keycloak/keycloak:26.0
     # T-020: operations (OTP zorunlu) ve consumers realm'leri açılışta içe aktarılır. Geliştirme kullanıcıları:
     #   KEYCLOAK_DEV_PASSWORD=... node infra/keycloak/dev-users.mjs
+    # T-081: realm'lerdeki ${YANIMDA_*:varsayılan} yer tutucuları geliştirmede varsayılanla (localhost) çözülür.
+    # Giriş teması (parola gücü göstergesi) ve parola kara listesi her ortamda aynı dosyalardan bağlanır.
     command: ['start-dev', '--import-realm']
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-    volumes: ['./keycloak:/opt/keycloak/data/import:ro']
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+      - ./keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro
+      - ./keycloak/password-blacklists:/opt/keycloak/data/password-blacklists:ro
     ports: ['8080:8080']
   minio:
     # MinIO resmi imajları artık herkese açık değil (Docker Hub / quay.io 401); Bitnami arşivi kullanılıyor.

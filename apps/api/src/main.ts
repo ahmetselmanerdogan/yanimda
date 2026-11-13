@@ -6,8 +6,11 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureHttpSecurity } from './common/http-security';
 import { ProblemFilter } from './common/problem.filter';
+import { assertAdminTokenPolicy } from './modules/rules/admin-token.guard';
 
 async function bootstrap() {
+  // T-081 G-4: üretimde paylaşılan yönetici anahtarı yasak; veritabanına bağlanmadan önce düşer.
+  assertAdminTokenPolicy();
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
     rawBody: true, // T-060: ödeme webhook imzası ham gövde üzerinden

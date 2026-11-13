@@ -20,16 +20,16 @@ hesabında **çalıştırılmadı**; yalnız statik doğrulama yapıldı (aşağ
    RDS PostgreSQL 16 HA (2 AZ, PITR) · DCS Redis HA · OBS: recordings (WORM) + backups (yaşam döngüsü)
 ```
 
-| Yol                                                               | İçerik                                                                                                                                             |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terraform/modules/yanimda-env`                                   | VPC, güvenlik grupları, ECS + veri diski + EIP, RDS PG (HA, yedek/PITR, hesap, veritabanı, `timescaledb`/`pgcrypto`), DCS Redis, OBS kovaları, DNS |
-| `terraform/envs/staging`                                          | Staging kökü (S3/OBS uzak durum, `terraform.tfvars.example`, `backend.hcl.example`)                                                                |
-| `docker-compose.prod.yml`, `caddy/Caddyfile`, `.env.prod.example` | Uygulama süreçleri, TLS, sağlık kontrolleri, `restart: unless-stopped`                                                                             |
-| `console/`                                                        | Konsol imajı (Vite statik → Caddy, root değil, :8080)                                                                                              |
-| `monitoring/`                                                     | İzleme compose'u, Prometheus kuralları, Alertmanager, Loki/Promtail, Grafana provizyonu, postgres_exporter iş sorguları                            |
-| `backup/`                                                         | `pg-backup.sh`, `restore-drill.sh`, yedek kabı                                                                                                     |
-| `synthetic/probe.mjs`                                             | Sentetik sonda (bağımlılıksız Node 20)                                                                                                             |
-| `helm/yanimda`                                                    | Faz 3 chart'ı (API, worker, konsol, aile web, Keycloak, Timescale, Redis, MinIO, CronJob, Ingress, NetworkPolicy, PDB, ServiceMonitor)             |
+| Yol                                                               | İçerik                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terraform/modules/yanimda-env`                                   | VPC, güvenlik grupları, ECS + veri diski + EIP, RDS PG (HA, yedek/PITR, hesap, veritabanı, `timescaledb`/`pgcrypto`, yalnız `hostssl`), DCS Redis (TLS + ACL hesapları), OBS kovaları, DNS, KMS anahtarı (disk/RDS/OBS şifreleme), chrony |
+| `terraform/envs/staging`                                          | Staging kökü (S3/OBS uzak durum, `terraform.tfvars.example`, `backend.hcl.example`)                                                                                                                                                       |
+| `docker-compose.prod.yml`, `caddy/Caddyfile`, `.env.prod.example` | Uygulama süreçleri, TLS, sağlık kontrolleri, `restart: unless-stopped`                                                                                                                                                                    |
+| `console/`                                                        | Konsol imajı (Vite statik → Caddy, root değil, :8080)                                                                                                                                                                                     |
+| `monitoring/`                                                     | İzleme compose'u, Prometheus kuralları, Alertmanager, Loki/Promtail, Grafana provizyonu, postgres_exporter iş sorguları                                                                                                                   |
+| `backup/`                                                         | `pg-backup.sh`, `restore-drill.sh`, yedek kabı                                                                                                                                                                                            |
+| `synthetic/probe.mjs`                                             | Sentetik sonda (bağımlılıksız Node 20)                                                                                                                                                                                                    |
+| `helm/yanimda`                                                    | Faz 3 chart'ı (API, worker, konsol, aile web, Keycloak, Timescale, Redis, MinIO, CronJob, Ingress, NetworkPolicy, PDB, ServiceMonitor)                                                                                                    |
 
 ## Bulut seçimi: Huawei Cloud İstanbul (`tr-west-1`)
 
@@ -55,6 +55,10 @@ için yalnız modül yeniden yazılır).
 3. EIP hat tipi (`eip_type`, varsayılan `5_bgp`), ECS/RDS/DCS flavor'larının bölgede bulunması (veri kaynakları
    `plan`'da boş dönerse değişkenleri ayarlayın), Ubuntu 22.04 imaj adı.
 4. RDS'te `pg_read_all_data` / `pg_monitor` rollerinin yedek ve izleme kullanıcılarına verilebildiği.
+5. T-081: `huaweicloud_rds_pg_hba` (yalnız `hostssl` + SCRAM, alt ağdan) RDS'in kendi yönetim girdilerini bozmuyor;
+   DCS flavor'ı `ssl_enable` ve ACL hesaplarını (`huaweicloud_dcs_account`) destekliyor; KMS anahtarı ECS/EVS/RDS/OBS
+   tarafından kullanılabiliyor (DEW yetkileri). RDS ve DCS CA sertifikaları konsoldan indirilip `INTERNAL_CA_FILE`'a
+   birleştirilir.
 
 ## Terraform (çalıştırılmadı)
 
@@ -94,10 +98,50 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
 - **Migration**: her süreç açılışta çalıştırır; advisory lock sıraya sokar.
 - **Sırlar**: `.env.prod` tek dosya; api/worker kapları `env_file` ile alır. Sentetik ve yedek kapları yalnız kendi
   değişkenlerini alır. Prod'da `.env.prod` sır yöneticisinden (Huawei CSMS / Vault) üretilmeli.
-- **Keycloak**: aynı RDS'te `keycloak` veritabanı + kullanıcı. `infra/keycloak/realm-*.json` ilk açılışta içe aktarılır;
-  bu dosyalar **geliştirme yönlendirme adresleri** içerir (`localhost:5173`) → konsol istemcisine
-  `https://console.<domain>/*` eklenmeli (realm üretim katmanı: Takip). Yönetim konsolu Caddy'de
-  `KC_ADMIN_ALLOW_CIDRS` dışına 403.
+- **Keycloak**: aynı RDS'te `keycloak` veritabanı + kullanıcı. Ayrıntı aşağıda "Keycloak (T-081)". Yönetim konsolu
+  Caddy'de `KC_ADMIN_ALLOW_CIDRS` dışına 403.
+- **İç TLS** (T-081): `INTERNAL_CA_FILE` (RDS + DCS sunucu CA'ları, PEM) tüm Postgres/Redis istemcilerine bağlanır;
+  `DATABASE_URL`/`KC_DB_URL`/`BACKUP_DATABASE_URL`/`PG_EXPORTER_DSN` `sslmode=verify-full`, `REDIS_URL` `rediss://` +
+  DCS ACL hesabı. API kaplarında ayrıca `PGSSLMODE=verify-full` (URL'de sslmode unutulsa da TLS).
+
+## Keycloak (T-081)
+
+- **Realm yer tutucuları**: `realm-*.json` içindeki `${YANIMDA_*:varsayılan}` değerleri Keycloak içe aktarmada ortam
+  değişkeninden çözülür. Varsayılanlar geliştirme adresleridir (localhost); prod compose ve Helm bunları
+  `https://console.<domain>`, `https://aile.<domain>`, uygulama şeması ve `sslRequired=all` ile verir — üretim
+  realm'inde geliştirme adresi kalmaz (`keycloak.test.mjs` denetler; Keycloak 26.0.8'de doğrulandı).
+- **İçe aktarma yalnız realm yoksa** çalışır (`--import-realm`, var olan realm atlanır). Var olan ortamda politika
+  değişikliği (kara liste, oturum süreleri, `revokeRefreshToken`) yönetici API'siyle veya
+  `kc.sh import --file … --override true` ile (bakım penceresinde) uygulanır.
+- **Giriş teması** `themes/yanimda` (keycloak.v2 üstüne): kayıt ve parola güncelleme sayfalarında parola gücü
+  göstergesi; metinler `packages/messages/tr.json` "auth" kanalından `node infra/keycloak/generate.mjs` ile üretilir,
+  CI `--check` ile kaymayı yakalar. Compose'da dizin, Helm'de ConfigMap olarak bağlanır.
+- **Oturum süreleri** ve risk kabulü: `docs/security/altyapi-kanit.md` "Oturum süreleri".
+
+### Kara liste
+
+`password-blacklists/yanimda-blacklist.txt` (~36 bin girdi, ≥ 12 karakter, küçük harf) bu projenin kurallarından
+üretilir (lisans sorunu yok): yaygın sözcük + yıl/rakam/simge, klavye yürüyüşleri, rakam dizileri, Türkçe yaygın
+sözcükler. Keycloak parolayı küçük harfe çevirip arar. İki realm'de `passwordBlacklist(yanimda-blacklist.txt)`;
+dosya `/opt/keycloak/data/password-blacklists/` altına bağlanır (dev/prod compose, Helm, CI). Dosya yoksa realm içe
+aktarma başarısız olur.
+
+Gerçek ihlal listesiyle genişletme (önerilir, sürüm hazırlığında bir kez; ağ gerektirir, repoya girmez):
+
+```sh
+# Kaynak: SecLists (MIT) — Passwords/Common-Credentials/10-million-password-list-top-1000000.txt, sabit commit.
+# Alternatif: NCSC "PwnedPasswordsTop100k" (HIBP, CC BY 4.0). İndirilen dosyanın sha256'sı sürüm notuna yazılır.
+curl -fsSLo /tmp/breached.txt "https://raw.githubusercontent.com/danielmiessler/SecLists/<commit>/Passwords/Common-Credentials/10-million-password-list-top-1000000.txt"
+mkdir -p /srv/yanimda/password-blacklists
+node infra/keycloak/generate.mjs --breached /tmp/breached.txt --out /srv/yanimda/password-blacklists/yanimda-blacklist.txt
+# compose: KC_BLACKLIST_DIR=/srv/yanimda/password-blacklists
+# Helm (≤ 1 MiB): kubectl create configmap yanimda-password-blacklist --from-file=/srv/yanimda/password-blacklists/yanimda-blacklist.txt
+#                 --set keycloak.passwordBlacklist.existingConfigMap=yanimda-password-blacklist
+```
+
+≥ 12 karakter süzgecinden sonra milyonluk listeden kalan girdi sayısı sınırlıdır; ConfigMap 1 MiB sınırını aşarsa
+dosya bir PVC/imaj katmanıyla bağlanır.
+
 - `family-web`: `--profile family-web` ile; imaj hazır değil (yer tutucu).
 
 ## Sentetik izleme
@@ -183,15 +227,27 @@ durum sayfası.
 
 ```sh
 kubectl create configmap yanimda-realms --from-file=infra/keycloak/realm-operations.json --from-file=infra/keycloak/realm-consumers.json
+kubectl create configmap yanimda-internal-ca --from-file=ca.pem=/path/to/rds-dcs-ca.pem   # staging/prod (global.internalCa)
 helm upgrade --install yanimda infra/helm/yanimda -n yanimda-staging -f infra/helm/yanimda/values-staging.yaml
 ```
 
 - Sırlar **yalnız** `existingSecret` adlarıyla (`yanimda-api`, `yanimda-keycloak`, `yanimda-synthetic`, küme içi
-  depolar açıksa `yanimda-timescaledb`/`-redis`/`-minio`); anahtar listesi `values.yaml` yorumlarında. Önerilen:
-  External Secrets Operator (Huawei CSMS/Vault → Secret) veya SOPS (age) ile şifreli manifest + Flux/Argo.
+  depolar açıksa `yanimda-timescaledb`/`-redis`/`-minio`); anahtar listesi `values.yaml` yorumlarında.
+  `externalSecrets.enabled=true` (staging/prod) → her biri için `ExternalSecret` (External Secrets Operator, Vault KV
+  v2 `yanimda/<ad alanı>/<secret>`; `vault.create=true` ad alanında Kubernetes kimlik doğrulamalı `SecretStore`).
+- `global.environment=production` (`values-production.yaml`) → `templates/validate.yaml` şunları zorlar: küme içi
+  depolar kapalı, NetworkPolicy giriş+çıkış, External Secrets, iç CA, Keycloak `sslRequired=all`, JDBC
+  `verify-full`, Keycloak salt okunur kök, MFA açık, simülatör kapalı, `force-ssl-redirect`.
 - Üretimde `timescaledb/redis/minio.enabled=false` → yönetilen hizmetler (`DATABASE_URL`/`REDIS_URL`/`S3_*` Secret'ta).
+  `global.internalCa.configMap` bağlıysa API'de `PGSSLMODE=verify-full` + `NODE_EXTRA_CA_CERTS`. Küme içi Redis
+  (geliştirme) varsayılan kullanıcısı kapalı, `redis.aclUsername` ACL kullanıcısı.
 - NetworkPolicy: sürümde varsayılan red; HTTP yalnız ingress denetleyici ad alanından; Postgres/Redis/MinIO yalnız
   `api`/`worker`/`keycloak`'tan; metrik portları yalnız `monitoring` ad alanından. Ingress'te metrik yolu yok.
+  `networkPolicy.egress.enabled` (staging/prod): çıkış yalnız DNS, veri depoları (`datastoreCidrs`), dış HTTPS, SMTP.
+- Giriş denetleyicisi TLS politikası: `helm/ingress-nginx-values.yaml`. Küme düzeyi: `k8s/argocd-yanimda-staging.yaml`
+  (GitOps, selfHeal), `k8s/kyverno-verify-images.yaml` (cosign imzasız imaj reddi).
+- Pod'lar: `runAsNonRoot`, seccomp `RuntimeDefault`, `drop: [ALL]`, `allowPrivilegeEscalation: false`; salt okunur kök
+  api/worker/konsol/sentetik/redis/Keycloak (Keycloak: initContainer Quarkus çıktısını emptyDir'e kopyalar).
 - `files/` altındaki `probe.mjs`, `alerts.yml`, `konsol.json` tek kaynağa sembolik bağdır (Helm içeriği dahil eder).
 - Prob'lar: API TCP (Nest portu ancak tüm modüller ve migration hazır olunca açar), Keycloak `/health/*` (9000).
 
@@ -204,8 +260,11 @@ docker run --rm -v "$R":/w -w /w/infra/terraform/envs/staging hashicorp/terrafor
 docker run --rm -v "$R":/w -w /w/infra/terraform/envs/staging hashicorp/terraform:1.9.8 validate
 docker run --rm -v "$R/infra":/infra -w /infra/helm alpine/helm:3.16.2 lint yanimda --strict
 docker run --rm -v "$R/infra":/infra -w /infra/helm alpine/helm:3.16.2 lint yanimda --strict -f yanimda/values-staging.yaml
+docker run --rm -v "$R/infra":/infra -w /infra/helm alpine/helm:3.16.2 lint yanimda --strict -f yanimda/values-production.yaml
 docker run --rm -v "$R/infra":/infra -w /infra/helm alpine/helm:3.16.2 template yanimda yanimda -f yanimda/values-staging.yaml \
   | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0 -
+cat infra/k8s/*.yaml | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary -ignore-missing-schemas -
+node infra/keycloak/generate.mjs --check && node --test infra/keycloak/keycloak.test.mjs
 docker run --rm -v "$R/infra/monitoring":/m -v "$R/infra/monitoring/alerts.yml":/etc/prometheus/alerts.yml \
   --entrypoint promtool prom/prometheus:v2.55.1 check config /m/prometheus.yml
 docker run --rm -v "$R/infra/monitoring":/m --entrypoint promtool prom/prometheus:v2.55.1 check rules /m/alerts.yml
@@ -230,6 +289,8 @@ gerçek kanallara gönderimi, Uptime Kuma yapılandırması (arayüzden).
   durum etiketiyle), bildirim kanal hataları — şimdilik postgres_exporter sorgularıyla.
 - **Sentetik bayrağı + otomatik kapatma** (TEST olayı operatöre gösterilmeden ölçülüp kapatılır) — 7 gün kabulünün ön
   koşulu.
-- Keycloak realm **üretim katmanı** (yönlendirme adresleri, `sslRequired=all`, `yanimda-synthetic` istemcisi).
-- Egress NetworkPolicy (Twilio/FCM/APNs/OBS izin listesi); konsol için CSP başlığı (Twilio Voice SDK uçlarıyla).
+- Keycloak `yanimda-synthetic` istemcisi realm dosyasında (yönlendirme adresleri ve `sslRequired` T-081'de yer
+  tutucuya taşındı).
+- Küme içi mTLS (servis ağı) ve Prometheus→metrik TLS; çıkışta sağlayıcı bazlı (FQDN) izin listesi (Cilium/Calico
+  FQDN politikası) — bugün dış HTTPS 443'e CIDR ile açık.
 - `envs/prod`, CI'da imaj imzalama (cosign) ve Trivy taraması; compose → Helm geçişinde External Secrets kurulumu.

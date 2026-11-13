@@ -154,6 +154,12 @@ describe('bayrak kapalı: davranış bugünküyle aynı (S6 giriş, S10.2)', () 
       { kind: 'SPO2', n: 2 },
     ]);
     await expect(vitals.weeklyTrends(P)).rejects.toMatchObject({ status: 404 });
+    // Kapalıyken ayar yazılmaz (GET `enabled: false` döner; PUT 404, health satırı yok).
+    await expect(
+      vitals.setSettings(P, { lowHr: 35, familyConsent: true, doctorNote: true }, 'fam-1', t(0)),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(vitals.setSettings(P, { trendsMuted: true }, 'fam-1', t(0))).rejects.toMatchObject({ status: 404 });
+    expect((await vitals.settings(P)).enabled).toBe(false);
     await expect(
       vitals.eventVitals('0190c000-0000-7000-8000-000000000999', { sub: 'op', supervisor: false }),
     ).rejects.toMatchObject({

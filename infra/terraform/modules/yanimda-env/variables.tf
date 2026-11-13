@@ -221,3 +221,40 @@ variable "dns_email" {
   type    = string
   default = "ops@example.com"
 }
+
+# --- T-081 güvenlik ---
+variable "kms_key_id" {
+  description = "Var olan DEW/KMS anahtar kimliği. Boş: modül müşteri yönetimli anahtar oluşturur (yıllık rotasyon)."
+  type        = string
+  default     = ""
+}
+
+variable "ntp_servers" {
+  description = "VPS saat eşitleme (chrony) sunucuları; Huawei Cloud iç NTP. ASVS 7.3.4"
+  type        = list(string)
+  default     = ["ntp.myhuaweicloud.com"]
+}
+
+variable "redis_app_user" {
+  description = "DCS ACL hesabı (okuma-yazma): API/worker REDIS_URL"
+  type        = string
+  default     = "yanimda-app"
+}
+
+variable "redis_app_password" {
+  description = "TF_VAR_redis_app_password (sır deposundan)"
+  type        = string
+  sensitive   = true
+}
+
+variable "redis_monitor_user" {
+  description = "DCS ACL hesabı (salt okunur): redis_exporter"
+  type        = string
+  default     = "yanimda-monitor"
+}
+
+variable "redis_monitor_password" {
+  description = "TF_VAR_redis_monitor_password (sır deposundan)"
+  type        = string
+  sensitive   = true
+}

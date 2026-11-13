@@ -8,7 +8,19 @@
 	}
 }
 
+# T-081 (ASVS 9.1.2, 9.1.3): yalnız TLS 1.2/1.3; 1.2'de yalnız ileri gizlilikli (ECDHE) AEAD takımları. TLS 1.3
+# takımları Go'da sabit (AES-GCM, ChaCha20-Poly1305). OCSP zımbalama Caddy varsayılanı (CA OCSP sunuyorsa; Let's
+# Encrypt 2025'te OCSP'yi bıraktı, iptal CRL ile). Gerçek ortamda testssl.sh ile doğrulanır (docs/security/altyapi-kanit.md).
+(tls_policy) {
+	tls {
+		protocols tls1.2 tls1.3
+		ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+		curves x25519 secp256r1 secp384r1
+	}
+}
+
 (security_headers) {
+	import tls_policy
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

@@ -124,21 +124,28 @@ services:
     logging: *logging
 
   # Yönetilen Postgres: bağlantı + iş metrikleri (outbox birikimi, kuyruk bekleme, CPaaS/bildirim hata oranı).
+  # T-081: DSN sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem (.env.prod.example); iç CA infra/tls/.
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
     restart: unless-stopped
     environment:
       DATA_SOURCE_NAME: ${PG_EXPORTER_DSN:?PG_EXPORTER_DSN gerekli}
       PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yml
-    volumes: ['./postgres-exporter-queries.yml:/etc/postgres-exporter/queries.yml:ro']
+    volumes:
+      - ./postgres-exporter-queries.yml:/etc/postgres-exporter/queries.yml:ro
+      - ${INTERNAL_CA_FILE:-../tls/ca.pem}:/etc/yanimda/tls/ca.pem:ro
     logging: *logging
 
+  # T-081: DCS salt okunur ACL hesabı + TLS (rediss://, iç CA ile doğrulama).
   redis-exporter:
     image: oliver006/redis_exporter:v1.66.0
     restart: unless-stopped
     environment:
       REDIS_ADDR: ${REDIS_EXPORTER_ADDR:?REDIS_EXPORTER_ADDR gerekli}
+      REDIS_USER: ${REDIS_EXPORTER_USER:-}
       REDIS_PASSWORD: ${REDIS_EXPORTER_PASSWORD:-}
+      REDIS_EXPORTER_TLS_CA_CERT_FILE: /etc/yanimda/tls/ca.pem
+    volumes: ['${INTERNAL_CA_FILE:-../tls/ca.pem}:/etc/yanimda/tls/ca.pem:ro']
     logging: *logging
 
   blackbox-exporter:

@@ -585,6 +585,21 @@ export interface WeeklyTrendsView {
   outcomes: { eventId: string; type: EventType; outcome: string; at: string }[];
 }
 
+/** GET|PUT /protected-persons/{id}/vital-settings (S6.7). Eşik null → genel eşik (`defaults`). */
+export interface VitalSettings {
+  /** Değer kuralları açık mı; kapalıyken PUT 404. */
+  enabled: boolean;
+  lowHr: number | null;
+  highHr: number | null;
+  spo2Low: number | null;
+  copd: boolean;
+  trendsMuted: boolean;
+  familyConsentAt: string | null;
+  doctorNote: boolean;
+  learningUntil: string | null;
+  defaults: { lowHr: number; highHr: number; spo2Low: number; spo2LowCopd: number };
+}
+
 /** GET /supervisor/vital-reviews (S6.7): amirin eşik incelemesi kuyruğu; değer yok. */
 export interface VitalReview {
   id: string;
@@ -612,4 +627,151 @@ export interface BridgedDeviceView {
   bridgeDeviceId: string;
   nickname: string | null;
   createdAt: string;
+}
+
+// ---- T-081 (ASVS 8.3.2, KVKK m.11) kişisel veri dışa aktarma: GET /family/data-export ----
+
+/**
+ * Dışa aktarmada bilerek verilmeyenler (docs/security/saklama.md "Dışa aktarma"): tıbbi özet içeriği (yalnız olay
+ * anında operatöre çözülür), rehber numarasının tamamı (aile ekranı son 2 hane), değer (health) verisi, görüşme
+ * kaydı, denetim kaydı, operatör notları ve kimlikleri, ham konum geçmişi. Kodlar makine içindir; metin yok.
+ */
+export type DataExportWithheld =
+  | 'MEDICAL_CONTENT'
+  | 'CONTACT_PHONE_FULL'
+  | 'HEALTH_VITALS'
+  | 'CALL_RECORDINGS'
+  | 'AUDIT_LOG'
+  | 'OPERATOR_DATA'
+  | 'LOCATION_HISTORY';
+
+/** GET /protected-persons/{id} ile aynı alanlar (aileye görünen profil). */
+export interface DataExportProfile {
+  id: string;
+  displayName: string;
+  birthYear: number | null;
+  language: string;
+  timezone: string;
+  status: string;
+  learningModeUntil: string | null;
+  address: {
+    line: string;
+    district: string | null;
+    city: string;
+    postalCode: string | null;
+    lat: number | null;
+    lng: number | null;
+  } | null;
+  doorAccessNote: string | null;
+  myRole: 'OWNER' | 'MEMBER' | null;
+  dailySummary: boolean;
+  locationSharing: boolean;
+  hearingSpeechImpaired: boolean;
+  holdMode: { kind: 'HOSPITAL' | 'TRAVEL'; until: string } | null;
+  coverageToleranceMin: number;
+  /** Yalnız var/yok ve rıza zamanı; içerik dışa aktarılmaz (MEDICAL_CONTENT). */
+  medical: { present: boolean; consentAt: string | null; updatedAt: string | null };
+  createdAt: string;
+}
+
+export interface DataExportPerson {
+  profile: DataExportProfile;
+  /** GET /protected-persons/{id}/members ile aynı (başka üyenin kimliği yok). */
+  members: { id: string; role: 'OWNER' | 'MEMBER'; relation: string | null; createdAt: string; isMe: boolean }[];
+  /** GET /protected-persons/{id}/contacts ile aynı (numaranın son 2 hanesi). */
+  contacts: {
+    id: string;
+    role: 'ELDER' | 'WATCH' | 'CONTACT' | 'NEIGHBOR';
+    priority: number;
+    displayName: string | null;
+    phoneLast2: string;
+    hasKey: boolean;
+    arrivalMin: number | null;
+    reachableHours: string | null;
+  }[];
+  /** Push token'ı ve cihaz numarası yok. */
+  devices: {
+    id: string;
+    kind: string;
+    modelId: string | null;
+    category: string | null;
+    tier: string | null;
+    nickname: string | null;
+    bodyLocation: string | null;
+    osVersion: string | null;
+    appVersion: string | null;
+    enrolledAt: string | null;
+    lastSeenAt: string | null;
+    revokedAt: string | null;
+    retiredAt: string | null;
+  }[];
+  /** Olay özeti (en yeni önce, en çok 1000): konum, operatör ve notlar yok. */
+  events: {
+    id: string;
+    type: string;
+    priority: number;
+    isTest: boolean;
+    state: string;
+    createdAt: string;
+    closedAt: string | null;
+    outcome: string | null;
+  }[];
+  /** Günlük özet (saklama süresi içindeki günler). */
+  dailySummaries: {
+    day: string;
+    steps: number | null;
+    hrMin: number | null;
+    hrAvg: number | null;
+    hrMax: number | null;
+    wristMinutes: number;
+  }[];
+  subscriptions: {
+    plan: string;
+    status: string;
+    countryCode: string;
+    startedAt: string;
+    trialEndsAt: string | null;
+    renewsAt: string | null;
+    canceledAt: string | null;
+  }[];
+  consents: {
+    /** Abonelik başına KVKK aydınlatma sürümü ve açık rıza zamanı. */
+    kvkk: { noticeVersion: string | null; explicitConsentAt: string | null }[];
+    /** Tıbbi özet rızası (özet silinince rıza kaydı da kalkar). */
+    medicalConsentAt: string | null;
+    /** Üretici bulutu bağlantıları: aktarım dayanağı ve bölge (hesap kimliği yok). */
+    vendorLinks: {
+      partner: string;
+      dataRegion: string;
+      consentBasis: string;
+      consentAt: string | null;
+      createdAt: string;
+      revokedAt: string | null;
+    }[];
+  };
+}
+
+export interface DataExport {
+  format: 'yanimda.data-export.v1';
+  generatedAt: string;
+  account: {
+    /** consumers realm `sub`. Ad, e-posta, telefon DB'de değil, Keycloak'ta (hesap konsolunda görülür). */
+    subject: string;
+    memberships: { protectedPersonId: string; role: 'OWNER' | 'MEMBER'; relation: string | null; since: string }[];
+    pushTargets: { platform: string; updatedAt: string }[];
+    memberInvitesCreated: { protectedPersonId: string; createdAt: string; expiresAt: string; usedAt: string | null }[];
+    feedback: { eventId: string; real: boolean; at: string }[];
+    /** Bu hesabın push hedeflerine giden bildirimler (en yeni önce, en çok 1000): kod, metin yok. */
+    notifications: {
+      code: string;
+      channel: string;
+      status: string;
+      protectedPersonId: string;
+      eventId: string | null;
+      createdAt: string;
+      deliveredAt: string | null;
+    }[];
+  };
+  persons: DataExportPerson[];
+  withheld: DataExportWithheld[];
 }

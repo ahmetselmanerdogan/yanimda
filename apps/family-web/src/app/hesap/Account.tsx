@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Members } from '@/components/Members';
 import { api, ApiError } from '@/lib/api';
 import { openCheckout } from '@/lib/checkout';
+import { dataExportError, exportBlob, saveBlob } from '@/lib/data-export';
 import { cancellable, errorCode, needsPayment, statusLine, type SubscriptionView } from '@/lib/flow';
 import { t } from '@/lib/i18n';
 import type { MemberRole } from '@/lib/members';
@@ -68,6 +69,24 @@ export function Account() {
       setNotice('F-WEB-CANCELED');
     } catch (e) {
       setError(e instanceof ApiError ? errorCode(e.status, 'cancel') : 'F-WEB-ERROR');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** T-081 (ASVS 8.3.2, KVKK m.11): hesabın ve kişilerinin verisi tek JSON dosyası. */
+  async function exportData() {
+    if (!token) return;
+    setBusy('export');
+    setError(null);
+    setNotice(null);
+    try {
+      saveBlob(exportBlob(await api.dataExport(token)));
+      setNotice('F-WEB-DATA-EXPORT-DONE');
+    } catch (e) {
+      const r = dataExportError(e);
+      if (r.relogin) setToken(null);
+      else setError(r.code);
     } finally {
       setBusy(null);
     }
@@ -181,6 +200,15 @@ export function Account() {
         );
       })}
       <div id="iyzipay-checkout-form" className="responsive" ref={box} />
+      <section className="card" aria-labelledby="data-export-title">
+        <h2 id="data-export-title">{t('F-WEB-DATA-EXPORT')}</h2>
+        <p>{t('F-WEB-DATA-EXPORT-HINT')}</p>
+        <div className="row">
+          <button type="button" className="secondary" disabled={busy === 'export'} onClick={() => void exportData()}>
+            {t('F-WEB-DATA-EXPORT')}
+          </button>
+        </div>
+      </section>
       <div className="row">
         <Link href="/hesap/davet" className="button secondary">
           {t('F-WEB-MEMBERS-HAVE-CODE')}

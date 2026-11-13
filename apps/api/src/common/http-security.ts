@@ -35,6 +35,49 @@ export function securityHeaders(_req: unknown, res: Res, next: Next) {
   next();
 }
 
+/**
+ * T-081 (ASVS 13.1.5, 13.2.5) içerik türü denetimi. Gövdeli her istek yalnız `application/json` olabilir (Express
+ * JSON ayrıştırıcısının ayrıştırdığı tek tür; `+json` türleri ayrıştırılmadığı için kabul edilmez); form (`application/x-www-form-urlencoded`) yalnız Twilio / CPaaS ve iyzico geri
+ * çağrısı gibi form gönderen webhook rotalarında — orada da yalnız form. Aksi 415 (problem+json). Express gövde
+ * ayrıştırıcılarından önce çalışır: JSON uçlarında urlencoded gövde hiç ayrıştırılmaz. Gövdesiz istek serbest.
+ */
+const FORM_ROUTES = [
+  /^\/v1\/webhooks\/cpaas\/[^/]+\/?$/i,
+  /^\/v1\/webhooks\/cpaas-inbound\/[^/]+\/?$/i,
+  /^\/v1\/webhooks\/screening\/[^/]+\/?$/i,
+  /^\/v1\/webhooks\/notify\/sms\/?$/i,
+  /^\/v1\/payments\/iyzico\/callback\/?$/i,
+];
+const JSON_TYPE = 'application/json';
+const FORM_TYPE = 'application/x-www-form-urlencoded';
+
+type BodyReq = { headers: Record<string, string | string[] | undefined>; originalUrl?: string; url?: string };
+type ProblemRes = { statusCode: number; setHeader(k: string, v: string): unknown; end(body: string): unknown };
+
+const hasBody = (req: BodyReq) =>
+  req.headers['transfer-encoding'] !== undefined ||
+  (req.headers['content-length'] !== undefined && Number(req.headers['content-length']) !== 0);
+
+export const isFormRoute = (path: string) => FORM_ROUTES.some((r) => r.test(path));
+
+export function contentTypeGuard(req: BodyReq, res: ProblemRes, next: Next) {
+  if (!hasBody(req)) return next();
+  const raw = req.headers['content-type'];
+  const type = (Array.isArray(raw) ? raw[0] : raw)?.split(';')[0]?.trim().toLowerCase() ?? '';
+  const path = (req.originalUrl ?? req.url ?? '').split('?')[0]!;
+  if (type === (isFormRoute(path) ? FORM_TYPE : JSON_TYPE)) return next();
+  res.statusCode = 415;
+  res.setHeader('Content-Type', 'application/problem+json');
+  res.end(
+    JSON.stringify({
+      type: 'about:blank',
+      title: 'UNSUPPORTED_MEDIA_TYPE',
+      status: 415,
+      detail: 'Desteklenmeyen içerik türü',
+    }),
+  );
+}
+
 /** main.ts: Express sürüm başlığı kapalı, vekil arkasında gerçek istemci IP'si (`TRUST_PROXY` atlama sayısı). */
 export function configureHttpSecurity(app: INestApplication, env: NodeJS.ProcessEnv = process.env) {
   const express = app.getHttpAdapter().getInstance() as {
@@ -46,4 +89,6 @@ export function configureHttpSecurity(app: INestApplication, env: NodeJS.Process
   if (Number.isInteger(hops) && hops > 0) express.set('trust proxy', hops);
   app.use(requestId);
   app.use(securityHeaders);
+  // Nest gövde ayrıştırıcılarını init()'te ekler; app.use ile eklenen bu denetim onlardan önce çalışır.
+  app.use(contentTypeGuard);
 }
