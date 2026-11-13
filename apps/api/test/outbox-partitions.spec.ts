@@ -38,6 +38,15 @@ const twoPeople = async (): Promise<[string, string]> => {
   for (let i = 0; i < 100; i++) if ((await partOf(`pp-b${i}`)) !== pa) return [a, `pp-b${i}`];
   throw new Error('farklı bölüm bulunamadı');
 };
+/** Aynı bölüme düşen iki kişi kimliği. */
+const samePartition = async (): Promise<[string, string]> => {
+  const a = 'pp-s';
+  const pa = await partOf(a);
+  for (let i = 0; i < 2000; i++) if ((await partOf(`pp-t${i}`)) === pa) return [a, `pp-t${i}`];
+  throw new Error('aynı bölüm bulunamadı');
+};
+const label = (a: string) => (e: { payload: Signal }) =>
+  `${e.payload.protectedPersonId === a ? 'A' : 'B'}:${e.payload.kind}`;
 const deliverAll = async (t?: number) => h.worker(t === undefined ? {} : { now: () => new Date(t) }).drain();
 
 describe('OutboxWorker bölümleri: sıra kişi başına, kişiler birbirini bekletmez', () => {
@@ -131,6 +140,83 @@ describe('OutboxWorker bölümleri: sıra kişi başına, kişiler birbirini bek
       WHERE event.outbox_lease.until < now() OR event.outbox_lease.owner = EXCLUDED.owner
       RETURNING owner`);
     expect(old).toHaveLength(0);
+  });
+});
+
+describe('OutboxWorker önceliği: alarm rutin ölçümlerin arkasında beklemez, kişi sırası bozulmaz', () => {
+  it('urgent: rutin ölçüm sinyali değil; olay konuları her zaman acil', async () => {
+    await h.signals.accept([sig('HEARTBEAT'), sig('LOCATION'), sig('BATTERY', { value: 50 }), sig('SOS'), sig('OK')]);
+    const rows = await h.rows<{ kind: string; urgent: boolean; pkey: string }>(
+      "SELECT envelope#>>'{payload,kind}' kind, urgent, pkey FROM event.outbox ORDER BY id",
+    );
+    expect(rows.map((r) => [r.kind, r.urgent])).toEqual([
+      ['HEARTBEAT', false],
+      ['LOCATION', false],
+      ['BATTERY', false],
+      ['SOS', true],
+      ['OK', true],
+    ]);
+    expect(new Set(rows.map((r) => r.pkey)).size).toBe(1);
+  });
+
+  it('aynı bölümde: SOS’u olan kişi (önceki heartbeat’iyle, sırasıyla) başka kişinin 150 heartbeat’inden önce', async () => {
+    const [a, b] = await samePartition();
+    const seen: string[] = [];
+    h.bus.subscribe<Signal>('signal.received', (e) => void seen.push(label(a)(e)));
+    await h.signals.accept(Array.from({ length: 150 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.signals.accept([sig('HEARTBEAT', { protectedPersonId: b }), sig('SOS', { protectedPersonId: b })]);
+    await h.worker({ concurrency: 1 }).drain();
+    expect(seen.slice(0, 2)).toEqual(['B:HEARTBEAT', 'B:SOS']);
+    expect(seen).toHaveLength(152);
+  });
+
+  it('aynı bölümde: takılan kişi yalnız kendini bekletir; diğer kişinin SOS’u ve heartbeat’i ilerler', async () => {
+    const [a, b] = await samePartition();
+    const seen: string[] = [];
+    let down = true;
+    h.bus.subscribe<Signal>('signal.received', (e) => {
+      if (down && e.payload.protectedPersonId === a) throw transient();
+      seen.push(label(a)(e));
+    });
+    await h.signals.accept([sig('FALL', { protectedPersonId: a }), sig('CANCEL', { protectedPersonId: a })]);
+    await h.signals.accept([sig('HEARTBEAT', { protectedPersonId: b }), sig('SOS', { protectedPersonId: b })]);
+    let t = Date.now();
+    await deliverAll(t);
+    expect(seen).toEqual(['B:HEARTBEAT', 'B:SOS']);
+    down = false;
+    t += 10 * 60_000;
+    await deliverAll(t);
+    expect(seen).toEqual(['B:HEARTBEAT', 'B:SOS', 'A:FALL', 'A:CANCEL']);
+  });
+
+  it('acil satırı olan bölüm önce seçilir (tek şerit): başka bölümdeki 300 heartbeat’ten önce SOS', async () => {
+    const [a, b] = await twoPeople();
+    const seen: string[] = [];
+    h.bus.subscribe<Signal>('signal.received', (e) => void seen.push(label(a)(e)));
+    await h.signals.accept(Array.from({ length: 300 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+    await h.worker({ concurrency: 1 }).drain();
+    expect(seen[0]).toBe('B:SOS');
+    expect(seen).toHaveLength(301);
+  });
+
+  it('teslim sürerken gelen SOS, bölümün sırası gelmeden bir sonraki toplu turda alınır', async () => {
+    const [a, b] = await twoPeople();
+    const seen: string[] = [];
+    let injected = false;
+    h.bus.subscribe<Signal>('signal.received', async (e) => {
+      seen.push(label(a)(e));
+      if (!injected && seen.length === 5) {
+        injected = true;
+        await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+      }
+    });
+    await h.signals.accept(Array.from({ length: 400 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.worker({ concurrency: 1, batchSize: 50 }).drain();
+    const at = seen.indexOf('B:SOS');
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThanOrEqual(50); // en geç ilk toplu turun ardından
+    expect(seen).toHaveLength(401);
   });
 });
 

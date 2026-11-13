@@ -65,14 +65,21 @@ export const outbox = eventSchema.table('outbox', {
   transientAttempts: integer('transient_attempts').notNull().default(0),
   nextAttemptAt: timestamptz('next_attempt_at').notNull().defaultNow(),
   lastError: text('last_error'),
-  /**
-   * 0038: core bölümü (kişiye, yoksa zarfın konu kimliğine göre; 0–31). Veritabanı üretir; sıra yalnız bölüm içinde
-   * (kişi başına) korunur, bölümler paralel işlenir.
-   */
+  /** 0038: sıra anahtarı (kişi, yoksa zarfın konu kimliği); aynı anahtarın satırları id sırasıyla teslim edilir. */
+  pkey: text('pkey')
+    .notNull()
+    .generatedAlwaysAs(sql`coalesce(envelope #>> '{payload,protectedPersonId}', envelope ->> 'subjectUserId', '')`),
+  /** 0038: core bölümü (pkey'e göre 0–31). Bölümler paralel işlenir. Veritabanı üretir. */
   part: smallint('part')
     .notNull()
     .generatedAlwaysAs(
       sql`((((hashtext(coalesce(envelope #>> '{payload,protectedPersonId}', envelope ->> 'subjectUserId', ''))) % 32) + 32) % 32)::smallint`,
+    ),
+  /** 0038: rutin ölçüm sinyali değil (alarm, cevap, olay geçişi …): anahtarı bölümde önce işlenir. */
+  urgent: boolean('urgent')
+    .notNull()
+    .generatedAlwaysAs(
+      sql`NOT (topic = 'signal.received' AND coalesce(envelope #>> '{payload,kind}', '') IN ('HEARTBEAT', 'HEART_RATE', 'STEPS', 'LOCATION', 'BATTERY', 'SPO2', 'SKIN_TEMP_DEVIATION'))`,
     ),
 });
 

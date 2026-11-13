@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
 import type { KafkaEnvelope } from '@yanimda/contracts';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 
 import type { Db } from '../db/client';
 import { outbox, outboxDlq, outboxSide } from '../db/schema';
@@ -54,7 +54,9 @@ const FENCE_OWNER = 'partitioned';
  * - Sıra kişi başınadır (0038): satır kişiye göre OUTBOX_PARTITIONS bölümden birine düşer (event.outbox.part). Her
  *   bölümde tek aktif işçi (kira id 100 + bölüm); bölümler aynı süreçte `concurrency` kadar paralel, birden çok API
  *   örneğinde örnekler arasında dağılır. Başarısız satır kendi bölümünün başında bekler; arkasındakiler ondan önce
- *   teslim edilmez (FALL'dan önce CANCEL işlenmesin), başka bölümler (başka kişiler) beklemez.
+ *   teslim edilmez (FALL'dan önce CANCEL işlenmesin); başka kişiler (aynı bölümde bile) beklemez.
+ * - Öncelik: rutin ölçüm dışındaki satır acildir (event.outbox.urgent). Acil satırı olan bölüm önce seçilir ve
+ *   bölümde o kişinin satırları (öncekiler dahil, sırasıyla) önce teslim edilir.
  * - Kira 1 deploy çitidir: bölümlü işçi onu alamazsa (eski sürüm genel FIFO'yla çalışıyor) teslim etmez.
  * - Kira satır başına değil, süresinin üçte biri geçince yenilenir (satır başına bir sorgu daha az).
  * - Yeniden deneme: üstel geri çekilme; `maxAttempts` (5) kalıcı hatadan sonra outbox_dlq'ya taşınır, kuyruk ilerler.
@@ -88,6 +90,8 @@ export class OutboxWorker {
   private readonly leaseMs: number;
   private readonly concurrency: number;
   private fenced = false;
+  /** stop() sonrası süren core turu yeni bölüm almaz (zarif kapanış). Doğrudan drain() çağrılarını etkilemez. */
+  private halted = false;
   /** Bölüm kirasının son alındığı / yenilendiği an (ms). */
   private readonly leasedAt = new Map<number, number>();
   readonly owner = `${process.pid}-${randomUUID()}`;
@@ -112,6 +116,7 @@ export class OutboxWorker {
   start(): void {
     if (!this.stopped) return;
     this.stopped = false;
+    this.halted = false;
     this.unsubscribe = this.outboxBus?.onCommitted(() => this.kick());
     this.schedule(0);
     this.scheduleSide(0);
@@ -119,6 +124,7 @@ export class OutboxWorker {
 
   stop(): void {
     this.stopped = true;
+    this.halted = true;
     this.unsubscribe?.();
     clearTimeout(this.timer);
     clearTimeout(this.sideTimer);
@@ -194,23 +200,47 @@ export class OutboxWorker {
   }
 
   /**
-   * Core: bekleyen bölümler `concurrency` kadar paralel; her bölümden bir toplu tur, sürüyorsa bölüm sıranın sonuna.
-   * Teslim edilen satır sayısı. Eş zamanlı çağrılar aynı turu paylaşır.
+   * Core: bekleyen bölümler `concurrency` şeritte paralel; her bölümden bir toplu tur, sürüyorsa bölüm sıranın sonuna.
+   * Her toplu turdan önce acil satırı olan bölüm (bu turda henüz bitmemiş) sıranın önüne alınır: teslim sürerken gelen
+   * SOS, binlerce rutin satırın bitmesini beklemez. Teslim edilen satır sayısı. Eş zamanlı çağrılar aynı turu paylaşır.
    */
   drainCore(): Promise<number> {
     this.running ??= (async () => {
       try {
         if (!(await this.fence())) return 0;
-        const parts = await this.pendingParts();
+        const queue = await this.pendingParts();
+        const busy = new Set<number>();
+        const done = new Set<number>();
+        const free = (p: number) => !busy.has(p) && !done.has(p);
+        const next = async (): Promise<number | undefined> => {
+          if (this.halted) return undefined;
+          let p = (await this.urgentParts()).find(free);
+          if (p !== undefined) {
+            const i = queue.indexOf(p);
+            if (i >= 0) queue.splice(i, 1);
+          } else
+            while (p === undefined && queue.length) {
+              const q = queue.shift()!;
+              if (free(q)) p = q;
+            }
+          if (this.halted) return undefined;
+          if (p !== undefined) busy.add(p); // await'ten sonra eşzamanlı: iki şerit aynı bölümü alamaz
+          return p;
+        };
         let total = 0;
         const lane = async () => {
-          for (let p = parts.shift(); p !== undefined; p = parts.shift()) {
-            const { delivered, more } = await this.drainPart(p);
-            total += delivered;
-            if (more) parts.push(p);
+          for (let p = await next(); p !== undefined; p = await next()) {
+            try {
+              const { delivered, more } = await this.drainPart(p);
+              total += delivered;
+              if (more) queue.push(p);
+              else done.add(p);
+            } finally {
+              busy.delete(p);
+            }
           }
         };
-        await Promise.all(Array.from({ length: Math.min(this.concurrency, parts.length) }, lane));
+        await Promise.all(Array.from({ length: this.concurrency }, lane));
         return total;
       } finally {
         this.running = undefined;
@@ -231,14 +261,26 @@ export class OutboxWorker {
     return this.fenced;
   }
 
-  /** İşlenmemiş satırı olan bölümler (tek gidiş-dönüş; bölüm başına kısmi indeks yoklaması). */
+  /** İşlenmemiş satırı olan bölümler, acil satırı olanlar önce (tek gidiş-dönüş; kısmi indeks yoklamaları). */
   private async pendingParts(): Promise<number[]> {
     const r = (await this.db.execute(sql`
       SELECT p FROM generate_series(0, ${OUTBOX_PARTITIONS - 1}) AS p
-      WHERE EXISTS (SELECT 1 FROM event.outbox o WHERE o.part = p AND o.processed_at IS NULL)`)) as unknown as {
+      WHERE EXISTS (SELECT 1 FROM event.outbox o WHERE o.part = p AND o.processed_at IS NULL)
+      ORDER BY EXISTS (SELECT 1 FROM event.outbox o WHERE o.part = p AND o.processed_at IS NULL AND o.urgent) DESC, p`)) as unknown as {
       rows: { p: number }[];
     };
     return r.rows.map((x) => Number(x.p));
+  }
+
+  /** Şu an teslim edilebilir acil satırı olan bölümler, en eski acil satır önce (outbox_urgent_pending). */
+  private async urgentParts(): Promise<number[]> {
+    const rows = await this.db
+      .select({ p: outbox.part })
+      .from(outbox)
+      .where(and(isNull(outbox.processedAt), eq(outbox.urgent, true), lte(outbox.nextAttemptAt, this.now())))
+      .groupBy(outbox.part)
+      .orderBy(sql`min(${outbox.id})`);
+    return rows.map((x) => Number(x.p));
   }
 
   /** Bir bölümden bir toplu tur (kirası başka işçideyse boş). */
@@ -281,22 +323,59 @@ export class OutboxWorker {
   }
 
   /**
-   * Teslim transaction DIŞINDA yapılır: aboneler (ör. EventService) kendi transaction'larını açabilir;
-   * işçi bağlantı tutmaz. Teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir (en az bir kez).
+   * Bölümden bir toplu tur. Önce acil satırı olan anahtarlar: o anahtarların bekleyen bütün satırları (acil satırdan
+   * önceki rutin satırlar dahil) id sırasıyla; böylece kişinin sırası bozulmadan alarm öne geçer. Acil iş yoksa (veya
+   * hepsi bekliyorsa) bölümün satırları id sırasıyla. Takılan (geri çekilmedeki) anahtarın arkasındaki satırları bu turda
+   * atlanır; başka anahtarlar ilerler.
    */
   private async drainBatch(p: number): Promise<{ delivered: number; more: boolean }> {
-    const rows = await this.db
-      .select()
-      .from(outbox)
-      .where(and(eq(outbox.part, p), isNull(outbox.processedAt)))
-      .orderBy(asc(outbox.id))
-      .limit(this.batchSize);
+    const pending = and(eq(outbox.part, p), isNull(outbox.processedAt));
+    const blocked = new Set<string>();
+    let delivered = 0;
+    const keys = (
+      await this.db
+        .selectDistinct({ k: outbox.pkey })
+        .from(outbox)
+        .where(and(pending, eq(outbox.urgent, true)))
+        .limit(this.batchSize)
+    ).map((r) => r.k);
+    if (keys.length) {
+      const rows = await this.db
+        .select()
+        .from(outbox)
+        .where(and(pending, inArray(outbox.pkey, keys)))
+        .orderBy(asc(outbox.id))
+        .limit(this.batchSize);
+      const r = await this.deliverRows(p, rows, blocked);
+      if (r.lost) return { delivered: r.delivered, more: false };
+      if (r.delivered > 0) return { delivered: r.delivered, more: true };
+    }
+    const rows = await this.db.select().from(outbox).where(pending).orderBy(asc(outbox.id)).limit(this.batchSize);
+    const r = await this.deliverRows(p, rows, blocked);
+    delivered += r.delivered;
+    return { delivered, more: !r.lost && r.delivered > 0 && rows.length === this.batchSize };
+  }
 
+  /**
+   * Teslim transaction DIŞINDA yapılır: aboneler (ör. EventService) kendi transaction'larını açabilir;
+   * işçi bağlantı tutmaz. Teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir (en az bir kez).
+   * Anahtarın satırı geri çekilmedeyse veya başarısız olursa o anahtar `blocked`'a girer: arkasındaki satırları
+   * ondan önce teslim edilmez (FALL'dan önce CANCEL işlenmesin).
+   */
+  private async deliverRows(
+    p: number,
+    rows: (typeof outbox.$inferSelect)[],
+    blocked: Set<string>,
+  ): Promise<{ delivered: number; lost: boolean }> {
     let delivered = 0;
     for (const row of rows) {
-      if (!(await this.keepLease(p))) return { delivered, more: false }; // kira kaybedildi (çok uzun tur)
+      if (blocked.has(row.pkey)) continue;
+      if (!(await this.keepLease(p))) return { delivered, lost: true }; // kira kaybedildi (çok uzun tur)
       const now = this.now();
-      if (row.nextAttemptAt > now) return { delivered, more: false }; // baştaki satır geri çekilmede: sıra korunur
+      if (row.nextAttemptAt > now) {
+        blocked.add(row.pkey); // anahtarın baştaki satırı geri çekilmede: sıra korunur
+        continue;
+      }
       try {
         await this.bus.deliver(row.topic, row.envelope as KafkaEnvelope<unknown>, 'core');
         const side = this.bus.sideNames(row.topic, row.envelope as KafkaEnvelope<unknown>);
@@ -342,10 +421,10 @@ export class OutboxWorker {
           .where(eq(outbox.id, row.id));
         const n = transient ? `${transientAttempts}/${this.transientMaxAttempts}` : `${attempts}/${this.maxAttempts}`;
         this.log.warn(`Outbox #${row.id} (${row.topic}) teslim edilemedi (${lastError}), deneme ${n}`);
-        return { delivered, more: false };
+        blocked.add(row.pkey);
       }
     }
-    return { delivered, more: rows.length === this.batchSize };
+    return { delivered, lost: false };
   }
 
   /** Side: abone başına sıralı teslim; teslim edilen satır sayısı. Eş zamanlı çağrılar aynı turu paylaşır. */
