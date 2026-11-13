@@ -30,6 +30,10 @@
     "text": "Yanımda arıyor.",
     "action": "Cevapla"
   },
+  "W-CALL-END": {
+    "channel": "watch",
+    "text": "Aramayı bitir"
+  },
   "W-CALL-PHONE": {
     "channel": "watch",
     "text": "Yanımda arıyor. Telefonunuzu açın."
@@ -188,6 +192,10 @@
     "text": "Yardım için 3 saniye basılı tutun.",
     "action": "YARDIM"
   },
+  "P-SOS-HOLD-VO": {
+    "channel": "phone",
+    "text": "Yardım çağırmak için iki kez dokunun."
+  },
   "P-SOS-SENT": {
     "channel": "phone",
     "text": "Yardım çağrılıyor. Operatörümüz birazdan arayacak."
@@ -201,6 +209,10 @@
     "text": "Bir süredir hareket etmediniz. İyi misiniz?",
     "action": "İyiyim"
   },
+  "P-PROMPT-LEFT": {
+    "channel": "phone",
+    "text": "{sec} saniye kaldı."
+  },
   "P-INACT-OK": {
     "channel": "phone",
     "text": "Teşekkürler. İyi olduğunuzu ilettik."
@@ -209,6 +221,10 @@
     "channel": "phone",
     "text": "Aileniz size 6 haneli bir kod gönderdi. Kodu buraya yazın.",
     "action": "Eşleştir"
+  },
+  "P-PAIR-CODE": {
+    "channel": "phone",
+    "text": "Eşleştirme kodu"
   },
   "P-PAIR-WRONG": {
     "channel": "phone",
@@ -4046,7 +4062,8 @@
   },
   "P-PERM-BLUETOOTH-IOS": {
     "channel": "phone",
-    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin."
+    "text": "Sensörlerinize bağlanabilmemiz için Bluetooth'a izin verin.",
+    "action": "İzin ver"
   },
   "O-OEM-LATENCY": {
     "channel": "console",
