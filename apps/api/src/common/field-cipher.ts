@@ -12,6 +12,11 @@ export class FieldCipher {
   private readonly keys = new Map<string, Buffer>();
   private readonly active: string;
 
+  /** Yeni yazımların anahtar kimliği (yeniden şifreleme işi bununla karşılaştırır). */
+  get activeKid(): string {
+    return this.active;
+  }
+
   constructor(spec: string) {
     for (const part of spec
       .split(',')

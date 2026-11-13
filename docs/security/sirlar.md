@@ -70,15 +70,27 @@ Planlı rotasyon (örnek: `k1` → `k2`):
    Yazan hâlâ `k1`. (Bu faz, kayan dağıtım sırasında `k2`'yi henüz bilmeyen bir örneğin `k2` ile yazılmış veriyi
    okuyamaması durumunu önler.)
 3. Tüm örnekler yeni sürümde mi → **Faz 2 — yazanı değiştir:** `FIELD_ENC_KEYS="k2:<yeni>,k1:<eski>"`.
-4. **Yeniden şifreleme:** Kodda yalnız `FieldCipher.isStale()` yardımcısı var; toplu yeniden şifreleme işi **yok**
-   (izleyen kod görevi). O gelene kadar eski anahtar kaldırılamaz. Kalan eski kayıtlar:
-   ```sql
-   SELECT count(*) FROM health.medical_summary WHERE ciphertext NOT LIKE 'v1:k2:%';
-   SELECT count(*) FROM profile.protected_person
-    WHERE door_access_note_enc IS NOT NULL AND door_access_note_enc NOT LIKE 'v1:k2:%';
+4. **Yeniden şifreleme (T-081):** Faz 2 tüm örneklerde etkinken, aynı `FIELD_ENC_KEYS` (yazar ilk sırada) ve
+   `DATABASE_URL` ile bir kez çalıştırılır (`src/common/field-reencrypt.ts`, `src/db/cli.ts`):
+   ```sh
+   # Kubernetes Job / tek seferlik konteyner (üretim imajı; tsx yok)
+   node dist/db/cli.js field-keys                 # alan başına kid dağılımı (önce durum)
+   node dist/db/cli.js reencrypt --dry-run        # yazmadan say
+   node dist/db/cli.js reencrypt --batch 500      # yeniden yaz
+   # Geliştirme: pnpm --filter @yanimda/api db:reencrypt -- --dry-run
    ```
-5. İki sayı da 0 → `FIELD_ENC_KEYS="k2:<yeni>"`, eski anahtar sır deposunda devre dışı (silme değil: yedeklerden
-   geri dönüş için süreli saklama, KVKK saklama süresiyle uyumlu).
+   Kapsam: `health.medical_summary.ciphertext`, `profile.protected_person.door_access_note_enc`,
+   `device.vendor_link.vendor_account_enc` (FieldCipher kullanan tüm alanlar; yeni şifreli sütun eklenip
+   `ENCRYPTED_FIELDS` güncellenmezse `test/field-reencrypt.spec.ts` düşer). Davranış: birincil anahtar sırasıyla
+   toplu; yarıda kesilirse yeniden çalıştırmak kaldığı yerden sürer; idempotent (ikinci çalıştırma 0 satır yazar);
+   satır `UPDATE … WHERE sütun = <eski değer>` ile yazılır, arada uygulama yazdıysa ezilmez ("atlanan"); AAD
+   değişmez. Çıktı yalnız sayılar (eski / yeniden yazılan / atlanan / çözülemeyen); düz metin hiçbir yere yazılmaz.
+   Çözülemeyen satır (anahtar listede yok veya bozuk) varsa çıkış kodu 2; kimlikleri `--show-failed` ile görülür ve
+   incelenir (eski anahtar bu satırlar çözülene / silinene kadar kaldırılmaz).
+5. `field-keys` çıktısında yalnız yeni `kid` kaldı (ve `reencrypt` 0 eski satır buldu) → `FIELD_ENC_KEYS="k2:<yeni>"`,
+   eski anahtar sır deposunda devre dışı (silme değil: yedeklerden geri dönüş için süreli saklama, KVKK saklama
+   süresiyle uyumlu). Yedekten geri dönülürse geri dönen veride eski `kid` olabilir: eski anahtar geçici olarak
+   listeye eklenip adım 4 yeniden çalıştırılır.
 
 Doğrulama: rotasyon sonrası bir test kişisinde olay kartı (`GET /v1/events/{id}/person`) tıbbi özeti gösteriyor;
 log'da `Tıbbi özet çözülemedi` yok.
@@ -156,7 +168,7 @@ cihazlar yeni davet koduyla yeniden eşleşmek zorundadır (yaşlı kullanıcıl
 
 | Sır | İlk eylem |
 | --- | --- |
-| `FIELD_ENC_KEYS` | DB erişimi de sızdı mı? Yeni anahtarla Faz 1–2 + acil yeniden şifreleme (araç yoksa elle betik); eski anahtar imha. |
+| `FIELD_ENC_KEYS` | DB erişimi de sızdı mı? Yeni anahtarla Faz 1–2 + acil yeniden şifreleme (`cli.js reencrypt`, §4.1 adım 4); eski anahtar imha. |
 | `DEVICE_TOKEN_SECRETS` / `DEVICE_TOKEN_SECRET` | §4.2 acil rotasyon (yalnız sızan `kid`); sahte sinyal analizi (`signal.signal`, beklenmeyen `SOS`). |
 | `TWILIO_*` | Token döndür; Twilio'da giden arama/SMS geçmişi; maliyet uyarısı. |
 | `ADMIN_TOKEN` | Üretimde kullanılamaz (T-081); geliştirme/staging dışı bir ortamda sızdıysa değeri boşalt, `audit.log` ve kural yükleme geçmişi. |
