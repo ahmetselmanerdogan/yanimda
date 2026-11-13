@@ -8,6 +8,11 @@
 # İzleme ayrı dosyada (aynı "yanimda" ağına katılır): infra/monitoring/docker-compose.monitoring.yml
 name: yanimda
 
+# T-081 (ASVS 9.2.2, 1.9.2): yönetilen Postgres/Redis sunucu CA paketi (RDS + DCS CA, PEM). İstemciler sunucuyu
+# doğrular: DATABASE_URL ...sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem, REDIS_URL rediss://,
+# Keycloak JDBC verify-full. Dosya ortama özgü, git dışı (infra/tls/).
+x-internal-ca: &internal_ca ${INTERNAL_CA_FILE:-./tls/ca.pem}:/etc/yanimda/tls/ca.pem:ro
+
 x-api: &api
   image: ${API_IMAGE:?API_IMAGE gerekli (ör. ghcr.io/org/yanimda-api:1.2.3)}
   env_file: [.env.prod]
@@ -16,6 +21,7 @@ x-api: &api
   tmpfs: [/tmp]
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
+  volumes: [*internal_ca]
   stop_grace_period: 30s
   logging: &logging
     driver: json-file
@@ -47,6 +53,9 @@ services:
       OUTBOX_WORKER: ${API_OUTBOX_WORKER:-off}
       # T-081: Caddy arkasında gerçek istemci IP'si (hız sınırı, IP başına anahtar).
       TRUST_PROXY: '1'
+      # T-081: URL'de sslmode olmasa da Postgres TLS + sunucu doğrulaması; rediss:// için aynı CA.
+      PGSSLMODE: verify-full
+      NODE_EXTRA_CA_CERTS: /etc/yanimda/tls/ca.pem
     deploy:
       replicas: 2
       resources:
@@ -61,6 +70,8 @@ services:
       PORT: '3000'
       METRICS_PORT: '9464'
       OUTBOX_WORKER: 'on'
+      PGSSLMODE: verify-full
+      NODE_EXTRA_CA_CERTS: /etc/yanimda/tls/ca.pem
     deploy:
       resources:
         limits: { cpus: '1', memory: 768m }
@@ -97,15 +108,31 @@ services:
       retries: 3
 
   # Kimlik (T-020). Veritabanı: aynı yönetilen Postgres'te ayrı "keycloak" veritabanı ve kullanıcısı.
-  # Realm'ler ilk açılışta içe aktarılır (varsa atlanır). Üretim yönlendirme adresleri: README "Keycloak".
+  # Realm'ler ilk açılışta içe aktarılır (varsa atlanır). Realm yer tutucuları (yönlendirme adresleri, sslRequired,
+  # SMTP) aşağıdaki YANIMDA_* değişkenlerinden (T-081, ASVS 5.1.5). Tema + kara liste: infra/keycloak.
+  # Kök FS yazılabilir (Quarkus yeniden derleme çıktısı); Helm'de salt okunur (initContainer + emptyDir).
   keycloak:
     image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
     command: ['start', '--import-realm']
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
     logging: *logging
     environment:
+      YANIMDA_KC_SSL_REQUIRED: all
+      YANIMDA_CONSOLE_URL: https://console.${DOMAIN}
+      YANIMDA_CONSOLE_EXTRA_REDIRECT: https://console.${DOMAIN}/*
+      YANIMDA_FAMILY_WEB_URL: https://aile.${DOMAIN}
+      YANIMDA_FAMILY_APP_EXTRA_REDIRECT: app.yanimda.family:/oauth2redirect
+      YANIMDA_KC_SMTP_HOST: ${KC_SMTP_HOST:?KC_SMTP_HOST gerekli}
+      YANIMDA_KC_SMTP_PORT: ${KC_SMTP_PORT:-587}
+      YANIMDA_KC_SMTP_FROM: ${KC_SMTP_FROM:-noreply@${DOMAIN}}
+      YANIMDA_KC_SMTP_STARTTLS: 'true'
+      YANIMDA_KC_SMTP_AUTH: 'true'
+      YANIMDA_KC_SMTP_USER: ${KC_SMTP_USER:?KC_SMTP_USER gerekli}
+      YANIMDA_KC_SMTP_PASSWORD: ${KC_SMTP_PASSWORD:?KC_SMTP_PASSWORD gerekli}
       KC_DB: postgres
+      # sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem (.env.prod.example)
       KC_DB_URL: ${KC_DB_URL:?KC_DB_URL gerekli}
       KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME gerekli}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD gerekli}
@@ -116,7 +143,12 @@ services:
       KC_METRICS_ENABLED: 'true'
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?KC_BOOTSTRAP_ADMIN_USERNAME gerekli}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD gerekli}
-    volumes: ['./keycloak:/opt/keycloak/data/import:ro']
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+      - ./keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro
+      # Tohum liste; ihlal listesiyle birleştirilmiş sürüm için KC_BLACKLIST_DIR (infra/README.md "Kara liste")
+      - ${KC_BLACKLIST_DIR:-./keycloak/password-blacklists}:/opt/keycloak/data/password-blacklists:ro
+      - *internal_ca
     healthcheck:
       # İmajda curl yok: yönetim portu 9000'e bash /dev/tcp ile.
       test:
@@ -133,9 +165,15 @@ services:
         limits: { cpus: '1', memory: 1g }
 
   # TLS sonlandırma ve yönlendirme; sertifikalar otomatik (ACME), caddy_data biriminde.
+  # T-081: salt okunur kök, yalnız 80/443 bağlama yetkisi (yerelde docker --read-only --cap-drop ALL ile doğrulandı).
   caddy:
     image: caddy:2.8.4-alpine
     restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     ports: ['80:80', '443:443', '443:443/udp']
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN gerekli}
@@ -185,6 +223,10 @@ services:
     image: yanimda-backup:local
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    # Döküm çalışma dizini (pg-backup.sh WORKDIR=/tmp) diskte; kök FS salt okunur. BACKUP_DATABASE_URL verify-full.
+    volumes: ['backup_work:/tmp', *internal_ca]
     # Uygulama sırları verilmez; yalnız yedek değişkenleri. Dökümü okuma yetkili ayrı kullanıcı alır (README).
     environment:
       BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL gerekli}
@@ -207,3 +249,4 @@ networks:
 volumes:
   caddy_data: {}
   caddy_config: {}
+  backup_work: {}
