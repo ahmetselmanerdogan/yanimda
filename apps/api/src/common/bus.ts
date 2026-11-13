@@ -12,6 +12,16 @@ export interface SubscribeOptions {
   lane?: Lane;
   /** side şeridinde zorunlu: kalıcı abone adı (event.outbox_side.handler). Değiştirilirse bekleyen satırlar düşer. */
   name?: string;
+  /**
+   * Yalnız side şeridi: zarf bu aboneyi ilgilendiriyor mu? false ise bu abone için event.outbox_side satırı hiç
+   * yazılmaz (ör. yalnız BATTERY isteyen abone her HEARTBEAT için satır biriktirmesin). Saf ve hızlı olmalı.
+   */
+  accepts?: (envelope: KafkaEnvelope<unknown>) => boolean;
+}
+
+interface SideHandler {
+  handler: BusHandler<unknown>;
+  accepts?: (envelope: KafkaEnvelope<unknown>) => boolean;
 }
 
 /**
@@ -32,7 +42,7 @@ export interface Bus {
  */
 export class LocalBus implements Bus {
   private readonly handlers = new Map<string, Set<BusHandler<unknown>>>();
-  private readonly side = new Map<string, Map<string, BusHandler<unknown>>>();
+  private readonly side = new Map<string, Map<string, SideHandler>>();
 
   publish<T>(topic: string, envelope: KafkaEnvelope<T>): void {
     void this.deliver(topic, envelope).catch(() => undefined);
@@ -42,11 +52,12 @@ export class LocalBus implements Bus {
     if (opts.lane === 'side') {
       if (!opts.name) throw new Error('side aboneliği için ad zorunlu');
       const name = opts.name;
-      const map = this.side.get(topic) ?? new Map<string, BusHandler<unknown>>();
-      map.set(name, handler as BusHandler<unknown>);
+      const map = this.side.get(topic) ?? new Map<string, SideHandler>();
+      const entry: SideHandler = { handler: handler as BusHandler<unknown>, accepts: opts.accepts };
+      map.set(name, entry);
       this.side.set(topic, map);
       return () => {
-        if (map.get(name) === handler) map.delete(name);
+        if (map.get(name) === entry) map.delete(name);
       };
     }
     const set = this.handlers.get(topic) ?? new Set();
@@ -61,19 +72,23 @@ export class LocalBus implements Bus {
    */
   async deliver<T>(topic: string, envelope: KafkaEnvelope<T>, lane: 'core' | 'all' = 'all'): Promise<void> {
     for (const h of [...(this.handlers.get(topic) ?? [])]) await h(envelope);
-    if (lane === 'all') for (const h of [...(this.side.get(topic)?.values() ?? [])]) await h(envelope);
+    if (lane === 'all')
+      for (const s of [...(this.side.get(topic)?.values() ?? [])])
+        if (!s.accepts || s.accepts(envelope as KafkaEnvelope<unknown>)) await s.handler(envelope);
   }
 
-  /** Bu konunun side abone adları (işçi her biri için event.outbox_side satırı yazar). */
-  sideNames(topic: string): string[] {
-    return [...(this.side.get(topic)?.keys() ?? [])];
+  /** Bu zarfı isteyen side abone adları (işçi her biri için event.outbox_side satırı yazar). */
+  sideNames(topic: string, envelope?: KafkaEnvelope<unknown>): string[] {
+    return [...(this.side.get(topic)?.entries() ?? [])]
+      .filter(([, s]) => !envelope || !s.accepts || s.accepts(envelope))
+      .map(([name]) => name);
   }
 
   /** Tek side aboneye teslim. Abone bu süreçte yoksa false (satır işlenmiş sayılır). */
   async deliverSide<T>(name: string, topic: string, envelope: KafkaEnvelope<T>): Promise<boolean> {
-    const h = this.side.get(topic)?.get(name);
-    if (!h) return false;
-    await h(envelope);
+    const s = this.side.get(topic)?.get(name);
+    if (!s) return false;
+    await s.handler(envelope);
     return true;
   }
 

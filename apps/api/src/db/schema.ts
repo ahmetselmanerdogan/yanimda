@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
@@ -6,6 +7,7 @@ import {
   jsonb,
   pgSchema,
   primaryKey,
+  smallint,
   text,
   time,
   timestamp,
@@ -63,6 +65,15 @@ export const outbox = eventSchema.table('outbox', {
   transientAttempts: integer('transient_attempts').notNull().default(0),
   nextAttemptAt: timestamptz('next_attempt_at').notNull().defaultNow(),
   lastError: text('last_error'),
+  /**
+   * 0038: core bölümü (kişiye, yoksa zarfın konu kimliğine göre; 0–31). Veritabanı üretir; sıra yalnız bölüm içinde
+   * (kişi başına) korunur, bölümler paralel işlenir.
+   */
+  part: smallint('part')
+    .notNull()
+    .generatedAlwaysAs(
+      sql`((((hashtext(coalesce(envelope #>> '{payload,protectedPersonId}', envelope ->> 'subjectUserId', ''))) % 32) + 32) % 32)::smallint`,
+    ),
 });
 
 /** 0020: kritik olmayan (side) abonelerin teslim kuyruğu; abone başına sıralı, dead_at = abone DLQ'su. */

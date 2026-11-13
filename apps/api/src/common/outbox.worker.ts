@@ -29,7 +29,19 @@ export interface OutboxWorkerOptions {
   now?: () => Date;
   /** Kira süresi (ms): işçi ölürse başka işçi bu süreden sonra devralır. */
   leaseMs?: number;
+  /**
+   * Bu süreçte aynı anda işlenen core bölümü sayısı (varsayılan OUTBOX_CONCURRENCY ?? 4). Her bölüm teslimde
+   * veritabanı bağlantısı kullanır: DATABASE_POOL_MAX bundan büyük tutulmalı (HTTP istekleri de havuzu paylaşır).
+   */
+  concurrency?: number;
 }
+
+/** Core bölüm sayısı: 0038 migration'daki event.outbox.part ifadesiyle aynı olmalıdır. */
+export const OUTBOX_PARTITIONS = 32;
+/** Bölüm kiraları: id = PART_LEASE_BASE + bölüm. */
+const PART_LEASE_BASE = 100;
+/** Kira 1: eski tek işçi kirası; bölümlü işçiler onu bu sahiple sonsuza dek tutar (deploy çiti, 0038). */
+const FENCE_OWNER = 'partitioned';
 
 /**
  * T-010 OutboxWorker: event.outbox'taki işlenmemiş satırları id sırasıyla süreç içi abonelere (LocalBus) verir.
@@ -39,8 +51,12 @@ export interface OutboxWorkerOptions {
  * transaction'da event.outbox_side'a abone başına bir satır yazılır ve ayrı döngü (kira id = 2) teslim eder. Böylece
  * yavaş/bozuk istatistik abonesi SOS'u bekletmez; side'da hata yalnız o abonenin kuyruğunu durdurur.
  *
- * - Sıra: tek aktif işçi (event.outbox_lease kirası, satır başına yenilenir). Başarısız satır kuyruğun başında
- *   bekler; arkasındakiler ondan önce teslim edilmez (FALL'dan önce CANCEL işlenmesin).
+ * - Sıra kişi başınadır (0038): satır kişiye göre OUTBOX_PARTITIONS bölümden birine düşer (event.outbox.part). Her
+ *   bölümde tek aktif işçi (kira id 100 + bölüm); bölümler aynı süreçte `concurrency` kadar paralel, birden çok API
+ *   örneğinde örnekler arasında dağılır. Başarısız satır kendi bölümünün başında bekler; arkasındakiler ondan önce
+ *   teslim edilmez (FALL'dan önce CANCEL işlenmesin), başka bölümler (başka kişiler) beklemez.
+ * - Kira 1 deploy çitidir: bölümlü işçi onu alamazsa (eski sürüm genel FIFO'yla çalışıyor) teslim etmez.
+ * - Kira satır başına değil, süresinin üçte biri geçince yenilenir (satır başına bir sorgu daha az).
  * - Yeniden deneme: üstel geri çekilme; `maxAttempts` (5) kalıcı hatadan sonra outbox_dlq'ya taşınır, kuyruk ilerler.
  *   Geçici altyapı hatası (denetim bulgusu: kısa veritabanı kesintisinde FALL DLQ'ya düşmesin) ayrı sayılır
  *   (transient_attempts): en çok 30 sn geri çekilmeyle ~1 saat denenir, sonra DLQ (yanlış sınıflanmış kalıcı hata
@@ -48,7 +64,7 @@ export interface OutboxWorkerOptions {
  * - last_error yalnız hata adı + kodu (safeErrorDetail): Drizzle mesajındaki sorgu parametreleri PII içerebilir.
  * - En az bir kez teslim: teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir.
  * - Teslim transaction dışında: aboneler kendi transaction'larını açar, işçi bağlantı tutmaz (havuz 1 olsa da çalışır).
- * - Çoklu API örneğinde diğer örnekler kirayı alamaz ve beklemeye geçer; işçi ölürse kira leaseMs sonra düşer.
+ * - Çoklu API örneğinde bir bölümün kirası tek örnektedir; işçi ölürse kira leaseMs sonra düşer.
  *   (BullMQ zamanlayıcıları T-013'te; Kafka v2.0'da bu işçinin yerini alır.)
  */
 export class OutboxWorker {
@@ -70,6 +86,10 @@ export class OutboxWorker {
   private lastErrLog = 0;
   private unsubscribe?: () => void;
   private readonly leaseMs: number;
+  private readonly concurrency: number;
+  private fenced = false;
+  /** Bölüm kirasının son alındığı / yenilendiği an (ms). */
+  private readonly leasedAt = new Map<number, number>();
   readonly owner = `${process.pid}-${randomUUID()}`;
 
   constructor(
@@ -86,6 +106,7 @@ export class OutboxWorker {
     this.transientBackoffMs = opts.transientBackoffMs ?? ((n) => Math.min(1000 * 2 ** n, 30_000));
     this.now = opts.now ?? (() => new Date());
     this.leaseMs = opts.leaseMs ?? 30_000;
+    this.concurrency = Math.max(1, opts.concurrency ?? Number(process.env.OUTBOX_CONCURRENCY ?? 4));
   }
 
   start(): void {
@@ -172,21 +193,25 @@ export class OutboxWorker {
     }
   }
 
-  /** Core: bir veya daha çok toplu tur; teslim edilen satır sayısı. Eş zamanlı çağrılar aynı turu paylaşır. */
+  /**
+   * Core: bekleyen bölümler `concurrency` kadar paralel; her bölümden bir toplu tur, sürüyorsa bölüm sıranın sonuna.
+   * Teslim edilen satır sayısı. Eş zamanlı çağrılar aynı turu paylaşır.
+   */
   drainCore(): Promise<number> {
     this.running ??= (async () => {
       try {
-        if (!(await this.acquireLease())) return 0;
-        try {
-          let total = 0;
-          for (;;) {
-            const { delivered, more } = await this.drainBatch();
+        if (!(await this.fence())) return 0;
+        const parts = await this.pendingParts();
+        let total = 0;
+        const lane = async () => {
+          for (let p = parts.shift(); p !== undefined; p = parts.shift()) {
+            const { delivered, more } = await this.drainPart(p);
             total += delivered;
-            if (!more) return total;
+            if (more) parts.push(p);
           }
-        } finally {
-          await this.releaseLease().catch(() => undefined);
-        }
+        };
+        await Promise.all(Array.from({ length: Math.min(this.concurrency, parts.length) }, lane));
+        return total;
       } finally {
         this.running = undefined;
       }
@@ -194,8 +219,52 @@ export class OutboxWorker {
     return this.running;
   }
 
+  /** Deploy çiti: kira 1'i FENCE_OWNER ile sonsuza dek alır. Eski tek işçi tutuyorsa false (bu tur teslim yok). */
+  private async fence(): Promise<boolean> {
+    if (this.fenced) return true;
+    const r = (await this.db.execute(sql`
+      INSERT INTO event.outbox_lease (id, owner, until) VALUES (1, ${FENCE_OWNER}, 'infinity')
+      ON CONFLICT (id) DO UPDATE SET owner = EXCLUDED.owner, until = EXCLUDED.until
+      WHERE event.outbox_lease.until < now() OR event.outbox_lease.owner = EXCLUDED.owner
+      RETURNING owner`)) as unknown as { rows: unknown[] };
+    this.fenced = r.rows.length === 1;
+    return this.fenced;
+  }
+
+  /** İşlenmemiş satırı olan bölümler (tek gidiş-dönüş; bölüm başına kısmi indeks yoklaması). */
+  private async pendingParts(): Promise<number[]> {
+    const r = (await this.db.execute(sql`
+      SELECT p FROM generate_series(0, ${OUTBOX_PARTITIONS - 1}) AS p
+      WHERE EXISTS (SELECT 1 FROM event.outbox o WHERE o.part = p AND o.processed_at IS NULL)`)) as unknown as {
+      rows: { p: number }[];
+    };
+    return r.rows.map((x) => Number(x.p));
+  }
+
+  /** Bir bölümden bir toplu tur (kirası başka işçideyse boş). */
+  private async drainPart(p: number): Promise<{ delivered: number; more: boolean }> {
+    const id = PART_LEASE_BASE + p;
+    if (!(await this.acquireLease(id))) return { delivered: 0, more: false };
+    this.leasedAt.set(p, Date.now());
+    try {
+      return await this.drainBatch(p);
+    } finally {
+      this.leasedAt.delete(p);
+      await this.releaseLease(id).catch(() => undefined);
+    }
+  }
+
+  /** Kira süresinin üçte biri geçtiyse yeniler; kira kaybedildiyse false. */
+  private async keepLease(p: number): Promise<boolean> {
+    const at = this.leasedAt.get(p) ?? 0;
+    if (Date.now() - at < this.leaseMs / 3) return true;
+    if (!(await this.acquireLease(PART_LEASE_BASE + p))) return false;
+    this.leasedAt.set(p, Date.now());
+    return true;
+  }
+
   /** Kirayı alır veya (kendisindeyse) yeniler. Başka canlı işçideyse false. */
-  private async acquireLease(id: 1 | 2 = 1): Promise<boolean> {
+  private async acquireLease(id: number): Promise<boolean> {
     const r = (await this.db.execute(sql`
       INSERT INTO event.outbox_lease (id, owner, until)
       VALUES (${id}, ${this.owner}, now() + make_interval(secs => ${this.leaseMs / 1000}))
@@ -205,7 +274,7 @@ export class OutboxWorker {
     return r.rows.length === 1;
   }
 
-  private async releaseLease(id: 1 | 2 = 1): Promise<void> {
+  private async releaseLease(id: number): Promise<void> {
     await this.db.execute(
       sql`UPDATE event.outbox_lease SET until = '-infinity' WHERE id = ${id} AND owner = ${this.owner}`,
     );
@@ -215,22 +284,22 @@ export class OutboxWorker {
    * Teslim transaction DIŞINDA yapılır: aboneler (ör. EventService) kendi transaction'larını açabilir;
    * işçi bağlantı tutmaz. Teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir (en az bir kez).
    */
-  private async drainBatch(): Promise<{ delivered: number; more: boolean }> {
+  private async drainBatch(p: number): Promise<{ delivered: number; more: boolean }> {
     const rows = await this.db
       .select()
       .from(outbox)
-      .where(isNull(outbox.processedAt))
+      .where(and(eq(outbox.part, p), isNull(outbox.processedAt)))
       .orderBy(asc(outbox.id))
       .limit(this.batchSize);
 
     let delivered = 0;
     for (const row of rows) {
-      if (!(await this.acquireLease())) return { delivered, more: false }; // kira kaybedildi (çok uzun tur)
+      if (!(await this.keepLease(p))) return { delivered, more: false }; // kira kaybedildi (çok uzun tur)
       const now = this.now();
       if (row.nextAttemptAt > now) return { delivered, more: false }; // baştaki satır geri çekilmede: sıra korunur
       try {
         await this.bus.deliver(row.topic, row.envelope as KafkaEnvelope<unknown>, 'core');
-        const side = this.bus.sideNames(row.topic);
+        const side = this.bus.sideNames(row.topic, row.envelope as KafkaEnvelope<unknown>);
         await this.db.transaction(async (tx) => {
           const marked = await tx
             .update(outbox)
