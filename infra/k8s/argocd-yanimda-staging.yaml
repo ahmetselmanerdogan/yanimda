@@ -3,6 +3,7 @@
 # yeniden oluşturulur. Dağıtım yalnız korumalı dala birleşen (PR incelemeli, CI'dan geçmiş) commit'lerle olur.
 #   kubectl apply -n argocd -f infra/k8s/argocd-yanimda-staging.yaml
 # Üretim için aynı dosya: name/namespace yanimda-prod, valueFiles values-production.yaml, targetRevision etiket (v*).
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

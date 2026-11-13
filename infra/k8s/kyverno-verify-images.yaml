@@ -2,6 +2,7 @@
 # çalışabilir (imza + SBOM tasdiki Rekor şeffaflık kaydında). İmzasız/başka iş akışınca imzalanmış imaj reddedilir;
 # etiket digest'e sabitlenir (mutateDigest). Kyverno kümede kurulu olmalı:
 #   kubectl apply -f infra/k8s/kyverno-verify-images.yaml
+---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
