@@ -13,8 +13,17 @@ output "db_private_ip" {
 }
 
 output "redis_address" {
-  description = "REDIS_URL için DCS iç adresi (host:port)"
+  description = "REDIS_URL için DCS iç adresi (host:port); TLS: rediss://<redis_app_user>:…@<adres>"
   value       = "${huaweicloud_dcs_instance.redis.private_ip}:${huaweicloud_dcs_instance.redis.port}"
+}
+
+output "redis_app_user" {
+  value = huaweicloud_dcs_account.app.account_name
+}
+
+output "kms_key_id" {
+  description = "Durağan veri şifreleme anahtarı (ECS/EVS, RDS, OBS)"
+  value       = local.kms_key_id
 }
 
 output "recordings_bucket" {

@@ -6,6 +6,25 @@ locals {
 data "huaweicloud_availability_zones" "this" {}
 
 # ---------------------------------------------------------------------------------------------------------------------
+# T-081 (ASVS 6.1.1, 6.4.2): durağan veri şifreleme anahtarı (DEW/KMS, müşteri yönetimli, yıllık otomatik rotasyon).
+# ECS sistem + veri diski, RDS diski ve OBS kovaları bu anahtarla şifrelenir. kms_key_id verilirse var olan anahtar.
+# ---------------------------------------------------------------------------------------------------------------------
+resource "huaweicloud_kms_key" "data" {
+  count             = var.kms_key_id == "" ? 1 : 0
+  key_alias         = "${var.name}-data"
+  key_description   = "Yanimda ${var.environment}: ECS/EVS, RDS ve OBS durağan veri şifreleme (T-081)"
+  pending_days      = "30"
+  is_enabled        = true
+  rotation_enabled  = true
+  rotation_interval = 365
+  tags              = local.tags
+}
+
+locals {
+  kms_key_id = var.kms_key_id != "" ? var.kms_key_id : huaweicloud_kms_key.data[0].id
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Ağ: tek VPC, tek alt ağ. Genel IP yalnız VPS'te (EIP); RDS ve DCS yalnız iç ağda.
 # ---------------------------------------------------------------------------------------------------------------------
 resource "huaweicloud_vpc" "this" {
@@ -113,8 +132,13 @@ resource "huaweicloud_compute_instance" "vps" {
   key_pair           = var.ssh_key_pair
   system_disk_type   = var.disk_type
   system_disk_size   = var.vps_system_disk_gb
-  user_data          = templatefile("${path.module}/user_data.sh.tftpl", { data_mount = "/srv/yanimda" })
-  tags               = local.tags
+  # T-081: sistem diski KMS ile şifreli (veri diski aşağıda)
+  system_disk_kms_key_id = local.kms_key_id
+  user_data = templatefile("${path.module}/user_data.sh.tftpl", {
+    data_mount  = "/srv/yanimda"
+    ntp_servers = join(" ", var.ntp_servers)
+  })
+  tags = local.tags
 
   network {
     uuid = huaweicloud_vpc_subnet.this.id
@@ -126,6 +150,7 @@ resource "huaweicloud_evs_volume" "data" {
   volume_type       = var.disk_type
   size              = var.vps_data_disk_gb
   availability_zone = local.az[0]
+  kms_id            = local.kms_key_id
   tags              = local.tags
 }
 
@@ -185,6 +210,8 @@ resource "huaweicloud_rds_instance" "db" {
   volume {
     type = var.db_volume_type
     size = var.db_volume_gb
+    # T-081 (ASVS 6.1.1): RDS diski + yedekleri KMS ile şifreli
+    disk_encryption_id = local.kms_key_id
   }
 
   backup_strategy {
@@ -196,6 +223,20 @@ resource "huaweicloud_rds_instance" "db" {
   parameters {
     name  = "archive_timeout"
     value = "300"
+  }
+}
+
+# T-081 (ASVS 9.2.2, 1.9.1): yalnız TLS'li bağlantı (hostssl) ve yalnız uygulama alt ağından, SCRAM ile. İstemciler
+# sslmode=verify-full + RDS CA ile sunucuyu doğrular (.env.prod.example, Helm global.internalCa).
+resource "huaweicloud_rds_pg_hba" "tls_only" {
+  instance_id = huaweicloud_rds_instance.db.id
+
+  host_based_authentications {
+    type     = "hostssl"
+    database = "all"
+    user     = "all"
+    address  = var.subnet_cidr
+    method   = "scram-sha-256"
   }
 }
 
@@ -244,7 +285,9 @@ resource "huaweicloud_dcs_instance" "redis" {
   subnet_id          = huaweicloud_vpc_subnet.this.id
   password           = var.redis_password
   whitelist_enable   = true
-  tags               = local.tags
+  # T-081 (ASVS 9.2.2): istemci bağlantıları TLS (rediss://, DCS CA ile doğrulanır)
+  ssl_enable = true
+  tags       = local.tags
 
   whitelists {
     group_name = "app-subnet"
@@ -260,6 +303,24 @@ resource "huaweicloud_dcs_instance" "redis" {
   }
 }
 
+# T-081 (ASVS 1.2.2, 9.2.3): uygulama ve izleme ayrı ACL hesaplarıyla bağlanır; "default" hesabın parolası yalnız
+# yönetimde (sır deposu). REDIS_URL=rediss://<redis_app_user>:<parola>@<adres>:6379
+resource "huaweicloud_dcs_account" "app" {
+  instance_id      = huaweicloud_dcs_instance.redis.id
+  account_name     = var.redis_app_user
+  account_role     = "write"
+  account_password = var.redis_app_password
+  description      = "Yanimda API/worker"
+}
+
+resource "huaweicloud_dcs_account" "monitor" {
+  instance_id      = huaweicloud_dcs_instance.redis.id
+  account_name     = var.redis_monitor_user
+  account_role     = "read"
+  account_password = var.redis_monitor_password
+  description      = "redis_exporter (salt okunur)"
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Nesne deposu (OBS, S3 uyumlu): görüşme kayıtları (WORM / nesne kilidi, COMPLIANCE) ve veritabanı dökümleri.
 # ---------------------------------------------------------------------------------------------------------------------
@@ -273,7 +334,8 @@ resource "huaweicloud_obs_bucket" "recordings" {
   versioning    = true
   multi_az      = true
   encryption    = true
-  sse_algorithm = "AES256"
+  sse_algorithm = "kms"
+  kms_key_id    = local.kms_key_id
   force_destroy = false
   tags          = local.tags
 }
@@ -285,7 +347,8 @@ resource "huaweicloud_obs_bucket" "backups" {
   versioning    = true
   multi_az      = true
   encryption    = true
-  sse_algorithm = "AES256"
+  sse_algorithm = "kms"
+  kms_key_id    = local.kms_key_id
   force_destroy = false
   tags          = local.tags
 

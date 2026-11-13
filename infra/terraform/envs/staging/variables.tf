@@ -38,6 +38,16 @@ variable "redis_password" {
   sensitive = true
 }
 
+variable "redis_app_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "redis_monitor_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "dns_zone" {
   description = "ör. staging.yanimda.app"
   type        = string

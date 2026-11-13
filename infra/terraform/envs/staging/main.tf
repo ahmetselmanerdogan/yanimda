@@ -22,8 +22,10 @@ module "env" {
   db_app_password        = var.db_app_password
   enable_timescaledb     = var.enable_timescaledb
 
-  redis_capacity_gb = 1
-  redis_password    = var.redis_password
+  redis_capacity_gb      = 1
+  redis_password         = var.redis_password
+  redis_app_password     = var.redis_app_password
+  redis_monitor_password = var.redis_monitor_password
 
   recordings_retention_days = 30
   backup_retention_days     = 14
