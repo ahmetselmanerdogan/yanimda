@@ -159,8 +159,20 @@ spec:
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           securityContext:
             {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
-          command: ["sh", "-c", "exec redis-server --appendonly yes --dir /data --requirepass \"$REDIS_PASSWORD\""]
+          # T-081 (ASVS 1.2.2, 9.2.3): varsayılan kullanıcı kapalı; uygulama ACL kullanıcısıyla bağlanır
+          # (REDIS_URL=redis://<aclUsername>:<parola>@...). Parola dosyaya SHA-256 özeti olarak yazılır (bellek diski).
+          # Yönetim/tehlikeli komutlar (CONFIG, FLUSHALL, KEYS, DEBUG …) kapalı; BullMQ/ioredis için INFO açık.
+          command:
+            - sh
+            - -c
+            - |
+              umask 077
+              H=$(printf %s "$REDIS_PASSWORD" | sha256sum | cut -d" " -f1)
+              printf 'user default off\nuser %s on #%s ~* &* +@all -@admin -@dangerous +info\n' "$REDIS_USERNAME" "$H" > /run/redis/users.acl
+              exec redis-server --appendonly yes --dir /data --aclfile /run/redis/users.acl
           env:
+            - name: REDIS_USERNAME
+              value: {{ .Values.redis.aclUsername | quote }}
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -171,7 +183,7 @@ spec:
               containerPort: 6379
           readinessProbe:
             exec:
-              command: ["sh", "-c", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli --no-auth-warning --user \"$REDIS_USERNAME\" ping | grep -q PONG"]
             periodSeconds: 10
           livenessProbe:
             tcpSocket:
@@ -182,6 +194,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: acl
+              mountPath: /run/redis
+      volumes:
+        - name: acl
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
   volumeClaimTemplates:
     - metadata:
         name: data

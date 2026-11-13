@@ -1,10 +1,49 @@
 {{- if .Values.keycloak.enabled }}
 {{- $ctx := dict "root" . "component" "keycloak" }}
-{{- $dbUrl := .Values.keycloak.db.url }}
+{{- $kc := .Values.keycloak }}
+{{- $dbUrl := $kc.db.url }}
 {{- if and (not $dbUrl) .Values.timescaledb.enabled }}
 {{- $dbUrl = printf "jdbc:postgresql://%s:5432/keycloak" (include "yanimda.component" (dict "root" . "component" "timescaledb")) }}
 {{- end }}
-{{- $dbUser := .Values.keycloak.db.username | default (ternary .Values.timescaledb.username "keycloak" .Values.timescaledb.enabled) }}
+{{- $dbUser := $kc.db.username | default (ternary .Values.timescaledb.username "keycloak" .Values.timescaledb.enabled) }}
+{{- $consoleUrl := $kc.realm.consoleUrl | default (printf "https://console.%s" .Values.global.domain) }}
+{{- $familyWebUrl := $kc.realm.familyWebUrl | default (printf "https://aile.%s" .Values.global.domain) }}
+{{- $blacklistCm := $kc.passwordBlacklist.existingConfigMap | default (printf "%s-password-blacklist" (include "yanimda.component" $ctx)) }}
+{{- $theme := "files/keycloak-theme/login" }}
+{{- $themeFiles := dict
+  "theme.properties" "theme.properties"
+  "messages_tr.properties" "messages/messages_tr.properties"
+  "yanimda.css" "resources/css/yanimda.css"
+  "strength-i18n.js" "resources/js/strength-i18n.js"
+  "password-strength.js" "resources/js/password-strength.js" }}
+{{- $themeSum := "" }}
+{{- range $key, $path := $themeFiles }}{{ $themeSum = print $themeSum ($.Files.Get (printf "%s/%s" $theme $path)) }}{{ end }}
+# T-081 (ASVS 2.1.8): giriş teması — parola gücü göstergesi; metinler packages/messages/tr.json'dan üretilir.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yanimda.component" $ctx }}-theme
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+data:
+  {{- range $key, $path := $themeFiles }}
+  {{ $key }}: |-
+    {{- $.Files.Get (printf "%s/%s" $theme $path) | required (printf "tema dosyası yok: %s" $path) | nindent 4 }}
+  {{- end }}
+{{- if not $kc.passwordBlacklist.existingConfigMap }}
+---
+# T-081 (ASVS 2.1.7): parola kara listesi (realm passwordBlacklist(yanimda-blacklist.txt)).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $blacklistCm }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+data:
+  yanimda-blacklist.txt: |-
+    {{- .Files.Get "files/password-blacklist.txt" | required "files/password-blacklist.txt yok" | nindent 4 }}
+{{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,7 +51,7 @@ metadata:
   labels:
     {{- include "yanimda.labels" $ctx | nindent 4 }}
 spec:
-  replicas: {{ .Values.keycloak.replicas }}
+  replicas: {{ $kc.replicas }}
   selector:
     matchLabels:
       {{- include "yanimda.selectorLabels" $ctx | nindent 6 }}
@@ -21,6 +60,12 @@ spec:
       labels:
         {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
         yanimda.app/db-client: "true"
+      annotations:
+        checksum/theme: {{ $themeSum | sha256sum }}
+        checksum/blacklist: {{ .Files.Get "files/password-blacklist.txt" | sha256sum }}
+        {{- with .Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
       automountServiceAccountToken: false
@@ -28,16 +73,32 @@ spec:
         {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
         runAsUser: 1000
         runAsGroup: 0
+      {{- if $kc.readOnlyRootFilesystem }}
+      # Salt okunur kök: imajdaki Quarkus derleme çıktısı yazılabilir emptyDir'e kopyalanır (Keycloak açılışta
+      # yapılandırma değiştiyse yeniden derler ve buraya yazar).
+      initContainers:
+        - name: quarkus-build
+          image: {{ include "yanimda.image" $kc.image | quote }}
+          imagePullPolicy: {{ $kc.image.pullPolicy }}
+          command: ["/bin/cp", "-a", "/opt/keycloak/lib/quarkus/.", "/work/"]
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - name: quarkus
+              mountPath: /work
+      {{- end }}
       containers:
         - name: keycloak
-          image: {{ include "yanimda.image" .Values.keycloak.image | quote }}
-          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
-          # Keycloak açılışta /opt/keycloak altına derleme çıktısı yazar: kök dosya sistemi yazılabilir.
+          image: {{ include "yanimda.image" $kc.image | quote }}
+          imagePullPolicy: {{ $kc.image.pullPolicy }}
           securityContext:
-            {{- include "yanimda.containerSecurityContext" false | nindent 12 }}
+            {{- include "yanimda.containerSecurityContext" $kc.readOnlyRootFilesystem | nindent 12 }}
           args:
             - start
-            {{- if .Values.keycloak.realmConfigMap }}
+            {{- if $kc.realmConfigMap }}
             - --import-realm
             {{- end }}
           env:
@@ -50,14 +111,14 @@ spec:
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.keycloak.existingSecret }}
+                  name: {{ $kc.existingSecret }}
                   key: KC_DB_PASSWORD
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
-              value: {{ .Values.keycloak.bootstrapAdminUser | quote }}
+              value: {{ $kc.bootstrapAdminUser | quote }}
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.keycloak.existingSecret }}
+                  name: {{ $kc.existingSecret }}
                   key: KC_BOOTSTRAP_ADMIN_PASSWORD
             - name: KC_HOSTNAME
               value: {{ printf "https://auth.%s" .Values.global.domain | quote }}
@@ -69,9 +130,42 @@ spec:
               value: "true"
             - name: KC_METRICS_ENABLED
               value: "true"
-            {{- if gt (int .Values.keycloak.replicas) 1 }}
+            {{- if gt (int $kc.replicas) 1 }}
             - name: KC_CACHE_STACK
               value: kubernetes
+            {{- end }}
+            # Realm içe aktarma yer tutucuları (infra/keycloak/realm-*.json, ASVS 5.1.5 / 9.1.1)
+            - name: YANIMDA_KC_SSL_REQUIRED
+              value: {{ $kc.realm.sslRequired | quote }}
+            - name: YANIMDA_CONSOLE_URL
+              value: {{ $consoleUrl | quote }}
+            - name: YANIMDA_CONSOLE_EXTRA_REDIRECT
+              value: {{ printf "%s/*" $consoleUrl | quote }}
+            - name: YANIMDA_FAMILY_WEB_URL
+              value: {{ $familyWebUrl | quote }}
+            - name: YANIMDA_FAMILY_APP_EXTRA_REDIRECT
+              value: {{ $kc.realm.familyAppExtraRedirect | quote }}
+            {{- if $kc.smtp.host }}
+            - name: YANIMDA_KC_SMTP_HOST
+              value: {{ $kc.smtp.host | quote }}
+            - name: YANIMDA_KC_SMTP_PORT
+              value: {{ $kc.smtp.port | quote }}
+            - name: YANIMDA_KC_SMTP_FROM
+              value: {{ $kc.smtp.from | default (printf "noreply@%s" .Values.global.domain) | quote }}
+            - name: YANIMDA_KC_SMTP_STARTTLS
+              value: {{ $kc.smtp.starttls | quote }}
+            - name: YANIMDA_KC_SMTP_SSL
+              value: {{ $kc.smtp.ssl | quote }}
+            - name: YANIMDA_KC_SMTP_AUTH
+              value: {{ $kc.smtp.auth | quote }}
+            - name: YANIMDA_KC_SMTP_USER
+              value: {{ $kc.smtp.user | quote }}
+            - name: YANIMDA_KC_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $kc.existingSecret }}
+                  key: KC_SMTP_PASSWORD
+                  optional: true
             {{- end }}
           ports:
             - name: http
@@ -95,19 +189,54 @@ spec:
               port: management
             periodSeconds: 30
           resources:
-            {{- toYaml .Values.keycloak.resources | nindent 12 }}
-          {{- if .Values.keycloak.realmConfigMap }}
+            {{- toYaml $kc.resources | nindent 12 }}
           volumeMounts:
+            - name: theme
+              mountPath: /opt/keycloak/themes/yanimda/login
+              readOnly: true
+            {{- if $kc.readOnlyRootFilesystem }}
+            - name: quarkus
+              mountPath: /opt/keycloak/lib/quarkus
+            - name: data
+              mountPath: /opt/keycloak/data
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            - name: blacklist
+              mountPath: /opt/keycloak/data/password-blacklists
+              readOnly: true
+            {{- if $kc.realmConfigMap }}
             - name: realms
               mountPath: /opt/keycloak/data/import
               readOnly: true
-          {{- end }}
-      {{- if .Values.keycloak.realmConfigMap }}
+            {{- end }}
+            {{- include "yanimda.internalCaMount" . | nindent 12 }}
       volumes:
+        - name: theme
+          configMap:
+            name: {{ include "yanimda.component" $ctx }}-theme
+            items:
+              {{- range $key, $path := $themeFiles }}
+              - key: {{ $key }}
+                path: {{ $path }}
+              {{- end }}
+        - name: blacklist
+          configMap:
+            name: {{ $blacklistCm }}
+        {{- if $kc.readOnlyRootFilesystem }}
+        - name: quarkus
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+        {{- if $kc.realmConfigMap }}
         - name: realms
           configMap:
-            name: {{ .Values.keycloak.realmConfigMap }}
-      {{- end }}
+            name: {{ $kc.realmConfigMap }}
+        {{- end }}
+        {{- include "yanimda.internalCaVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service
@@ -125,7 +254,7 @@ spec:
     - name: management
       port: 9000
       targetPort: management
-{{- if gt (int .Values.keycloak.replicas) 1 }}
+{{- if gt (int $kc.replicas) 1 }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

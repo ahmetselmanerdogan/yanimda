@@ -35,6 +35,9 @@ spec:
             {{- include "yanimda.selectorLabels" $ctx | nindent 12 }}
           annotations:
             checksum/probe: {{ .Files.Get "files/probe.mjs" | sha256sum }}
+            {{- with .Values.global.podAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
         spec:
           {{- include "yanimda.imagePullSecrets" . | nindent 10 }}
           restartPolicy: Never

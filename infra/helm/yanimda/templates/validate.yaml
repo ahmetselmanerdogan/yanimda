@@ -1,0 +1,40 @@
+{{- /*
+T-081 (ASVS 14.1.5, 9.2.2, 1.14.5, 6.4.1): global.environment=production iken güvenlik ön koşulları sağlanmazsa
+`helm template/upgrade` hata verir (yanlış yapılandırma kümeye ulaşmaz). Çıktı üretmez.
+*/ -}}
+{{- $v := .Values }}
+{{- if not (has $v.global.environment (list "development" "staging" "production")) }}
+{{- fail (printf "global.environment development|staging|production olmalı (gelen: %s)" $v.global.environment) }}
+{{- end }}
+{{- if eq $v.global.environment "production" }}
+{{- if or $v.timescaledb.enabled $v.redis.enabled $v.minio.enabled }}
+{{- fail "production: küme içi timescaledb/redis/minio kapalı olmalı (yönetilen, TLS'li, KMS şifreli hizmetler)" }}
+{{- end }}
+{{- if not (and $v.networkPolicy.enabled $v.networkPolicy.egress.enabled) }}
+{{- fail "production: networkPolicy.enabled ve networkPolicy.egress.enabled true olmalı" }}
+{{- end }}
+{{- if not $v.externalSecrets.enabled }}
+{{- fail "production: externalSecrets.enabled true olmalı (sırlar Vault'tan)" }}
+{{- end }}
+{{- if not $v.global.internalCa.configMap }}
+{{- fail "production: global.internalCa.configMap gerekli (Postgres verify-full, rediss)" }}
+{{- end }}
+{{- if and $v.keycloak.enabled (ne $v.keycloak.realm.sslRequired "all") }}
+{{- fail "production: keycloak.realm.sslRequired \"all\" olmalı" }}
+{{- end }}
+{{- if and $v.keycloak.enabled (not (contains "sslmode=verify-full" $v.keycloak.db.url)) }}
+{{- fail "production: keycloak.db.url sslmode=verify-full içermeli" }}
+{{- end }}
+{{- if and $v.keycloak.enabled (not $v.keycloak.readOnlyRootFilesystem) }}
+{{- fail "production: keycloak.readOnlyRootFilesystem true olmalı" }}
+{{- end }}
+{{- if eq (toString (index $v.api.env "SIMULATOR_ENABLED")) "true" }}
+{{- fail "production: api.env.SIMULATOR_ENABLED true olamaz" }}
+{{- end }}
+{{- if ne (toString (index $v.api.env "OIDC_REQUIRE_MFA")) "true" }}
+{{- fail "production: api.env.OIDC_REQUIRE_MFA \"true\" olmalı" }}
+{{- end }}
+{{- if not (eq (toString (index $v.ingress.annotations "nginx.ingress.kubernetes.io/force-ssl-redirect")) "true") }}
+{{- fail "production: ingress force-ssl-redirect açık olmalı" }}
+{{- end }}
+{{- end }}

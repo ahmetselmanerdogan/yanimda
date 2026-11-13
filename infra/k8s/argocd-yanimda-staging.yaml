@@ -1,0 +1,30 @@
+# T-081 (ASVS 14.1.4, 14.1.5): GitOps dağıtımı. Kümedeki durum git'teki chart + değerlerle sürekli karşılaştırılır;
+# elle yapılan değişiklik (kurcalama) Argo CD'de "OutOfSync" görünür ve selfHeal ile geri alınır, silinen kaynak
+# yeniden oluşturulur. Dağıtım yalnız korumalı dala birleşen (PR incelemeli, CI'dan geçmiş) commit'lerle olur.
+#   kubectl apply -n argocd -f infra/k8s/argocd-yanimda-staging.yaml
+# Üretim için aynı dosya: name/namespace yanimda-prod, valueFiles values-production.yaml, targetRevision etiket (v*).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yanimda-staging
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ahmetselmanerdogan/yanimda.git
+    targetRevision: main
+    path: infra/helm/yanimda
+    helm:
+      valueFiles: [values-staging.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: yanimda-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    retry:
+      limit: 5
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
