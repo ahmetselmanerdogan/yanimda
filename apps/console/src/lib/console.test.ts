@@ -8,7 +8,7 @@ import type { EventRecord, QueueItem } from './api';
 import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from './ladder';
-import { canTakeOver, keepSelection, queueReducer } from './queue';
+import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './queue';
 import { clock, slaOf } from './sla';
 import { viewportOf } from './viewport';
 
@@ -62,6 +62,29 @@ describe('canlı kuyruk', () => {
     expect(keepSelection([c, b, a], [c], 'a')).toBe('c');
     expect(keepSelection([], [c], null)).toBe('c');
     expect(keepSelection([c], [], 'c')).toBeNull();
+  });
+});
+
+describe('otomatik atama (0039)', () => {
+  const now = Date.parse('2026-11-13T10:00:00Z');
+  const offered = (until: string, by = 'me'): QueueItem => ({
+    ...item('x', 1, '2026-11-13T09:59:00Z', 'OPERATOR_ASSIGNED'),
+    lockedBy: by,
+    offerUntil: until,
+  });
+  it('offerFor: bana atanmış, kabul bekliyor ve süre dolmamış', () => {
+    expect(offerFor(offered('2026-11-13T10:00:15Z'), 'me', now)).toBe(true);
+    expect(offerFor(offered('2026-11-13T09:59:59Z'), 'me', now)).toBe(false); // süre doldu
+    expect(offerFor(offered('2026-11-13T10:00:15Z', 'other'), 'me', now)).toBe(false);
+    expect(offerFor({ ...offered('2026-11-13T10:00:15Z'), offerUntil: null }, 'me', now)).toBe(false); // kabul edildi
+  });
+  it('newOffer: yalnız bu güncellemede gelen atama; aynı teklif tekrar seçtirmez, yeni teklif seçtirir', () => {
+    const a = item('a', 1, '2026-11-13T09:58:00Z');
+    const o = offered('2026-11-13T10:00:15Z');
+    expect(newOffer([a], [a, o], 'me')?.eventId).toBe('x');
+    expect(newOffer([a, o], [a, o], 'me')).toBeNull();
+    expect(newOffer([a, o], [a, { ...o, offerUntil: '2026-11-13T10:05:00Z' }], 'me')?.eventId).toBe('x');
+    expect(newOffer([a], [a, offered('2026-11-13T10:00:15Z', 'other')], 'me')).toBeNull();
   });
 });
 

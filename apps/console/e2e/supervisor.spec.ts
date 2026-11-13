@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
-import { login, sendSignal } from './support';
+import { AUTH_STATE, login, rowIds, sendSignal } from './support';
 
 /**
  * T-074 amir panosu (E-11). Kabul: ihlal üretilince listede 5 sn içinde. Kuyruğa düşen SOS 10 sn üstlenilmezse
@@ -70,4 +70,48 @@ test('ihlal 5 sn içinde listede; taşma bayrağı aç/kapat', async ({ page }) 
 
   await page.getByRole('button', { name: 'Konsola dön' }).click();
   await expect(page).toHaveURL(/\/$/);
+});
+
+test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sayımla "Kabul et"; amir kapatır', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(150_000);
+  // Operatör ayrı oturumda (global kurulumdaki operatör SSO çerezi), konsol bağlı ve müsait.
+  const opCtx = await browser.newContext({ storageState: AUTH_STATE });
+  const op = await opCtx.newPage();
+  try {
+    await login(op);
+    await login(page, 'supervisor1');
+    await page.getByRole('button', { name: 'Amir panosu' }).click();
+    const tile = page.getByTestId('auto-assign');
+    await expect(tile).toContainText('Kapalı');
+    await tile.getByRole('button', { name: 'Aç' }).click();
+    await expect(tile).toContainText('Açık');
+
+    const before = await rowIds(op);
+    await sendSignal(op, 'SOS');
+    const offer = op.getByTestId('offer');
+    await expect(offer).toBeVisible({ timeout: 15_000 }); // atama turu 2 sn + WS
+    await expect(offer).toContainText('Bu olay size atandı');
+    const id = (await rowIds(op)).find((x) => !before.includes(x))!;
+    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/selected|active/);
+    await offer.getByRole('button', { name: /Kabul et/ }).click();
+    await expect(offer).toHaveCount(0);
+    await expect(op.locator('.state')).toHaveText('Üstlenildi');
+
+    await tile.getByRole('button', { name: 'Kapat' }).click();
+    await expect(tile).toContainText('Kapalı');
+    await expect(tile).toContainText('1 kabul', { timeout: 10_000 });
+
+    // Temizlik: operatör olayı yanlış alarm olarak kapatır.
+    await op.keyboard.press('c');
+    const dialog = op.getByRole('dialog', { name: 'Olayı kapat' });
+    const choice = dialog.getByLabel('Yanlış alarm');
+    if (!(await choice.isChecked())) await choice.check();
+    await dialog.getByRole('button', { name: 'Kapat' }).click();
+    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
+  } finally {
+    await opCtx.close();
+  }
 });

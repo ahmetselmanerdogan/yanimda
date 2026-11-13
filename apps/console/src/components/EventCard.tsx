@@ -5,7 +5,7 @@ import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, t
 import { action, t } from '../lib/i18n';
 import type { Mode } from '../lib/keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from '../lib/ladder';
-import { canTakeOver } from '../lib/queue';
+import { canTakeOver, offerFor } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
 import { ScriptPanel } from './Panels';
 
@@ -136,6 +136,18 @@ export function EventCard(p: Props) {
         </p>
       )}
 
+      {offerFor(item, me, now) && (
+        <div className="claim offer" role="alert" data-testid="offer">
+          <p>
+            {t('O-UI-OFFER', {
+              time: clock(Math.max(0, Math.ceil((new Date(item.offerUntil!).getTime() - now) / 1000))),
+            })}
+          </p>
+          <button type="button" className="primary" onClick={p.onClaim} disabled={p.busy}>
+            {action('O-UI-OFFER')} <kbd>Enter</kbd>
+          </button>
+        </div>
+      )}
       {state === 'OPERATOR_QUEUE' && (
         <div className="claim">
           <p>{t('O-UI-CLAIM')}</p>
