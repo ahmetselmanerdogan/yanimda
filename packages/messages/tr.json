@@ -2263,6 +2263,18 @@
     "channel": "family",
     "text": "Aile davet kodum var"
   },
+  "F-WEB-DATA-EXPORT": {
+    "channel": "family",
+    "text": "Verilerimi indir"
+  },
+  "F-WEB-DATA-EXPORT-HINT": {
+    "channel": "family",
+    "text": "Hesabınızın ve yakınınızın kayıtlı bilgilerinin bir kopyasını dosya olarak indirin. Tıbbi bilgiler güvenlik için dosyaya eklenmez."
+  },
+  "F-WEB-DATA-EXPORT-DONE": {
+    "channel": "family",
+    "text": "Verileriniz indirildi."
+  },
   "F-WEB-MEMBERS-ACCEPT-TITLE": {
     "channel": "family",
     "text": "Aile davetini kabul et"
