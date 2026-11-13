@@ -60,7 +60,7 @@ WCAG formülüyle hesaplanır.
 ## 5. Saat (Wear OS) ve Android telefon — otomatik denetim (2026-11-13)
 
 Dal: `yanimda-wear` ve `yanimda-android` depolarında `t082-a11y` (yerel). Çalıştırma: `./gradlew test` (JVM, Robolectric;
-emülatör gerekmez). Testler: saat 87 → 97, telefon 113 → 120; `lint` ve `ktlintCheck` temiz.
+emülatör gerekmez). Testler: saat 87 → 97, telefon 113 → 121; `lint` ve `ktlintCheck` temiz.
 
 ### Araç
 
@@ -95,12 +95,12 @@ semantik ağaç denetimi kullanıldı. Cihazda Scanner turu ayrıca gerekir.
 | 4 | Saat, yazı 2,0 | Sabit yükseklikli düğmelerde etiket kesiliyor; soru, bilgi, arama, izin, eşleşme, geri arama ekranlarında taşma | Düğmeler `heightIn(min = 64 dp)`; ekranlar kaydırılabilir (dokunma + döner taç); İyiyim her boyutta görünür |
 | 5 | Saat, yazı 2,0 | "YARDIM" sözcük ortasından bölünüyordu | Daire 1,5 kata kadar büyür, etiket tek satır ve sığacak kadar küçülür |
 | 6 | Saat, gelen arama | Operatör dışı aramada cevapla düğmesi yalnız simge | Etiket "Cevapla" (W-CALL-1 eylemi) |
-| 7 | Saat, gelen arama | Kapat düğmesi yalnız simge | Katalog: `W-CALL-END` "Aramayı bitir" (bu PR); saat deposunda eşitleme + etiket |
+| 7 | Saat, gelen arama | Kapat düğmesi yalnız simge | Etiket "Aramayı bitir" (`W-CALL-END`) |
 | 8 | Saat, tile | Düğmelerde rol/etiket yok | ProtoLayout semantiği: düğme rolü + görünen etiket |
 | 9 | Telefon, düğmeler | Amber "İzin ver" ve "SOS kuyrukta" şeridinde beyaz metin 2,35:1 | Koyu metin: 7,42:1 |
 | 10 | Telefon, renkli metin | Açık temada amber uyarı 2,35:1; koyu temada kırmızı hata 3,33:1, gri özet 3,52:1, ikincil düğme 2,35:1 | Renk zeminle AA tutmuyorsa tema metin rengi |
-| 11 | Telefon, eşleşme | Kod alanının ekran okuyucu etiketi yok | Yönerge (P-PAIR) alan adı olarak okunur; kısa etiket `P-PAIR-CODE` "Eşleştirme kodu" katalogda (bu PR) |
-| 12 | Telefon, YARDIM | İç "YARDIM" ve ipucu ayrı odak: aynı metin iki kez okunuyordu | Tek odak; etiket tek satır |
+| 11 | Telefon, eşleşme | Kod alanının ekran okuyucu etiketi yok | Görünür alan etiketi "Eşleştirme kodu" (`P-PAIR-CODE`); P-PAIR yönerge olarak üstte |
+| 12 | Telefon, YARDIM | İç "YARDIM" ve ipucu ayrı odak: aynı metin iki kez okunuyordu | Tek odak; etiket tek satır; TalkBack ipucu `P-SOS-HOLD-VO` (çift dokunma) |
 
 Bulgu çıkmayanlar: telefonda 2,0 yazıda kesilme yok (ekranlar zaten kaydırılabilir); dokunma hedefleri ≥ 48 dp. 192 dp
 saatte 2,0 yazıda satırdan uzun sözcükler ("Telefonunuzdaki") bölünüyor; metin kesilmiyor, gerçek saatte bakılmalı.
@@ -108,7 +108,7 @@ saatte 2,0 yazıda satırdan uzun sözcükler ("Telefonunuzdaki") bölünüyor; 
 ## 6. iOS eşlikçi (T-073) — Xcode erişilebilirlik denetimi (2026-11-13)
 
 Dal: `yanimda-ios` `t082-a11y` (yerel). Araç: XCUITest `performAccessibilityAudit()` (Xcode 27.2, iPhone 17 simülatörü,
-iOS 27.2) + YanimdaKit kontrast birim testleri (WCAG 2.1, tokens.json çiftleri). Birim testler 104 → 108; UI denetimi
+iOS 27.2) + YanimdaKit kontrast birim testleri (WCAG 2.1, tokens.json çiftleri). Birim testler 104 → 109; UI denetimi
 17 test, 0 hata; SwiftLint temiz.
 
 **Ekranlar:** eşleşme, izin sihirbazı (bildirim, konum, Sağlık, hazır), ana ekran (durum kartı, P-PERM, YARDIM),
@@ -129,9 +129,9 @@ Uygulama Debug'daki `-YanimdaUITestScenario` ile belirlenimli açılır (API yok
 | 8 | Sensörler izin düğmesi | Boş etiket: P-PERM-BLUETOOTH-IOS'un eylem metni yoktu | Katalogda `action: "İzin ver"` (bu PR) |
 | 9 | VoiceOver (kod incelemesi) | Sihirbaz adımı ve SOS kartı duyurulmuyor | `ScreenChanged` / `Announcement`, başlık özelliği |
 
-Katalog (bu PR): `P-SOS-HOLD-VO` "Yardım çağırmak için iki kez dokunun." (VoiceOver'da çift dokunma hemen gönderir;
-"3 saniye basılı tutun" ipucu yanıltıcıydı), `P-PROMPT-LEFT` "{sec} saniye kaldı." ("İyiyim" geri sayımının VoiceOver
-etiketi). Uygulamada kullanımı iOS deposunda eşitlemeyle.
+VoiceOver metinleri: YARDIM ipucu `P-SOS-HOLD-VO` "Yardım çağırmak için iki kez dokunun." (VoiceOver'da çift dokunma
+hemen gönderir; "3 saniye basılı tutun" ipucu yanıltıcıydı), "İyiyim" geri sayımının etiketi `P-PROMPT-LEFT`
+"{sec} saniye kaldı." Birim testler 109.
 
 **Açık:** AX5'te uzun Türkçe sözcükler başlıkta bölünüyor ("Operatörümü/z"); başlığı sınırlamak denetimde Dynamic Type
 hatası veriyor. Karar: tasarım sınırı (denetim istisnası), heceleme veya kısa metin.
