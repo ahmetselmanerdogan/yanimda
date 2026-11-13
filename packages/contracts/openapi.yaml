@@ -45,6 +45,7 @@ paths:
         ve SKIN_TEMP_DEVIATION (value °C) yeni türlerdir; değer kuralları bayrakla kapalıyken (varsayılan) HEART_RATE,
         STEPS, SPO2 ve SKIN_TEMP_DEVIATION yalnız kaydedilir.
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '202':
           description: Kabul edildi (kalıcı yazıldı; olay işleme eşzamansız)
@@ -110,6 +111,7 @@ paths:
                 channel: { enum: [CALL, NOTIFY, BOTH] }
                 windowMin: { type: integer, minimum: 15, maximum: 1440 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { description: Plan ve sıradaki zaman (nextDueAt) }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -266,6 +268,7 @@ paths:
                 endpoint: { type: string, format: uri }
                 keys: { type: object, properties: { p256dh: { type: string }, auth: { type: string } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: Kaydedildi }
         '400': { $ref: '#/components/responses/Problem' }
@@ -276,6 +279,7 @@ paths:
       requestBody:
         content: { application/json: { schema: { type: object, properties: { endpoint: { type: string } } } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '204': { description: Bırakıldı }
   /queue:
     get:
@@ -324,6 +328,7 @@ paths:
           application/json:
             schema: { type: object, properties: { reason: { type: string, maxLength: 500 } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { description: Kuyrukta }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -449,6 +454,7 @@ paths:
                     description: "Operatör 112'yi tekrar arayıp durumu sordu (takip araması; sayılır, denetlenir)",
                   }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           {
             description: Güncel süreç,
@@ -542,6 +548,7 @@ paths:
                 note: { type: string, maxLength: 2000 }
                 reason: { type: string, maxLength: 500, description: SKIPPED için zorunlu }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/EventWithChain' }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -560,6 +567,7 @@ paths:
               required: [reason]
               properties: { reason: { type: string, minLength: 1, maxLength: 500 } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/EventWithChain' }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -593,6 +601,7 @@ paths:
                     Gerçek SOS / FALL UNREACHABLE ile kapanırken de sorulur: true → CONFIRMED_EMERGENCY → DISPATCH
                     (sonuç UNREACHABLE kalır); false → CLOSED + audit + amire O-CLOSE-UNREACHABLE-NO-112.
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '204': { description: Closed }
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -616,6 +625,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, additionalProperties: { type: string } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
@@ -651,6 +661,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, additionalProperties: { type: string } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
@@ -717,6 +728,7 @@ paths:
               required: [status]
               properties: { status: { enum: [AVAILABLE, BREAK] } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Yeni durum
           content:
@@ -759,6 +771,7 @@ paths:
                 Confidence: { type: string }
               additionalProperties: { type: string }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: TwiML
@@ -847,6 +860,7 @@ paths:
           application/json:
             schema: { type: object, required: [on], properties: { on: { type: boolean } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/CallView' }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -869,6 +883,7 @@ paths:
             schema:
               { type: object, properties: { contactIndex: { type: integer, minimum: 1, maximum: 5, default: 1 } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/CallView' }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -908,6 +923,7 @@ paths:
                   properties:
                     relation: { type: string, maxLength: 50, description: Ailenin kişiye yakınlığı (ör. Kızı) }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201':
           {
             description: Oluşturuldu,
@@ -958,6 +974,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/PersonInput' } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           { description: Kişi, content: { application/json: { schema: { $ref: '#/components/schemas/PersonView' } } } }
         '400': { $ref: '#/components/responses/Problem' }
@@ -990,6 +1007,7 @@ paths:
                         description: Kişinin/vasinin rıza verdiği an (gelecekte olamaz),
                       }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Kaydedildi
           content:
@@ -1109,6 +1127,7 @@ paths:
                     pattern: '^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$'
                     description: Ulaşılabilir saatler (kişinin saat diliminde, gece yarısını geçebilir); yoksa her zaman
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           {
             description: Kaydedildi,
@@ -1147,6 +1166,7 @@ paths:
                 platform: { enum: [FCM] }
                 token: { type: string, minLength: 20, maxLength: 4096 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '204': { description: Kaydedildi }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
@@ -1187,6 +1207,7 @@ paths:
                 MessageStatus: { enum: [queued, sent, delivered, undelivered, failed] }
                 ErrorCode: { type: string }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: TwiML, content: { text/xml: { schema: { type: string } } } }
         '403': { $ref: '#/components/responses/Problem' }
@@ -1315,6 +1336,7 @@ paths:
               required: [status]
               properties: { status: { enum: [AVAILABLE, BREAK, OFFLINE] } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Yeni durum
           content:
@@ -1340,6 +1362,7 @@ paths:
           application/json:
             schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           {
             description: Bayrak,
@@ -1477,6 +1500,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ChargingPlanInput' } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Güncel şarj penceresi
           content: { application/json: { schema: { $ref: '#/components/schemas/ChargingPlan' } } }
@@ -1501,6 +1525,7 @@ paths:
               additionalProperties: false
               properties: { minutes: { type: integer, minimum: 1, maximum: 240 } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '202':
           description: Kabul edildi
           content:
@@ -1542,6 +1567,7 @@ paths:
                 type: { enum: [RING, PROMPT, LOCATE, TEST] }
                 eventId: { type: string, format: uuid }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '202':
           description: Gönderildi (veya cihaz desteklemiyor)
           content:
@@ -1594,6 +1620,7 @@ paths:
         - { name: X-Partner-Signature, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '202':
           description: Alındı (sinyal başına ret listesiyle)
           content: { application/json: { schema: { $ref: '#/components/schemas/PartnerWebhookResult' } } }
@@ -1637,6 +1664,7 @@ paths:
                     basis: { enum: [EXPLICIT_CONSENT, SCC_NOTIFIED, ADEQUACY] }
                     at: { type: string, format: date-time }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201':
           description: Bağlandı
           content: { application/json: { schema: { $ref: '#/components/schemas/VendorLink' } } }
@@ -1850,6 +1878,7 @@ paths:
               properties:
                 relation: { type: [string, 'null'], maxLength: 50, description: Kabulde üyeliğe yazılır (örn. Oğlu) }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '201':
           description: Kod (bir kez gösterilir)
@@ -1920,6 +1949,7 @@ paths:
               properties:
                 code: { type: string, maxLength: 40 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '201':
           description: Eklendi
@@ -1983,6 +2013,7 @@ paths:
                   maximum: 90
                   description: Düşme sorusu cevap süresi (T-061, C-09); null → kural paketi (60 sn)
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           {
             description: Özet,
@@ -2030,6 +2061,7 @@ paths:
           application/json:
             schema: { type: object, required: [real], properties: { real: { type: boolean } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201':
           description: Kaydedildi
           content:
@@ -2075,6 +2107,7 @@ paths:
                 osVersion: { type: string, maxLength: 50 }
                 appVersion: { type: string, maxLength: 50 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201': { $ref: '#/components/responses/DeviceToken' }
         '200': { $ref: '#/components/responses/DeviceToken' }
         '400': { $ref: '#/components/responses/Problem' }
@@ -2209,6 +2242,7 @@ paths:
                 token: { type: string, maxLength: 4096 }
                 sandbox: { type: boolean, description: APNs geliştirme ortamı }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '204': { description: Kaydedildi }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
@@ -2238,6 +2272,7 @@ paths:
                 osVersion: { type: string, maxLength: 50 }
                 appVersion: { type: string, maxLength: 50 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201': { $ref: '#/components/responses/DeviceToken' }
         '200': { $ref: '#/components/responses/DeviceToken' }
         '400': { $ref: '#/components/responses/Problem' }
@@ -2259,6 +2294,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SetupStateInput' }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '204': { description: Kaydedildi }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
@@ -2327,6 +2363,7 @@ paths:
                 voiceOrder: { type: [integer, 'null'], minimum: 1, maximum: 6 }
                 voiceNumber: { type: [string, 'null'], pattern: '^\+[1-9]\d{6,14}$', description: Yalnız operasyon }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Cihaz kartı
           content: { application/json: { schema: { $ref: '#/components/schemas/DeviceSummary' } } }
@@ -2444,6 +2481,7 @@ paths:
                     kvkkNoticeVersion: { type: string }
                     explicitConsent: { const: true }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201':
           description: Hesap açıldı
           content:
@@ -2488,6 +2526,7 @@ paths:
           application/json:
             schema: { type: object, required: [code], properties: { code: { type: string, pattern: '^\d{6}$' } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200': { description: Doğrulandı }
         '400': { $ref: '#/components/responses/Problem' }
@@ -2502,6 +2541,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/CheckoutSession' }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -2530,6 +2570,7 @@ paths:
       security: []
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '200':
           description: Alındı
@@ -2554,6 +2595,7 @@ paths:
           application/x-www-form-urlencoded:
             schema: { type: object, required: [token], properties: { token: { type: string } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '303': { description: Web'e yönlendirme }
         '400': { $ref: '#/components/responses/Problem' }
@@ -2569,6 +2611,7 @@ paths:
           application/json:
             schema: { type: object, properties: { outcome: { enum: [success, fail] } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { description: 'İmzalı webhook gerçek yoldan işlendi; `redirect` web adresi' }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/subscription:
@@ -2601,6 +2644,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/PersonId' }]
       requestBody: { $ref: '#/components/requestBodies/CheckoutInput' }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200': { $ref: '#/components/responses/CheckoutSession' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -2663,6 +2707,7 @@ paths:
                 value:
                   { model: BLE_PENDANT, addressHash: 1b2c3d4e5f60718293a4b5c6d7e8f9011a2b3c4d5e6f708192a3b4c5d6e7f809 }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '201':
           description: Yeni kayıt
           content:
@@ -2798,6 +2843,7 @@ paths:
                 doctorNoteRef: { type: [string, 'null'], maxLength: 200 }
             example: { lowHr: 36, familyConsent: true, doctorNote: true, doctorNoteRef: 'belge-2026-11-01' }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Güncel ayarlar
           content:
@@ -2830,6 +2876,7 @@ paths:
           application/json:
             schema: { type: object, properties: { note: { type: string, maxLength: 500 } } }
       responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '200':
           description: Kapatılan inceleme
           content:
@@ -2891,6 +2938,15 @@ components:
       schema: { type: string, format: uuid }
     CallId: { name: callId, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
+    UnsupportedMediaType:
+      description: >-
+        T-081 (ASVS 13.1.5, 13.2.5) gövdenin içerik türü bu uçta desteklenmiyor. Gövdeli istekler yalnız
+        `application/json` (parametre serbest, ör. `; charset=utf-8`); Twilio / CPaaS webhook'ları ve iyzico geri
+        çağrısı yalnız `application/x-www-form-urlencoded`. Gövde ayrıştırılmadan reddedilir. Gövdesiz istek
+        (Content-Length 0) serbest.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     TooManyRequests:
       description: >-
         T-081 hız sınırı aşıldı (Redis sabit pencere; uç başına kimlik: kullanıcı, cihaz, kişi veya IP).
