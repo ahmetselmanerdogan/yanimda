@@ -143,7 +143,7 @@ export class ChainService {
 
   /** Operatör kilidini uzatır (konsol açıkken periyodik). */
   heartbeat(id: string, operatorId: string, now?: Date): Promise<{ lockUntil?: string }> {
-    return this.events.operate(id, operatorId, async (c) => ({ lockUntil: c.ev.lockUntil }), { now });
+    return this.events.operate(id, operatorId, async (c) => ({ lockUntil: c.ev.lockUntil }), { now, accept: false });
   }
 
   /**
@@ -360,7 +360,7 @@ export class ChainService {
         await this.repo.audit(c.tx, c.ev.id, operatorId, 'event.script_viewed', { kind });
         return { kind: 'dispatch112', code: 'O-SCRIPT-112', fields, text: t('O-SCRIPT-112', 'tr', fields) };
       },
-      { now },
+      { now, accept: false },
     );
   }
 
@@ -369,7 +369,10 @@ export class ChainService {
    * yalnız burada ve 112 şablonunda çözülür; her çözüm denetim kaydına yazılır. Profil yoksa null.
    */
   async personCard(id: string, operatorId: string, now?: Date): Promise<EventPersonCard | null> {
-    return this.events.operate(id, operatorId, (c) => this.cardOf(c, operatorId, 'event_card'), { now });
+    return this.events.operate(id, operatorId, (c) => this.cardOf(c, operatorId, 'event_card'), {
+      now,
+      accept: false,
+    });
   }
 
   // ---- iç ----
@@ -520,7 +523,7 @@ export class ChainService {
           await this.advance(c, r);
           return null;
         },
-        { now },
+        { now, accept: false },
       )
       .catch((e: unknown) => {
         if (!(e instanceof ConflictException)) throw e;

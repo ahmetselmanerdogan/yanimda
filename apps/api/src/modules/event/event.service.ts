@@ -1201,7 +1201,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     id: string,
     operatorId: string,
     fn: (c: OperatorCtx) => Promise<T>,
-    opts: { claim?: boolean; now?: Date } = {},
+    /**
+     * `accept: false`: okuma veya sistem işlemi (kişi kartı, 112 metni, kalp atışı, yeniden planlama) otomatik atama
+     * teklifini kabul etmez; kabul operatörün eylemidir (üstlen, ara, sonuç, metni okudum, kapat).
+     */
+    opts: { claim?: boolean; now?: Date; accept?: boolean } = {},
   ): Promise<T> {
     const now = opts.now ?? new Date();
     const found = await this.withEvent(id, async (u) => {
@@ -1238,7 +1242,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       u.ev.lockUntil = new Date(now.getTime() + operatorLockMs()).toISOString();
       u.dirty = true;
       // Otomatik atama: operatör olayı açtı (üstlen / kalp atışı / adım) → teklif kabul edildi.
-      if (await this.repo.acceptAssignment(u.tx, u.ev.id, operatorId, now))
+      if (opts.accept !== false && (await this.repo.acceptAssignment(u.tx, u.ev.id, operatorId, now)))
         u.publishes.push({
           topic: TOPICS.eventUpdated,
           payload: { eventId: u.ev.id, operatorId, reason: 'ASSIGNMENT_ACCEPTED' },

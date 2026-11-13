@@ -3,6 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { bus } from '../src/common/bus';
 import { InMemoryTimers } from '../src/common/timers/memory-timers';
+import { ChainService } from '../src/modules/chain/chain.service';
+import { loadProcedures } from '../src/modules/chain/procedures';
 import type { EventService } from '../src/modules/event/event.service';
 import { SupervisorService } from '../src/modules/metrics/supervisor.service';
 import { AssignmentService } from '../src/modules/queue/assignment.service';
@@ -160,6 +162,32 @@ describe('otomatik atama', () => {
     expect(await svc().run(at(30))).toEqual({ assigned: 0, missed: 0 });
     expect(await events.get(id)).toMatchObject({ state: 'OPERATOR_ASSIGNED', operatorId: 'op-1' });
     expect((await status('op-1')).status).toBe('AVAILABLE');
+  });
+
+  it('okuma kabul değildir: konsol kişi kartını, 112 metnini okur ve kalp atışı gönderir; teklif yine süre dolunca iade', async () => {
+    // CI bulgusu: konsol olayı açınca kişi kartını okuyor; okuma `operate` üzerinden kabul sayılıyordu (kabul 0 sn).
+    await enable();
+    await operator('op-1');
+    const id = await raise('SOS', 'pp-1');
+    await svc().run(at(1));
+    const chain = new ChainService(h.db, events, loadProcedures('TR'));
+    await chain.personCard(id, 'op-1', at(2));
+    await chain.heartbeat(id, 'op-1', at(3));
+    await chain.dispatchScript(id, 'op-1', 'dispatch112', at(4)).catch(() => undefined);
+    expect((await events.queueItem(id))?.offerUntil).toBe(at(21).toISOString());
+    expect(await svc().run(at(22))).toMatchObject({ missed: 1 });
+    expect((await status('op-1')).status).toBe('BREAK');
+  });
+
+  it('"Kabul et" (üstlen) teklifi kabul eder ve zinciri kurar', async () => {
+    await enable();
+    await operator('op-1');
+    const id = await raise('SOS', 'pp-1');
+    await svc().run(at(1));
+    const chain = new ChainService(h.db, events, loadProcedures('TR'));
+    const view = await chain.claim(id, 'op-1', at(2)); // "Kabul et"
+    expect(view.chain!.current).toBeGreaterThan(0);
+    expect((await events.queueItem(id))?.offerUntil).toBeNull();
   });
 
   it('cevapsız atama: süre dolunca olay kuyruğa döner, operatör molaya alınır, amire O-ASSIGN-MISSED; sonra başkasına', async () => {

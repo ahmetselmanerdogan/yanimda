@@ -116,11 +116,11 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await expect(offer).toContainText('Bu olay size atandı');
     const id = (await rowIds(op)).find((x) => !before.includes(x))!;
     await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/active/);
-    await offer.getByRole('button', { name: /Kabul et/ }).click();
+    await offer.getByRole('button', { name: /Kabul et/ }).click({ timeout: 10_000 });
     await expect(offer).toHaveCount(0);
     await expect(op.locator('.state')).toHaveText('Üstlenildi');
 
-    await tile.getByRole('button', { name: 'Kapat' }).click();
+    await tile.getByRole('button', { name: 'Kapat' }).click({ timeout: 10_000 });
     await expect(tile).toContainText('Kapalı');
     await expect(tile).toContainText('1 kabul', { timeout: 10_000 });
 
