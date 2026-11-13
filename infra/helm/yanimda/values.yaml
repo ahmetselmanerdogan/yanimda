@@ -43,6 +43,8 @@ api:
     NODE_ENV: production
     DB_MIGRATE_ON_START: 'true'
     DATABASE_POOL_MAX: '10'
+    # 0038: kopya başına paralel outbox bölümü (32 bölüm kopyalar arasında dağılır)
+    OUTBOX_CONCURRENCY: '4'
     SIMULATOR_ENABLED: 'false'
     # T-081: ingress-nginx arkasında gerçek istemci IP'si (hız sınırı)
     TRUST_PROXY: '1'

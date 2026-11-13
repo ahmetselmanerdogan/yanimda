@@ -132,6 +132,8 @@ export class PendantMaintenanceService implements OnModuleInit, OnModuleDestroy 
     this.unsub = bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e.payload), {
       lane: 'side',
       name: 'pendant.maintenance',
+      // Yalnız pil sinyali iş emri açabilir: her HEARTBEAT için side satırı yazılmasın (ölçek, 0038).
+      accepts: (e) => (e.payload as Signal).kind === 'BATTERY',
     });
   }
 
