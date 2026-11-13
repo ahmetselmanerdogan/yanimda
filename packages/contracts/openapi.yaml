@@ -2,7 +2,12 @@ openapi: 3.1.0
 info:
   title: Yanımda API
   version: 0.1.0
-  description: 03-teknik-mimari.md "API sözleşmeleri" bölümünün S0 taslağı. Her görevde genişletilir.
+  description: >-
+    03-teknik-mimari.md "API sözleşmeleri" bölümünün S0 taslağı. Her görevde genişletilir.
+    T-081 (ASVS 5.1.4, 13.2.2): bu dosya çalışma anında da kullanılır — createProtectedPerson,
+    updateProtectedPerson, setMedical, setContacts, createMemberInvite, acceptMemberInvite, stepResult,
+    escalate112 ve closeEvent gövdeleri buradaki requestBody şemasıyla doğrulanır (uymayan 400 problem+json,
+    ayrıntıda yalnız alan yolu ve kural; değer yok). Sinyal partisi signal.schema.json ile doğrulanır.
 servers:
   - url: http://localhost:3000/v1
 paths:
