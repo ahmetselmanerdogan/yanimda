@@ -97,6 +97,42 @@ describe('alarm olmayan açık olaya gerçek alarm → yükseltme', () => {
     expect(await familyCodes()).toContain('F-EVT-SOS');
   });
 
+  it('konsol yolu: üstlenilmiş TEST olayına SOS → GET yeni planı (SOS metni, 112) gösterir, yeniden üstlenme gerekmez', async () => {
+    await deliver('TEST');
+    const id = (await only()).id;
+    await chain.claim(id, OP);
+    await deliver('SOS');
+
+    // Uçtan uca bulgu (2026-11-13): konsol olayı GET ile okur; eski TEST planı ve O-SCRIPT-TEST metni kalıyordu.
+    const view = await chain.get(id);
+    expect(kinds(view.chain!.steps).slice(0, 3)).toEqual([
+      'CALL_WATCH=SKIPPED(upgraded)',
+      'CALL_PHONE=SKIPPED(upgraded)',
+      'CALL_WATCH',
+    ]);
+    expect(view.chain!.steps.at(-1)!.kind).toBe('CALL_112');
+    expect(view.chain!.current).toBe(3);
+    expect(view.chain!.steps.filter((s) => !s.result).map((s) => s.script)).not.toContain('O-SCRIPT-TEST');
+    // İkinci okuma yeniden planlamaz (adımlar çoğalmaz).
+    expect((await chain.get(id)).chain!.steps).toHaveLength(view.chain!.steps.length);
+  });
+
+  it('konsol yolu: eski adım numarasıyla "Ara" 409 alır ama yeni plan kalıcıdır; yeni adım işlenir', async () => {
+    await deliver('TEST');
+    const id = (await only()).id;
+    await chain.claim(id, OP);
+    await deliver('SOS');
+
+    // Konsol yükseltmeyi görmeden eski planın sıradaki adımını arar: sıra dışı, ama yeniden planlama geri alınmaz.
+    await expect(chain.call(id, 1, OP)).rejects.toMatchObject({ status: 409 });
+    const view = await chain.get(id);
+    expect(view.chain!.current).toBe(3);
+    const called = await chain.call(id, 3, OP);
+    expect(called.chain!.steps.find((s) => s.n === 3)!.calledAt).toBeTruthy();
+    const res = await chain.stepResult(id, 3, OP, { result: 'NO_ANSWER' });
+    expect(res.chain!.current).toBe(4);
+  });
+
   it('CALLBACK olayına FALL → FALL, P1 (operatöre; kişi sorusu açılmaz)', async () => {
     await deliver('CALLBACK_REQUEST');
     expect(await only()).toMatchObject({ type: 'CALLBACK', priority: 4 });
