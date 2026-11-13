@@ -16,7 +16,7 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, contact, devicePrompt } from '../../db/schema';
 import { deviceSummaries } from '../event/coverage.service';
-import { type EventRecord, EventService, type OperatorCtx } from '../event/event.service';
+import { type EventRecord, EventService, OPERATOR_STATES, type OperatorCtx } from '../event/event.service';
 import {
   call112DeadlineSecOf,
   ladderOf,
@@ -116,6 +116,7 @@ export class ChainService {
   }
 
   async get(id: string): Promise<EventWithChain> {
+    await this.replanIfStale(id);
     const event = await this.events.get(id);
     const run = await this.repo.run(id);
     return {
@@ -150,6 +151,7 @@ export class ChainService {
    * numarası kayıtlıysa (112 hariç: masa hattından, T-052) CPaaS araması commit'ten sonra başlatılır (T-050).
    */
   async call(id: string, n: number, operatorId: string, now?: Date): Promise<EventWithChain> {
+    await this.replanIfStale(id, now);
     let plan: { callId: string; fresh: boolean; timeoutSec: number } | null = null;
     const res = await this.events.operate(
       id,
@@ -210,6 +212,7 @@ export class ChainService {
 
   async stepResult(id: string, n: number, operatorId: string, body: unknown, now?: Date): Promise<EventWithChain> {
     const b = this.parseResult(body);
+    await this.replanIfStale(id, now);
     return this.events.operate(
       id,
       operatorId,
@@ -494,6 +497,34 @@ export class ChainService {
       welfareReason: ev.type === 'WELFARE_CHECK' ? await welfareReasonOf(q, ev.id) : null,
       prompts: await promptsOf(q, ev.id, new Date()),
     };
+  }
+
+  /**
+   * Olay operatördeyken yükseltildiyse (ör. üstlenilmiş TEST'e SOS) zincir, olayı tutan operatör adına AYRI bir
+   * transaction'da yeniden planlanır. Uçtan uca bulgu (2026-11-13): yeniden planlama yalnız adım işleminin içinde
+   * yapılıyordu; konsol eski adım numarasını gönderince 409 ile birlikte geri alınıyor, operatör zinciri hiç
+   * ilerletemiyor ve GET eski TEST metnini gösteriyordu. Eş zamanlı devralma / kapanışta sessizce geçilir.
+   */
+  private async replanIfStale(id: string, now?: Date): Promise<void> {
+    const run = await this.repo.run(id);
+    if (!run?.eventType) return;
+    const ev = await this.events.get(id).catch(() => null);
+    if (!ev?.operatorId || !OPERATOR_STATES.has(ev.state)) return;
+    if (run.eventType === ev.type && run.isTest === ev.isTest) return;
+    await this.events
+      .operate(
+        id,
+        ev.operatorId,
+        async (c) => {
+          const r = await this.ensureRun(c);
+          await this.advance(c, r);
+          return null;
+        },
+        { now },
+      )
+      .catch((e: unknown) => {
+        if (!(e instanceof ConflictException)) throw e;
+      });
   }
 
   private async ensureRun(c: OperatorCtx): Promise<Run> {

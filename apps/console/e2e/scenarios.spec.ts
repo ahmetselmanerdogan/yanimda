@@ -58,6 +58,9 @@ test.describe('senaryolar', () => {
     await expect(page.locator('.script')).toContainText('Olay: Düşme');
     await page.keyboard.press('1'); // 112 ulaşıldı
     await expect(page.locator('.state')).toHaveText('112 yönlendirildi');
+    // Uçtan uca bulgu (2026-11-13): DISPATCH'te cihaz paneli her yenilemede çoğalıyordu (aynı React anahtarı).
+    await page.waitForTimeout(2500);
+    await expect(page.locator('section.devices')).toHaveCount(1);
     await closeWith(page, 'Acil durum (112)');
     await expect(page.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
   });
@@ -247,6 +250,8 @@ test('T-052 112 adımı (eğitim modu): masa sabit hattı uyarısı, MANUEL etik
   await page.locator('main').click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('1'); // sonucu elle gir: ulaşıldı
   await expect(page.locator('.state')).toHaveText('112 yönlendirildi');
+  await page.waitForTimeout(2500); // DISPATCH'te cihaz paneli çoğalmaz (aynı React anahtarı bulgusu)
+  await expect(page.locator('section.devices')).toHaveCount(1);
 });
 
 test('operatör durumu (eğitim modu): üst barda Müsait / Molada', async ({ page }) => {

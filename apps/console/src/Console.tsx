@@ -470,7 +470,7 @@ export function Console({
         )}
         {ev && (
           <DevicePanel
-            key={ev.id}
+            key={`devices-${ev.id}`}
             api={api}
             event={ev}
             mine={mine}
@@ -502,7 +502,9 @@ export function Console({
           </section>
         )}
         {item && (ev?.state ?? item.state) === 'DISPATCH' && (
-          <DispatchPanel key={item.eventId} api={api} eventId={item.eventId} />
+          // Uçtan uca bulgu (2026-11-13): anahtar DevicePanel'inkiyle aynıydı (olay kimliği); DISPATCH'te iki kardeş
+          // aynı anahtarla çizilince React cihaz panelini her saniye çoğaltıyor, konsol kilitleniyordu.
+          <DispatchPanel key={`dispatch-${item.eventId}`} api={api} eventId={item.eventId} />
         )}
         {ev?.type === 'CALLBACK' && ev.sourceSignalIds?.some((s) => s.startsWith('wellness:')) && (
           <section className="script wellness-script" aria-labelledby="wellness-script-title">
