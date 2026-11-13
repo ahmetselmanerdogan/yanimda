@@ -34,6 +34,11 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // T-081 Keycloak giriş teması: tarayıcıda klasik <script> (modül değil); strength-i18n.js üretilmiş dosya
+    files: ['infra/keycloak/themes/**/*.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser, module: 'readonly' } },
+  },
+  {
     // k6 betikleri (Go içinde çalışan JS): k6 globalleri, ES modülü
     files: ['infra/k6/**/*.js'],
     languageOptions: {

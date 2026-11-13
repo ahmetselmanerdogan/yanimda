@@ -1,0 +1,33 @@
+/* T-081 parola gücü göstergesi (password-strength.js). PatternFly 5 değişkenleriyle; koyu/açık temaya uyar. */
+.yanimda-strength {
+  margin-top: var(--pf-v5-global--spacer--sm, 0.5rem);
+}
+.yanimda-strength__bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  height: 6px;
+}
+.yanimda-strength__bar > span {
+  border-radius: 3px;
+  background: var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+.yanimda-strength[data-score='1'] .yanimda-strength__bar > span:nth-child(-n + 1),
+.yanimda-strength[data-score='2'] .yanimda-strength__bar > span:nth-child(-n + 2) {
+  background: var(--pf-v5-global--warning-color--100, #f0ab00);
+}
+.yanimda-strength[data-score='3'] .yanimda-strength__bar > span:nth-child(-n + 3),
+.yanimda-strength[data-score='4'] .yanimda-strength__bar > span:nth-child(-n + 4) {
+  background: var(--pf-v5-global--success-color--100, #3e8635);
+}
+.yanimda-strength[data-score='0'][data-empty='false'] .yanimda-strength__bar > span:first-child {
+  background: var(--pf-v5-global--danger-color--100, #c9190b);
+}
+.yanimda-strength__text {
+  margin-top: 4px;
+  font-size: var(--pf-v5-global--FontSize--sm, 0.875rem);
+}
+.yanimda-strength__hint {
+  font-size: var(--pf-v5-global--FontSize--sm, 0.875rem);
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
