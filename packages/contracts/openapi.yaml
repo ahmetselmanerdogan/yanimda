@@ -1276,6 +1276,7 @@ paths:
                     type: object
                     properties: { claimSec: { type: integer }, firstCallSec: { type: integer } }
                   overflow: { $ref: '#/components/schemas/OverflowFlag' }
+                  autoAssign: { $ref: '#/components/schemas/AutoAssignState' }
                   inbound:
                     type: object
                     description: Bağlanmamış gelen SOS aramaları (routing/ringing/queued); arayan numara yok.
@@ -1353,6 +1354,29 @@ paths:
                   status: { enum: [AVAILABLE, BREAK, OFFLINE] }
                   statusAt: { type: string, format: date-time }
                   statusBy: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /supervisor/auto-assign:
+    put:
+      summary: >-
+        Amir — otomatik atama bayrağı (0039). Açıkken kuyruktaki olay öncelik ve yaş sırasıyla, en uzun boşta kalan
+        müsait ve konsolu bağlı operatöre atanır; ASSIGN_ACCEPT_SEC (20) içinde açılmazsa kuyruğa döner, operatör
+        molaya alınır (O-ASSIGN-MISSED).
+      operationId: setAutoAssign
+      security: [{ operatorToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+      responses:
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '200':
+          {
+            description: Bayrak ve son 24 saat,
+            content: { application/json: { schema: { $ref: '#/components/schemas/AutoAssignState' } } },
+          }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
@@ -3151,6 +3175,21 @@ components:
         waitedSec: { type: integer }
         at: { type: string, format: date-time }
         operatorId: { type: [string, 'null'] }
+    AutoAssignState:
+      type: object
+      required: [enabled, last24h]
+      properties:
+        enabled: { type: boolean }
+        changedAt: { type: [string, 'null'], format: date-time }
+        changedBy: { type: [string, 'null'] }
+        last24h:
+          type: object
+          description: Son 24 saatin atama teklifleri
+          properties:
+            offered: { type: integer }
+            accepted: { type: integer }
+            missed: { type: integer, description: Süresinde açılmayan (olay kuyruğa döndü, operatör molaya) }
+            acceptP50Sec: { type: [number, 'null'] }
     OverflowFlag:
       type: object
       properties:
@@ -4277,6 +4316,10 @@ components:
         lockUntil: { type: [string, 'null'], format: date-time }
         isTest: { type: boolean }
         headOfQueue: { type: boolean, description: 'T-092: aynı öncelikte önce (P2 değer kombinasyonu)' }
+        offerUntil:
+          type: [string, 'null']
+          format: date-time
+          description: '0039 otomatik atama: lockedBy bu ana kadar kabul etmezse (üstlen / herhangi bir işlem) olay kuyruğa döner'
         person:
           oneOf:
             - type: 'null'

@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
-import { login, sendSignal } from './support';
+import { AUTH_STATE, login, rowIds, sendSignal } from './support';
 
 /**
  * T-074 amir panosu (E-11). Kabul: ihlal üretilince listede 5 sn içinde. Kuyruğa düşen SOS 10 sn üstlenilmezse
@@ -70,4 +70,68 @@ test('ihlal 5 sn içinde listede; taşma bayrağı aç/kapat', async ({ page }) 
 
   await page.getByRole('button', { name: 'Konsola dön' }).click();
   await expect(page).toHaveURL(/\/$/);
+});
+
+test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sayımla "Kabul et"; amir kapatır', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(150_000);
+  // Operatör ayrı oturumda (global kurulumdaki operatör SSO çerezi), konsol bağlı ve müsait.
+  const opCtx = await browser.newContext({ storageState: AUTH_STATE });
+  const op = await opCtx.newPage();
+  let supHeaders: Record<string, string> | undefined;
+  try {
+    await login(op);
+    const opHeaders = { authorization: `Bearer ${await tokenOf(op)}`, 'content-type': 'application/json' };
+    const me = await (await op.request.get('/v1/operators/me', { headers: opHeaders })).json();
+    expect(me.status).toBe('AVAILABLE');
+    // Başlangıç: önceki testlerden kalan olaylar (ör. axe testinin üstlenip bıraktığı SOS) kapatılır; elinde süren
+    // olayı olan operatöre atama yapılmaz, kuyrukta bekleyen eski olay da yeni SOS'tan önce atanırdı.
+    const { items } = (await (await op.request.get('/v1/queue?limit=200', { headers: opHeaders })).json()) as {
+      items: { eventId: string; state: string; lockedBy: string | null }[];
+    };
+    for (const i of items) {
+      // Atamayı engelleyen: kuyrukta bekleyen ve operatörün yürüttüğü (Üstlenildi / Zincir) olaylar.
+      const mine = i.lockedBy === me.subject && ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN'].includes(i.state);
+      if (i.state !== 'OPERATOR_QUEUE' && !mine) continue;
+      const ev = `/v1/events/${i.eventId}`;
+      if (!mine) expect((await op.request.post(`${ev}/claim`, { headers: opHeaders })).status()).toBe(200);
+      const r = await op.request.post(`${ev}/close`, { headers: opHeaders, data: { outcome: 'FALSE_ALARM' } });
+      expect(r.status()).toBe(204);
+    }
+
+    await login(page, 'supervisor1');
+    supHeaders = { authorization: `Bearer ${await tokenOf(page)}`, 'content-type': 'application/json' };
+    await page.getByRole('button', { name: 'Amir panosu' }).click();
+    const tile = page.getByTestId('auto-assign');
+    await expect(tile).toContainText('Kapalı');
+    await tile.getByRole('button', { name: 'Aç' }).click();
+    await expect(tile).toContainText('Açık');
+
+    const before = await rowIds(op);
+    await sendSignal(op, 'SOS');
+    const offer = op.getByTestId('offer');
+    await expect(offer).toBeVisible({ timeout: 15_000 }); // atama turu 2 sn + WS
+    await expect(offer).toContainText('Bu olay size atandı');
+    const id = (await rowIds(op)).find((x) => !before.includes(x))!;
+    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/active/);
+    await offer.getByRole('button', { name: /Kabul et/ }).click({ timeout: 10_000 });
+    await expect(offer).toHaveCount(0);
+    await expect(op.locator('.state')).toHaveText('Üstlenildi');
+
+    await tile.getByRole('button', { name: 'Kapat' }).click({ timeout: 10_000 });
+    await expect(tile).toContainText('Kapalı');
+    await expect(tile).toContainText('1 kabul', { timeout: 10_000 });
+
+    // Temizlik: operatör olayı yanlış alarm olarak kapatır.
+    const r = await op.request.post(`/v1/events/${id}/close`, { headers: opHeaders, data: { outcome: 'FALSE_ALARM' } });
+    expect(r.status()).toBe(204);
+    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
+  } finally {
+    // Bayrak açık kalmasın (yeniden deneme ve sonraki koşular kapalıyla başlar).
+    if (supHeaders)
+      await page.request.put('/v1/supervisor/auto-assign', { headers: supHeaders, data: { enabled: false } });
+    await opCtx.close();
+  }
 });

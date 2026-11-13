@@ -49,6 +49,27 @@ export function keepSelection(prev: QueueItem[], next: QueueItem[], selected: st
   return next[Math.min(Math.max(idx, 0), next.length - 1)]!.eventId;
 }
 
+/** 0039: olay bana otomatik atandı ve kabulümü bekliyor (süre dolmadı). */
+export const offerFor = (item: QueueItem, me: string, now: number) =>
+  item.lockedBy === me &&
+  item.state === 'OPERATOR_ASSIGNED' &&
+  !!item.offerUntil &&
+  new Date(item.offerUntil).getTime() > now;
+
+/** Bu güncellemede bana yeni gelen atama (önceki listede bekleyen teklif değildi); yoksa null. */
+export function newOffer(prev: QueueItem[], next: QueueItem[], me: string): QueueItem | null {
+  const was = new Set(prev.filter((i) => i.lockedBy === me && i.offerUntil).map((i) => `${i.eventId}:${i.offerUntil}`));
+  return (
+    next.find(
+      (i) =>
+        i.lockedBy === me &&
+        i.state === 'OPERATOR_ASSIGNED' &&
+        i.offerUntil &&
+        !was.has(`${i.eventId}:${i.offerUntil}`),
+    ) ?? null
+  );
+}
+
 const HELD = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'];
 
 /**

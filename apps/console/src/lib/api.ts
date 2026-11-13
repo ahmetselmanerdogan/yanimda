@@ -15,6 +15,13 @@ import type {
   WorkOrder,
 } from '@yanimda/contracts';
 
+export interface AutoAssignState {
+  enabled: boolean;
+  changedAt: string | null;
+  changedBy: string | null;
+  last24h: { offered: number; accepted: number; missed: number; acceptP50Sec: number | null };
+}
+
 export interface QueueItem {
   eventId: string;
   type: EventType;
@@ -27,6 +34,8 @@ export interface QueueItem {
   isTest: boolean;
   /** T-092: P2 değer kombinasyonu aynı öncelikte önce (sunucu sırasıyla aynı). */
   headOfQueue?: boolean;
+  /** 0039 otomatik atama: `lockedBy` bu ana kadar kabul etmezse olay kuyruğa döner. */
+  offerUntil?: string | null;
   person: { displayName: string; age: number | null } | null;
 }
 
@@ -199,6 +208,7 @@ export interface SupervisorDashboard {
   slaBreaches: SlaBreach[];
   sla: { claimSec: number; firstCallSec: number };
   overflow: { enabled: boolean; changedAt: string | null; changedBy: string | null };
+  autoAssign: AutoAssignState;
   inbound: {
     queued: number;
     ringing: number;
@@ -531,6 +541,7 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
         { status },
       ),
     setOverflow: (enabled: boolean) => req<SupervisorDashboard['overflow']>('PUT', '/supervisor/overflow', { enabled }),
+    setAutoAssign: (enabled: boolean) => req<AutoAssignState>('PUT', '/supervisor/auto-assign', { enabled }),
     unclaim: (id: string) => req<{ eventId: string; state: EventState }>('POST', `${ev(id)}/unclaim`, {}),
     dispatch: (id: string) => req<DispatchView>('GET', `${ev(id)}/dispatch`),
     updateDispatch: (id: string, b: DispatchUpdate) => req<DispatchView>('POST', `${ev(id)}/dispatch`, b),

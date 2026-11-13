@@ -590,6 +590,11 @@
     "text": "Olay bırakıldı (operatör kilidi doldu): {type}",
     "action": "Üstlen"
   },
+  "O-ASSIGN-MISSED": {
+    "channel": "console",
+    "text": "Atanan olay ({type}) süresinde açılmadı; kuyruğa döndü ve operatör molaya alındı.",
+    "action": "Üstlen"
+  },
   "O-DISPATCH-NO-ARRIVAL": {
     "channel": "console",
     "text": "112 ekibi henüz ulaşmadı ({type}). 112'yi arayıp durumu sorun ve aşamayı girin."
@@ -673,6 +678,19 @@
   "O-UI-NEW-EVENT": {
     "channel": "console",
     "text": "Yeni olay: {type}"
+  },
+  "O-UI-ASSIGNED": {
+    "channel": "console",
+    "text": "Size yeni olay atandı: {type}. Olay açıldı."
+  },
+  "O-UI-OFFER": {
+    "channel": "console",
+    "text": "Bu olay size atandı. Kabul etmezseniz {time} sonra başka operatöre geçer.",
+    "action": "Kabul et"
+  },
+  "O-UI-STATUS-AUTO-BREAK": {
+    "channel": "console",
+    "text": "Atanan olayı süresinde açmadığınız için molaya alındınız. Hazır olduğunuzda durumunuzu Müsait yapın."
   },
   "O-UI-NEW-ALARM": {
     "channel": "console",
@@ -1881,6 +1899,24 @@
     "channel": "console",
     "text": "Kapalı",
     "action": "Aç"
+  },
+  "O-UI-SUP-AUTO-ASSIGN": {
+    "channel": "console",
+    "text": "Otomatik atama"
+  },
+  "O-UI-SUP-AUTO-ASSIGN-ON": {
+    "channel": "console",
+    "text": "Açık: kuyruktaki olaylar müsait operatörlere sırayla atanıyor",
+    "action": "Kapat"
+  },
+  "O-UI-SUP-AUTO-ASSIGN-OFF": {
+    "channel": "console",
+    "text": "Kapalı: operatörler olayı kuyruktan kendisi üstleniyor",
+    "action": "Aç"
+  },
+  "O-UI-SUP-AUTO-ASSIGN-STATS": {
+    "channel": "console",
+    "text": "Son 24 saat: {offered} atama, {accepted} kabul, {missed} cevapsız; ortanca kabul {p50}"
   },
   "O-UI-SUP-UPDATED": {
     "channel": "console",

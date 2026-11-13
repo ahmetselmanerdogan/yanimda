@@ -75,6 +75,12 @@ export class SupervisorController {
     return this.supervisor.setStatus(sub, body?.status, userOf(req).sub);
   }
 
+  /** Otomatik atama bayrağı (0039): açıkken kuyruktaki olay uygun operatöre atanır. */
+  @Put('auto-assign')
+  autoAssign(@Body() body: { enabled?: unknown } = {}, @Req() req: UserRequest) {
+    return this.supervisor.setAutoAssign(body?.enabled, userOf(req).sub);
+  }
+
   /** Yedek merkeze taşma bayrağı (v1.0'da işaret; yönlendirme v2.0). */
   @Put('overflow')
   overflow(@Body() body: { enabled?: unknown } = {}, @Req() req: UserRequest) {

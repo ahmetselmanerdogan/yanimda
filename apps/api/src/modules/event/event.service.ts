@@ -1201,7 +1201,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     id: string,
     operatorId: string,
     fn: (c: OperatorCtx) => Promise<T>,
-    opts: { claim?: boolean; now?: Date } = {},
+    /**
+     * `accept: false`: okuma veya sistem işlemi (kişi kartı, 112 metni, kalp atışı, yeniden planlama) otomatik atama
+     * teklifini kabul etmez; kabul operatörün eylemidir (üstlen, ara, sonuç, metni okudum, kapat).
+     */
+    opts: { claim?: boolean; now?: Date; accept?: boolean } = {},
   ): Promise<T> {
     const now = opts.now ?? new Date();
     const found = await this.withEvent(id, async (u) => {
@@ -1237,6 +1241,12 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       }
       u.ev.lockUntil = new Date(now.getTime() + operatorLockMs()).toISOString();
       u.dirty = true;
+      // Otomatik atama: operatör olayı açtı (üstlen / kalp atışı / adım) → teklif kabul edildi.
+      if (opts.accept !== false && (await this.repo.acceptAssignment(u.tx, u.ev.id, operatorId, now)))
+        u.publishes.push({
+          topic: TOPICS.eventUpdated,
+          payload: { eventId: u.ev.id, operatorId, reason: 'ASSIGNMENT_ACCEPTED' },
+        });
       const ctx: OperatorCtx = {
         ev: u.ev,
         tx: u.tx,
@@ -1251,6 +1261,53 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     });
     if (!found) throw new NotFoundException('Olay yok');
     return found.value;
+  }
+
+  /**
+   * Otomatik atama (0039): kuyruktaki olayı operatöre verir. `guard` aynı transaction'da operatörü kilitleyip uygun
+   * olduğunu doğrular ve teklifi yazar (iki API sunucusu aynı operatöre iki olay veremez). Olay artık kuyrukta değilse
+   * veya operatör uygun değilse false.
+   */
+  async assignAuto(id: string, operatorId: string, guard: (tx: Tx) => Promise<boolean>, now = new Date()) {
+    const r = await this.withEvent(id, async (u) => {
+      if (u.ev.state !== 'OPERATOR_QUEUE' || !(await guard(u.tx))) return false;
+      u.ev.operatorId = operatorId;
+      u.ev.lockUntil = new Date(now.getTime() + operatorLockMs()).toISOString();
+      u.dirty = true;
+      this.transition(u, 'OPERATOR_ASSIGNED', 'SYSTEM', undefined, 'otomatik atama');
+      await this.repo.insertAudit(u.tx, {
+        actorKind: 'SYSTEM',
+        action: 'event.auto_assigned',
+        entityId: u.ev.id,
+        data: { operatorId },
+      });
+      return true;
+    });
+    return r === true;
+  }
+
+  /**
+   * Cevapsız atama: olay hâlâ bu operatörde ve OPERATOR_ASSIGNED ise kuyruğa döner (amire O-ASSIGN-MISSED). Olay bu
+   * arada el değiştirdiyse veya ilerlediyse dokunulmaz, false.
+   */
+  async revokeAssignment(id: string, operatorId: string, now = new Date()) {
+    const r = await this.withEvent(id, async (u) => {
+      if (u.ev.state !== 'OPERATOR_ASSIGNED' || u.ev.operatorId !== operatorId) return false;
+      u.ev.operatorId = undefined;
+      u.ev.lockUntil = undefined;
+      u.dirty = true;
+      this.transition(u, 'OPERATOR_QUEUE', 'SYSTEM', undefined, 'atama cevapsız');
+      const alert: SupervisorAlert = {
+        code: 'O-ASSIGN-MISSED',
+        eventId: u.ev.id,
+        eventType: u.ev.type,
+        operatorId,
+        at: now.toISOString(),
+      };
+      u.publishes.push({ topic: TOPICS.supervisorAlert, payload: alert });
+      return true;
+    });
+    return r === true;
   }
 
   async claim(id: string, operatorId: string): Promise<EventRecord> {

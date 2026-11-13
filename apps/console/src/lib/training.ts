@@ -266,6 +266,9 @@ export class TrainingSim {
     setOverflow: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },
+    setAutoAssign: async () => {
+      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+    },
     unclaim: async () => {
       throw new ApiError(404, 'Eğitim modunda amir panosu yok');
     },

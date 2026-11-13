@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { EventState, EventType, Signal } from '@yanimda/contracts';
-import { and, arrayContains, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import { validate as isUuid } from 'uuid';
 
 import { DB, type Db, type Tx } from '../../db/client';
-import { auditLog, event, transition } from '../../db/schema';
+import { assignment, auditLog, event, transition } from '../../db/schema';
 
 export type ActorKind = 'SYSTEM' | 'USER' | 'OPERATOR';
 
@@ -62,6 +62,8 @@ export interface QueueItem {
   isTest: boolean;
   /** T-092: aynı öncelikte önce (P2 değer kombinasyonu). */
   headOfQueue: boolean;
+  /** 0039: otomatik atama teklifi `lockedBy`'ın kabulünü bekliyor; bu ana kadar açmazsa olay kuyruğa döner. */
+  offerUntil: string | null;
   person: { displayName: string; age: number | null } | null;
 }
 
@@ -86,6 +88,7 @@ interface QueueRow {
   lock_until: Date | string | null;
   is_test: boolean;
   head_of_queue: boolean;
+  offer_until: Date | string | null;
   display_name: string | null;
   birth_year: number | null;
   total?: number;
@@ -104,6 +107,7 @@ function toQueueItem(r: QueueRow, now: Date): QueueItem {
     lockUntil: isoOrNull(r.lock_until),
     isTest: r.is_test,
     headOfQueue: !!r.head_of_queue,
+    offerUntil: isoOrNull(r.offer_until ?? null),
     person:
       r.display_name === null
         ? null
@@ -273,7 +277,9 @@ export class EventRepository {
   private queueSql(where: ReturnType<typeof sql>, page?: { limit: number; offset: number }) {
     return sql`
       SELECT e.id::text AS id, e.type, e.priority, e.state, e.created_at, e.escalated_at, e.operator_id, e.lock_until,
-             e.is_test, e.head_of_queue, p.display_name, p.birth_year, count(*) OVER ()::int AS total
+             e.is_test, e.head_of_queue, p.display_name, p.birth_year, count(*) OVER ()::int AS total,
+             (SELECT a.expires_at FROM event.assignment a WHERE a.event_id = e.id AND a.outcome IS NULL
+              ORDER BY a.id DESC LIMIT 1) AS offer_until
       FROM ${event} e
       LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
       WHERE ${where}
@@ -307,6 +313,16 @@ export class EventRepository {
   async all(): Promise<EventRecord[]> {
     const rows = await this.db.select().from(event).orderBy(asc(event.createdAt));
     return rows.map((r) => toRecord(r));
+  }
+
+  /** 0039: bu operatöre verilmiş, kararı bekleyen otomatik atama teklifi kabul edildi. */
+  async acceptAssignment(tx: Tx, eventId: string, operatorId: string, now: Date): Promise<boolean> {
+    const r = await tx
+      .update(assignment)
+      .set({ outcome: 'ACCEPTED', decidedAt: now })
+      .where(and(eq(assignment.eventId, eventId), eq(assignment.operatorId, operatorId), isNull(assignment.outcome)))
+      .returning({ id: assignment.id });
+    return r.length > 0;
   }
 
   async insertAudit(

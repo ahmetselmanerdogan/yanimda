@@ -198,6 +198,28 @@ export function SupervisorBoard({
                 t('O-UI-SUP-REPEAT', { n: d.falseAlarms.repeatPersons }),
               ].join(' · ')}
             />
+            <div className={`tile overflow${d.autoAssign.enabled ? ' on' : ''}`} data-testid="auto-assign">
+              <span className="muted small">{t('O-UI-SUP-AUTO-ASSIGN')}</span>
+              <strong>{t(d.autoAssign.enabled ? 'O-UI-SUP-AUTO-ASSIGN-ON' : 'O-UI-SUP-AUTO-ASSIGN-OFF')}</strong>
+              <span className="muted small">
+                {t('O-UI-SUP-AUTO-ASSIGN-STATS', {
+                  offered: d.autoAssign.last24h.offered,
+                  accepted: d.autoAssign.last24h.accepted,
+                  missed: d.autoAssign.last24h.missed,
+                  p50:
+                    d.autoAssign.last24h.acceptP50Sec === null
+                      ? '—'
+                      : clock(Math.round(d.autoAssign.last24h.acceptP50Sec)),
+                })}
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void act(() => api.setAutoAssign(!d.autoAssign.enabled))}
+              >
+                {action(d.autoAssign.enabled ? 'O-UI-SUP-AUTO-ASSIGN-ON' : 'O-UI-SUP-AUTO-ASSIGN-OFF')}
+              </button>
+            </div>
             <div className={`tile overflow${d.overflow.enabled ? ' on' : ''}`} data-testid="overflow">
               <span className="muted small">{t('O-UI-SUP-OVERFLOW')}</span>
               <strong>{t(d.overflow.enabled ? 'O-UI-SUP-OVERFLOW-ON' : 'O-UI-SUP-OVERFLOW-OFF')}</strong>

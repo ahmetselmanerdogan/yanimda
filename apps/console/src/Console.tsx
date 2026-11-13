@@ -24,7 +24,7 @@ import { promptPending, welfareReasonCode } from './lib/devices';
 import { t } from './lib/i18n';
 import { commandFor, type Mode } from './lib/keys';
 import { isDeviceStep } from './lib/ladder';
-import { canTakeOver, keepSelection, queueReducer } from './lib/queue';
+import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
 import { alertSound } from './lib/sound';
 import { type Pane, useViewport } from './lib/viewport';
@@ -92,6 +92,8 @@ export function Console({
   const ev = detail && detail.event.id === selected ? detail.event : null;
   const chain = detail && detail.event.id === selected ? detail.chain : null;
   const mine = !!ev && ev.operatorId === me && OPEN_STATES.includes(ev.state);
+  // Otomatik atama kabul bekliyor: kalp atışı kabul sayılır, operatör kendisi kabul edene kadar gönderilmez.
+  const offerPending = !!item && offerFor(item, me, Date.now());
   const current = chain?.steps.find((s) => s.n === chain.current) ?? null;
   const [dispatchScript, setDispatchScript] = useState<DispatchScript | null>(null);
   const need112 = mine && current?.kind === 'CALL_112' ? selected : null;
@@ -149,9 +151,16 @@ export function Console({
   }, [flash]);
 
   useEffect(() => {
-    setSelected((s) => keepSelection(prevItems.current, queue.items, s));
+    // 0039 otomatik atama: bana yeni atanan olay hemen açılır (sesli uyarı); kabul düğmesi kartta.
+    const offered = newOffer(prevItems.current, queue.items, me);
+    if (offered) {
+      setSelected(offered.eventId);
+      setPane('event');
+      alertSound(offered.type, offered.priority);
+      setFlash(t('O-UI-ASSIGNED', { type: t(`O-TYPE-${offered.type}`) }));
+    } else setSelected((s) => keepSelection(prevItems.current, queue.items, s));
     prevItems.current = queue.items;
-  }, [queue.items]);
+  }, [queue.items, me]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -202,10 +211,10 @@ export function Console({
   }, [awaitingAnswer, selected, load]);
 
   useEffect(() => {
-    if (!mine || !selected) return;
+    if (!mine || !selected || offerPending) return;
     const id = setInterval(() => void api.heartbeat(selected).catch(() => undefined), HEARTBEAT_MS);
     return () => clearInterval(id);
-  }, [mine, selected, api]);
+  }, [mine, selected, api, offerPending]);
 
   // ---- T-051 yazılım telefonu: girişte başlar (mikrofon izni), oturum boyunca yaşar ----
   const [phoneState, setPhoneState] = useState<PhoneSnapshot>({
@@ -235,6 +244,21 @@ export function Console({
   // ---- operatörün kendi durumu (gelen SOS yönlendirmesi) ve telefoni yapılandırması (T-052 masa hattı) ----
   const [myStatus, setMyStatus] = useState<OperatorStatus | null>(null);
   const [telConfig, setTelConfig] = useState<TelephonyConfig | null>(null);
+  // Kendi durumum: sistem cevapsız atamada molaya alabilir (0039); 30 sn'de bir yenilenir.
+  useEffect(() => {
+    const refresh = () =>
+      void api
+        .myStatus()
+        .then((s) =>
+          setMyStatus((prev) => {
+            if (prev === 'AVAILABLE' && s.status === 'BREAK') setFlash(t('O-UI-STATUS-AUTO-BREAK'));
+            return s.status;
+          }),
+        )
+        .catch(() => undefined);
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [api]);
   useEffect(() => {
     void api
       .myStatus()
@@ -281,7 +305,7 @@ export function Console({
   const claim = () =>
     selected &&
     item &&
-    (item.state === 'OPERATOR_QUEUE' || canTakeOver(item, me, now)) &&
+    (item.state === 'OPERATOR_QUEUE' || canTakeOver(item, me, now) || offerFor(item, me, now)) &&
     void run(() => api.claim(selected));
   const call = () => mine && current && void run(() => api.call(selected!, current.n));
   const send = async (body: Omit<StepResultBody, 'note'>) => {
