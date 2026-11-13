@@ -80,9 +80,29 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
   // Operatör ayrı oturumda (global kurulumdaki operatör SSO çerezi), konsol bağlı ve müsait.
   const opCtx = await browser.newContext({ storageState: AUTH_STATE });
   const op = await opCtx.newPage();
+  let supHeaders: Record<string, string> | undefined;
   try {
     await login(op);
+    const opHeaders = { authorization: `Bearer ${await tokenOf(op)}`, 'content-type': 'application/json' };
+    const me = await (await op.request.get('/v1/operators/me', { headers: opHeaders })).json();
+    expect(me.status).toBe('AVAILABLE');
+    // Başlangıç: önceki testlerden kalan olaylar (ör. axe testinin üstlenip bıraktığı SOS) kapatılır; elinde süren
+    // olayı olan operatöre atama yapılmaz, kuyrukta bekleyen eski olay da yeni SOS'tan önce atanırdı.
+    const { items } = (await (await op.request.get('/v1/queue?limit=200', { headers: opHeaders })).json()) as {
+      items: { eventId: string; state: string; lockedBy: string | null }[];
+    };
+    for (const i of items) {
+      // Atamayı engelleyen: kuyrukta bekleyen ve operatörün yürüttüğü (Üstlenildi / Zincir) olaylar.
+      const mine = i.lockedBy === me.subject && ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN'].includes(i.state);
+      if (i.state !== 'OPERATOR_QUEUE' && !mine) continue;
+      const ev = `/v1/events/${i.eventId}`;
+      if (!mine) expect((await op.request.post(`${ev}/claim`, { headers: opHeaders })).status()).toBe(200);
+      const r = await op.request.post(`${ev}/close`, { headers: opHeaders, data: { outcome: 'FALSE_ALARM' } });
+      expect(r.status()).toBe(204);
+    }
+
     await login(page, 'supervisor1');
+    supHeaders = { authorization: `Bearer ${await tokenOf(page)}`, 'content-type': 'application/json' };
     await page.getByRole('button', { name: 'Amir panosu' }).click();
     const tile = page.getByTestId('auto-assign');
     await expect(tile).toContainText('Kapalı');
@@ -95,7 +115,7 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await expect(offer).toBeVisible({ timeout: 15_000 }); // atama turu 2 sn + WS
     await expect(offer).toContainText('Bu olay size atandı');
     const id = (await rowIds(op)).find((x) => !before.includes(x))!;
-    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/selected|active/);
+    await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/active/);
     await offer.getByRole('button', { name: /Kabul et/ }).click();
     await expect(offer).toHaveCount(0);
     await expect(op.locator('.state')).toHaveText('Üstlenildi');
@@ -105,13 +125,13 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await expect(tile).toContainText('1 kabul', { timeout: 10_000 });
 
     // Temizlik: operatör olayı yanlış alarm olarak kapatır.
-    await op.keyboard.press('c');
-    const dialog = op.getByRole('dialog', { name: 'Olayı kapat' });
-    const choice = dialog.getByLabel('Yanlış alarm');
-    if (!(await choice.isChecked())) await choice.check();
-    await dialog.getByRole('button', { name: 'Kapat' }).click();
+    const r = await op.request.post(`/v1/events/${id}/close`, { headers: opHeaders, data: { outcome: 'FALSE_ALARM' } });
+    expect(r.status()).toBe(204);
     await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveCount(0);
   } finally {
+    // Bayrak açık kalmasın (yeniden deneme ve sonraki koşular kapalıyla başlar).
+    if (supHeaders)
+      await page.request.put('/v1/supervisor/auto-assign', { headers: supHeaders, data: { enabled: false } });
     await opCtx.close();
   }
 });
