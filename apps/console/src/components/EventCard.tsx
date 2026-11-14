@@ -1,9 +1,9 @@
 import type { ChainStep } from '@yanimda/contracts';
-import type { RefObject } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 
 import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, type QueueItem } from '../lib/api';
 import { action, t } from '../lib/i18n';
-import type { Mode } from '../lib/keys';
+import { isEditing, type Mode } from '../lib/keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from '../lib/ladder';
 import { canTakeOver, offerFor } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
@@ -83,6 +83,14 @@ export function EventCard(p: Props) {
   );
   const ladder = detail?.ladder;
   const left112 = deadline112LeftSec(ladder, state, now);
+  const offered = offerFor(item, me, now);
+  // 0039: teklif bandı çizilince odak "Kabul et"e. Enter kısayolu odaklı düğmede çalışmaz (düğmenin kendi Enter'ı);
+  // moladan dönerken tıklanan "Müsait"te kalan odak Enter'ı ona verirdi. Operatör bir alana yazıyorsa odak alınmaz
+  // (Enter yanlışlıkla kabul etmesin).
+  const offerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (offered && !isEditing(document.activeElement)) offerRef.current?.focus();
+  }, [offered, item.eventId]);
 
   return (
     <section className="card" aria-labelledby="event-title">
@@ -136,14 +144,14 @@ export function EventCard(p: Props) {
         </p>
       )}
 
-      {offerFor(item, me, now) && (
+      {offered && (
         <div className="claim offer" role="alert" data-testid="offer">
           <p>
             {t('O-UI-OFFER', {
               time: clock(Math.max(0, Math.ceil((new Date(item.offerUntil!).getTime() - now) / 1000))),
             })}
           </p>
-          <button type="button" className="primary" onClick={p.onClaim} disabled={p.busy}>
+          <button type="button" className="primary" onClick={p.onClaim} disabled={p.busy} ref={offerRef}>
             {action('O-UI-OFFER')} <kbd>Enter</kbd>
           </button>
         </div>
