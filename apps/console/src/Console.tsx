@@ -158,6 +158,12 @@ export function Console({
       setPane('event');
       alertSound(offered.type, offered.priority);
       setFlash(t('O-UI-ASSIGNED', { type: t(`O-TYPE-${offered.type}`) }));
+      // Odak "Kabul et"e: Enter kısayolu odaklı düğmede çalışmaz (düğmenin kendi Enter'ı); moladan dönerken tıklanan
+      // "Müsait"te kalan odak Enter'ı ona verirdi. Operatör bir alana yazıyorsa odak alınmaz (Enter yanlışlıkla kabul).
+      setTimeout(() => {
+        if (isEditing(document.activeElement)) return;
+        document.querySelector<HTMLButtonElement>('[data-testid="offer"] button')?.focus();
+      }, 0);
     } else setSelected((s) => keepSelection(prevItems.current, queue.items, s));
     prevItems.current = queue.items;
   }, [queue.items, me]);

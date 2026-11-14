@@ -109,6 +109,10 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await tile.getByRole('button', { name: 'Aç' }).click();
     await expect(tile).toContainText('Açık');
 
+    // Operatör moladan dönerken "Müsait"e tıklar: odak o düğmede kalır. Teklif gelince Enter "Kabul et" olmalı
+    // (uçtan uca emülatör koşusu 2026-11-14: Enter odaklı "Müsait"e gidiyor, teklif cevapsız düşüyordu).
+    await op.getByRole('button', { name: 'Müsait' }).click();
+    await expect(op.getByRole('button', { name: 'Müsait' })).toBeFocused();
     const before = await rowIds(op);
     await sendSignal(op, 'SOS');
     const offer = op.getByTestId('offer');
@@ -116,7 +120,8 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await expect(offer).toContainText('Bu olay size atandı');
     const id = (await rowIds(op)).find((x) => !before.includes(x))!;
     await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/active/);
-    await offer.getByRole('button', { name: /Kabul et/ }).click({ timeout: 10_000 });
+    await expect(offer.getByRole('button', { name: /Kabul et/ })).toBeFocused();
+    await op.keyboard.press('Enter');
     await expect(offer).toHaveCount(0);
     await expect(op.locator('.state')).toHaveText('Üstlenildi');
 
