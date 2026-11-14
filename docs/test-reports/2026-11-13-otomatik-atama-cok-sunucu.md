@@ -18,8 +18,9 @@ Tek ortak kuyruk her olayı her operatöre gösteriyordu; yüzlerce operatörde 
 - Amir panosu: bayrak ve son 24 saatte verilen / kabul edilen / cevapsız teklif sayıları, ortanca kabul süresi.
 
 Testler:
-- `apps/api/test/auto-assign.spec.ts` (9): bayrak, öncelik, uygunluk, operatör başına tek olay, kabul, cevapsız iade ve
-  mola, el değiştirmiş olaya dokunmama, eşzamanlı iki tur, amir ucu ve pano.
+- `apps/api/test/auto-assign.spec.ts` (11): bayrak, öncelik, uygunluk, operatör başına tek olay, kabul, okumanın kabul
+  sayılmaması, "Kabul et" ile zincirin kurulması, cevapsız iade ve mola, el değiştirmiş olaya dokunmama, eşzamanlı iki
+  tur, amir ucu ve pano.
 - Konsol birim testleri: `offerFor`, `newOffer`.
 - Playwright: amir açar, SOS konsolu açık operatöre atanır, operatör kabul eder, amir kapatır (CI'da gerçek Keycloak).
 
@@ -50,6 +51,11 @@ koşusunda olay → teklif süresi uzun, çünkü 20 operatör 500 SOS'u sırayl
 - **Teklif anı turun başından yazılıyordu.** Yük altında tur saniyeler sürünce teklif anı geriye kayıyor, 20 sn'lik kabul
   süresi kısalıyordu. Ölçümde aynı operatöre üst üste teklif gibi görünüyordu (4 sunucuda 21 ve 435 çakışma). Düzeltme:
   teklif anı ve kabul son anı teklifin yazıldığı andan. Sonra 0.
+- **Okuma kabul sayılıyordu (CI'da Playwright buldu).** Konsol atanan olayı açınca kişi kartını okuyor; okuma da
+  `EventService.operate` üzerinden geçtiği için teklif 0 sn'de kabul edilmiş sayılıyor, "Kabul et" düğmesi kayboluyordu.
+  Masada olmayan operatör de olayı kabul etmiş görünürdü. Düzeltme: okumalar ve sistem işlemleri (kişi kartı, 112
+  metni, kalp atışı, zincirin yeniden planlanması) `operate(..., { accept: false })` ile geçer. Kabul yalnız operatörün
+  kendi eylemleriyle olur (Kabul et / üstlen, arama, adım sonucu, kapatma). Önce kırmızı, sonra yeşil test eklendi.
 - **Kilit sonrası denetim:** tek sorguda `... NOT EXISTS (...) FOR UPDATE` Postgres'te kilit beklendikten sonra alt
   sorguları eski anlık görüntüyle değerlendirir. Önce kilit, sonra ayrı denetim sorgusu yapıldı. Bu yarış iki koşuda
   gözlenmedi; Postgres davranışına göre mümkün olduğu için koruma kaldı.
@@ -65,6 +71,36 @@ Sunucu eklemek bu makinede hızlandırmadı, yavaşlattı (alım 801 → 247 /sn
 Sonuç: sayılar kapasite iddiası değildir. Çok sunucuda **doğruluk** (kayıp yok, çift atama yok, kişi başına sıra)
 gösterildi. **Ölçeklenme ve kapasite** ayrı makinelerde ölçülmeli: en az 8 çekirdekli ayrı bir Postgres ve ayrı
 makinelerde API kopyaları (staging, T-083 Helm), 30 dk koşu.
+
+### 6 çekirdekle tekrar (2026-11-14)
+
+Konteyner sanal makinesi (Colima) 2 → 6 çekirdek, 4 → 8 GB yapıldı ve ölçüm aynı yükle yeniden koşuldu: 10.000 sinyal
+(100 SOS), 4.000 kişi, 20 sanal operatör, `BENCH_APIS` = 1, 2, 4. Her satır tek koşudur. Yük ortalaması ve Postgres
+işlemcisi koşu boyunca 4 sn'de bir örneklendi (Postgres %100 = bir çekirdek).
+
+| Sunucu | Alım /sn | İşleme /sn | Hepsi bitti | Heartbeat işlenme p50 / p95 | SOS işlenme p50 / p95 | Olay → teklif p50 / p95 | Postgres işlemci ortanca / tepe | Mac yük ortalaması (ortanca) | İhlal |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 498 | 179 | 57 sn | 29,2 / 46,2 sn | 20,4 / 33,6 sn | 0,9 / 1,6 sn | %136 / %226 | 16 | 0 |
+| 2 | 437 | 193 | 52 sn | 20,6 / 32,6 sn | 5,7 / 12,1 sn | 1,0 / 1,6 sn | %243 / %312 | 26 | 0 |
+| 4 | 392 | 202 | 50 sn | 12,5 / 26,6 sn | 4,0 / 12,2 sn | 0,9 / 1,8 sn | %270 / %343 | 25 | 0 |
+
+Her koşuda kayıp yok (10.000 / 10.000 işlendi), HTTP hatası yok. 100 olayın hepsi teklif edildi ve kabul edildi.
+Yazım anı tetikleyicisi ihlal bulmadı, iki kez kabul edilen olay yok.
+
+Okuma:
+- **İşleme hızı neredeyse sabit:** 1 → 4 sunucuda 179 → 202 /sn (+%13). Alım düştü (498 → 392 /sn). Sunucu eklemek
+  bu makinede hâlâ ölçeklenme getirmiyor.
+- **Darboğaz veritabanı değil, Mac:** Postgres 6 çekirdeğin en çok 2,7'sini (tepe 3,4) kullandı. API süreçleri Mac'te
+  koşuyor ve 8 çekirdekli Mac'in yük ortalaması 16–27 idi. Aynı anda başka bir oturum Android emülatörü ve derlemeler
+  çalıştırıyordu. Sunucu eklemek boş çekirdek getirmediği için iş hacmi artmadı.
+- **Sunucu eklemek gecikmeyi düşürdü:** SOS işlenme ortancası 20,4 → 4,0 sn, heartbeat 29,2 → 12,5 sn. Toplam işçi
+  şeridi (sunucu × `OUTBOX_CONCURRENCY`) arttıkça acil bölüm daha erken alınıyor. Yine de aşırı yükte SOS p95 12 sn.
+- **Otomatik atama yükten bağımsız:** olay → teklif ortancası her koşuda ~1 sn (tur aralığı 1 sn).
+- 1 sunucu satırı 2 çekirdekli koşudan (261 /sn) yavaş: Mac'in yükü koşudan koşuya değişiyor. Satırlar arası küçük
+  farklar gürültü içinde.
+
+Sonuç: Bu da kapasite iddiası değildir. Veritabanında boş yer olduğu görüldü (6 çekirdeğin yarısı kullanılmadı);
+yatay ölçek ancak API'ler ayrı makinelerde koşunca ölçülebilir (staging, T-083 Helm, 30 dk koşu).
 
 ### 1 milyon kişi için açık
 

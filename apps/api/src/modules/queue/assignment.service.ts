@@ -35,7 +35,9 @@ const QUEUE_SCAN = 200;
  *     (OPERATOR_ASSIGNED / CONTACT_CHAIN) ve bekleyen teklif yok, aramada değil. Teyitli / 112'deki olayı izleyen
  *     operatör alabilir ama hiç açık olayı olmayan önce gelir.
  * Uygunluk olayın transaction'ında operatör satırı kilitlenerek yeniden doğrulanır: birden çok API sunucusu aynı anda
- * çalışabilir, aynı operatöre iki olay verilmez. Kabul = operatörün olay üzerindeki ilk işlemi (EventService.operate).
+ * çalışabilir, aynı operatöre iki olay verilmez. Kabul = operatörün olay üzerindeki ilk eylemi (EventService.operate:
+ * üstlen, arama, adım sonucu, kapatma). Okumalar ve sistem işlemleri (kişi kartı, 112 metni, kalp atışı, zincirin
+ * yeniden planlanması) `accept: false` ile geçer, kabul sayılmaz.
  */
 @Injectable()
 export class AssignmentService implements OnApplicationBootstrap, OnModuleDestroy {
