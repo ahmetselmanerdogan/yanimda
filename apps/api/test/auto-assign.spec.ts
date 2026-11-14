@@ -146,7 +146,7 @@ describe('otomatik atama', () => {
     expect((await events.all()).filter((e) => e.state === 'OPERATOR_QUEUE')).toHaveLength(2);
   });
 
-  it('kabul: operatör olayı açarsa (üstlen / kalp atışı) süre dolduğunda olay onda kalır', async () => {
+  it('kabul: operatör "Kabul et" (üstlen) derse süre dolduğunda olay onda kalır', async () => {
     await enable();
     await operator('op-1');
     const id = await raise('SOS', 'pp-1');
