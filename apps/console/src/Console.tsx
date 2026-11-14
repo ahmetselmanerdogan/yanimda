@@ -22,7 +22,7 @@ import {
 import type { Backend } from './lib/backend';
 import { promptPending, welfareReasonCode } from './lib/devices';
 import { t } from './lib/i18n';
-import { commandFor, type Mode } from './lib/keys';
+import { commandFor, isEditing,type Mode } from './lib/keys';
 import { isDeviceStep } from './lib/ladder';
 import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
@@ -31,12 +31,6 @@ import { type Pane, useViewport } from './lib/viewport';
 
 const HEARTBEAT_MS = 60_000;
 const OPEN_STATES = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'];
-
-const isEditing = (el: Element | null) =>
-  !!el &&
-  (el.tagName === 'TEXTAREA' ||
-    el.tagName === 'SELECT' ||
-    (el.tagName === 'INPUT' && (el as HTMLInputElement).type !== 'radio'));
 
 /** T-023 operatör konsolu: düzen 04 "Operatör konsolu" (üst bar, kuyruk, olay kartı, kişi paneli, telefon barı). */
 export interface Operator {
@@ -158,6 +152,7 @@ export function Console({
       setPane('event');
       alertSound(offered.type, offered.priority);
       setFlash(t('O-UI-ASSIGNED', { type: t(`O-TYPE-${offered.type}`) }));
+      // Odak "Kabul et"e: teklif bandı çizilince kendisi alır (EventCard).
     } else setSelected((s) => keepSelection(prevItems.current, queue.items, s));
     prevItems.current = queue.items;
   }, [queue.items, me]);

@@ -106,9 +106,16 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await page.getByRole('button', { name: 'Amir panosu' }).click();
     const tile = page.getByTestId('auto-assign');
     await expect(tile).toContainText('Kapalı');
+    // Kabul sayısı göreli: yeniden denemede (CI retries) veya dolu yerel veritabanında önceki kabuller sayılır.
+    const accepted = async () => Number(/(\d+) kabul/.exec(await tile.innerText())?.[1] ?? NaN);
+    const acceptedBefore = await accepted();
     await tile.getByRole('button', { name: 'Aç' }).click();
     await expect(tile).toContainText('Açık');
 
+    // Operatör moladan dönerken "Müsait"e tıklar: odak o düğmede kalır. Teklif gelince Enter "Kabul et" olmalı
+    // (uçtan uca emülatör koşusu 2026-11-14: Enter odaklı "Müsait"e gidiyor, teklif cevapsız düşüyordu).
+    await op.getByRole('button', { name: 'Müsait' }).click();
+    await expect(op.getByRole('button', { name: 'Müsait' })).toBeFocused();
     const before = await rowIds(op);
     await sendSignal(op, 'SOS');
     const offer = op.getByTestId('offer');
@@ -116,13 +123,14 @@ test('otomatik atama: amir açar; SOS konsolu açık operatöre atanır, geri sa
     await expect(offer).toContainText('Bu olay size atandı');
     const id = (await rowIds(op)).find((x) => !before.includes(x))!;
     await expect(op.locator(`.queue-row[data-event-id="${id}"]`)).toHaveClass(/active/);
-    await offer.getByRole('button', { name: /Kabul et/ }).click({ timeout: 10_000 });
+    await expect(offer.getByRole('button', { name: /Kabul et/ })).toBeFocused();
+    await op.keyboard.press('Enter');
     await expect(offer).toHaveCount(0);
     await expect(op.locator('.state')).toHaveText('Üstlenildi');
 
     await tile.getByRole('button', { name: 'Kapat' }).click({ timeout: 10_000 });
     await expect(tile).toContainText('Kapalı');
-    await expect(tile).toContainText('1 kabul', { timeout: 10_000 });
+    await expect.poll(accepted, { timeout: 10_000 }).toBe(acceptedBefore + 1);
 
     // Temizlik: operatör olayı yanlış alarm olarak kapatır.
     const r = await op.request.post(`/v1/events/${id}/close`, { headers: opHeaders, data: { outcome: 'FALSE_ALARM' } });

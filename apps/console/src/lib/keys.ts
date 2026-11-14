@@ -1,6 +1,13 @@
 import type { StepResult } from '@yanimda/contracts';
 
 /** Klavye kısayolları (E-10). Saf eşleme; test edilir. */
+/** Odak bir yazı alanında mı (kısayollar ve odak taşıma bunu bozmaz). */
+export const isEditing = (el: Element | null) =>
+  !!el &&
+  (el.tagName === 'TEXTAREA' ||
+    el.tagName === 'SELECT' ||
+    (el.tagName === 'INPUT' && (el as HTMLInputElement).type !== 'radio'));
+
 export type Mode = 'normal' | 'assess' | 'skip' | 'close' | 'escalate' | 'note';
 export type Command =
   | { kind: 'up' }
