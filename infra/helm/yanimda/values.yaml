@@ -45,6 +45,8 @@ api:
     DATABASE_POOL_MAX: '10'
     # 0038: kopya başına paralel outbox bölümü (32 bölüm kopyalar arasında dağılır)
     OUTBOX_CONCURRENCY: '4'
+    # Rutin tur sırasında acil iş yoklama aralığı (ms)
+    OUTBOX_YIELD_CHECK_MS: '500'
     SIMULATOR_ENABLED: 'false'
     # T-081: ingress-nginx arkasında gerçek istemci IP'si (hız sınırı)
     TRUST_PROXY: '1'

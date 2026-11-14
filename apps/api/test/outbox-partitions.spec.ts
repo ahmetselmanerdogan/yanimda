@@ -218,6 +218,120 @@ describe('OutboxWorker önceliği: alarm rutin ölçümlerin arkasında beklemez
     expect(at).toBeLessThanOrEqual(50); // en geç ilk toplu turun ardından
     expect(seen).toHaveLength(401);
   });
+
+  it('bölümü bu turda boşalmışken gelen SOS turun bitmesini beklemez (aşırı yükte p95 18–37 sn)', async () => {
+    // Aşırı yükte tur hiç bitmez (bölümler hep dolu); bölümü turda "bitti" sayılan kişinin SOS'u turun sonunu
+    // bekliyordu. Acil bölüm, bu turda boşalmış olsa da bir sonraki toplu turda alınmalı.
+    const [a, b] = await twoPeople();
+    const seen: string[] = [];
+    let injected = -1;
+    h.bus.subscribe<Signal>('signal.received', async (e) => {
+      seen.push(label(a)(e));
+      if (injected < 0 && seen.length === 110) {
+        injected = seen.length;
+        await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+      }
+    });
+    await h.signals.accept(Array.from({ length: 400 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.signals.accept([sig('HEARTBEAT', { protectedPersonId: b })]); // b'nin bölümü turun başında biter
+    await h.worker({ concurrency: 1, batchSize: 50 }).drain();
+    expect(seen.indexOf('B:HEARTBEAT')).toBeLessThan(110);
+    const at = seen.indexOf('B:SOS');
+    expect(at).toBeGreaterThanOrEqual(injected);
+    expect(at - injected).toBeLessThanOrEqual(50); // en geç süren toplu turun ardından
+    expect(seen).toHaveLength(402);
+  });
+
+  it('toplu tur ortasında gelen SOS turun bitmesini beklemez: şerit acil iş görünce bırakır, kalanı sonra', async () => {
+    // Aşırı yükte toplu tur (100 satır) saniyeler sürer; tek şerit doluyken SOS onun sonunu bekliyordu.
+    const [a, b] = await twoPeople();
+    const seen: string[] = [];
+    let injected = -1;
+    h.bus.subscribe<Signal>('signal.received', async (e) => {
+      seen.push(label(a)(e));
+      if (injected < 0 && seen.length === 5) {
+        injected = seen.length;
+        await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+      }
+    });
+    await h.signals.accept(Array.from({ length: 300 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.worker({ concurrency: 1, batchSize: 100, yieldCheckMs: 0 }).drain();
+    const at = seen.indexOf('B:SOS');
+    expect(at - injected).toBeLessThanOrEqual(2);
+    expect(seen.filter((x) => x === 'A:HEARTBEAT')).toHaveLength(300); // bırakılan tur kaybolmaz
+  });
+
+  it('işlenen bölümün içinde başka kişinin SOS’u da turun sonunu beklemez; takılı acil anahtar turu döndürmez', async () => {
+    const [a, b] = await samePartition();
+    const seen: string[] = [];
+    let injected = -1;
+    h.bus.subscribe<Signal>('signal.received', async (e) => {
+      seen.push(label(a)(e));
+      if (injected < 0 && seen.length === 5) {
+        injected = seen.length;
+        await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+      }
+    });
+    await h.signals.accept(Array.from({ length: 300 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.worker({ concurrency: 1, batchSize: 100, yieldCheckMs: 0 }).drain();
+    expect(seen.indexOf('B:SOS') - injected).toBeLessThanOrEqual(2);
+    expect(seen).toHaveLength(301);
+
+    // Acil anahtar geri çekilmede: bölümün rutin turu her satırda bırakılmaz, hepsi teslim edilir.
+    await h.reset();
+    seen.length = 0;
+    let failSos = true;
+    h.bus.subscribe<Signal>('signal.received', (e) => {
+      if (e.payload.kind === 'SOS' && failSos) throw new Error('geçici değil');
+      seen.push(label(a)(e));
+    });
+    await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+    await h.signals.accept(Array.from({ length: 150 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    const w = h.worker({ concurrency: 1, batchSize: 100, yieldCheckMs: 0 });
+    await w.drainCore(); // SOS denemesi başarısız, geri çekilmeye girer
+    await w.drainCore();
+    expect(seen.filter((x) => x === 'A:HEARTBEAT')).toHaveLength(150);
+    failSos = false;
+  });
+
+  it('acil bölümün kirası başka işçideyse tur onu tekrar tekrar denemez, diğer bölümler ilerler', async () => {
+    const [a, b] = await twoPeople();
+    await h.rows(
+      "INSERT INTO event.outbox_lease (id, owner, until) VALUES ($1, 'baska-isci', now() + interval '1 hour')",
+      [100 + (await partOf(b))],
+    );
+    const seen: string[] = [];
+    h.bus.subscribe<Signal>('signal.received', (e) => void seen.push(label(a)(e)));
+    await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+    await h.signals.accept(Array.from({ length: 120 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    const w = h.worker({ concurrency: 2, batchSize: 50 });
+    await expect(
+      Promise.race([w.drainCore(), new Promise((_, no) => setTimeout(() => no(new Error('tur bitmedi')), 10_000))]),
+    ).resolves.toBe(120);
+    expect(seen).not.toContain('B:SOS');
+  });
+
+  it('kirası başka işçide olduğu için alınamayan acil bölüm, kira bırakılınca aynı turda alınır (çok sunucu)', async () => {
+    // İki API'de her iki işçi de bölümü "alınamadı" sayıp turu boyunca bırakırsa SOS turların sonunu bekliyordu
+    // (2 sunucu ölçümü: p95 22 sn). "Takıldı" işareti kısa süreli olmalı.
+    const [a, b] = await twoPeople();
+    const lease = 100 + (await partOf(b));
+    await h.rows(
+      "INSERT INTO event.outbox_lease (id, owner, until) VALUES ($1, 'baska-isci', now() + interval '1 hour')",
+      [lease],
+    );
+    const seen: string[] = [];
+    h.bus.subscribe<Signal>('signal.received', async (e) => {
+      seen.push(label(a)(e));
+      if (seen.length === 20) await h.rows("UPDATE event.outbox_lease SET until = '-infinity' WHERE id = $1", [lease]);
+      await new Promise((r) => setTimeout(r, 5));
+    });
+    await h.signals.accept([sig('SOS', { protectedPersonId: b })]);
+    await h.signals.accept(Array.from({ length: 200 }, () => sig('HEARTBEAT', { protectedPersonId: a })));
+    await h.worker({ concurrency: 1, batchSize: 50, yieldCheckMs: 0 }).drainCore();
+    expect(seen).toContain('B:SOS');
+    expect(seen.indexOf('B:SOS')).toBeLessThan(200); // heartbeat'lerin sonunu beklemedi
+  }, 20_000);
 });
 
 describe('side şeridi: süzgeçli abone ilgisiz sinyal için satır yazmaz', () => {
