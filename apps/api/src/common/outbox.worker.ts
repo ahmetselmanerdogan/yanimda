@@ -34,10 +34,20 @@ export interface OutboxWorkerOptions {
    * veritabanı bağlantısı kullanır: DATABASE_POOL_MAX bundan büyük tutulmalı (HTTP istekleri de havuzu paylaşır).
    */
   concurrency?: number;
+  /**
+   * Rutin toplu tur sırasında bu aralıkla (ms) bekleyen acil iş yoklanır (varsayılan OUTBOX_YIELD_CHECK_MS ?? 500);
+   * varsa şerit turu bırakır, bölüm sıranın sonuna döner. 0 = her satırda (testler).
+   */
+  yieldCheckMs?: number;
 }
+
+/** Şeridin toplu turu bırakıp bırakmayacağı: bu bölümde (`own`) veya boştaki başka bölümde acil iş bekliyor mu. */
+type ShouldYield = (own: boolean) => Promise<boolean>;
 
 /** Core bölüm sayısı: 0038 migration'daki event.outbox.part ifadesiyle aynı olmalıdır. */
 export const OUTBOX_PARTITIONS = 32;
+/** Acil diye alınıp teslim edemeyen bölüm bu süre (ms) sonra yeniden acil seçilebilir. */
+const STUCK_RETRY_MS = 1000;
 /** Bölüm kiraları: id = PART_LEASE_BASE + bölüm. */
 const PART_LEASE_BASE = 100;
 /** Kira 1: eski tek işçi kirası; bölümlü işçiler onu bu sahiple sonsuza dek tutar (deploy çiti, 0038). */
@@ -55,8 +65,10 @@ const FENCE_OWNER = 'partitioned';
  *   bölümde tek aktif işçi (kira id 100 + bölüm); bölümler aynı süreçte `concurrency` kadar paralel, birden çok API
  *   örneğinde örnekler arasında dağılır. Başarısız satır kendi bölümünün başında bekler; arkasındakiler ondan önce
  *   teslim edilmez (FALL'dan önce CANCEL işlenmesin); başka kişiler (aynı bölümde bile) beklemez.
- * - Öncelik: rutin ölçüm dışındaki satır acildir (event.outbox.urgent). Acil satırı olan bölüm önce seçilir ve
- *   bölümde o kişinin satırları (öncekiler dahil, sırasıyla) önce teslim edilir.
+ * - Öncelik: rutin ölçüm dışındaki satır acildir (event.outbox.urgent). Acil satırı olan bölüm önce seçilir (turda
+ *   boşalmış olsa da) ve bölümde o kişinin satırları (öncekiler dahil, sırasıyla) önce teslim edilir. Rutin toplu tur
+ *   sırasında yieldCheckMs aralıkla acil iş yoklanır; varsa şerit turu bırakır (aşırı yükte SOS p95 15–27 sn → <1 sn,
+ *   docs/test-reports/2026-11-14-sos-asiri-yuk.md).
  * - Kira 1 deploy çitidir: bölümlü işçi onu alamazsa (eski sürüm genel FIFO'yla çalışıyor) teslim etmez.
  * - Kira satır başına değil, süresinin üçte biri geçince yenilenir (satır başına bir sorgu daha az).
  * - Yeniden deneme: üstel geri çekilme; `maxAttempts` (5) kalıcı hatadan sonra outbox_dlq'ya taşınır, kuyruk ilerler.
@@ -89,6 +101,7 @@ export class OutboxWorker {
   private unsubscribe?: () => void;
   private readonly leaseMs: number;
   private readonly concurrency: number;
+  private readonly yieldCheckMs: number;
   private fenced = false;
   /** stop() sonrası süren core turu yeni bölüm almaz (zarif kapanış). Doğrudan drain() çağrılarını etkilemez. */
   private halted = false;
@@ -111,6 +124,7 @@ export class OutboxWorker {
     this.now = opts.now ?? (() => new Date());
     this.leaseMs = opts.leaseMs ?? 30_000;
     this.concurrency = Math.max(1, opts.concurrency ?? Number(process.env.OUTBOX_CONCURRENCY ?? 4));
+    this.yieldCheckMs = Math.max(0, opts.yieldCheckMs ?? Number(process.env.OUTBOX_YIELD_CHECK_MS ?? 500));
   }
 
   start(): void {
@@ -211,10 +225,17 @@ export class OutboxWorker {
         const queue = await this.pendingParts();
         const busy = new Set<number>();
         const done = new Set<number>();
+        /** Acil diye alınıp hiç teslim edemeyen bölüm (kira başka işçide, anahtar geri çekilmede): STUCK_RETRY_MS
+         * boyunca tekrar acil seçilmez (şerit aynı bölümü boşuna döndürmesin), sonra yeniden denenir. Turun sonuna
+         * dek bırakılsaydı iki API'de her iki işçi de bölümü bırakıp SOS'u turların sonuna bırakabiliyordu. */
+        const stuckUntil = new Map<number, number>();
+        const stuck = { has: (p: number) => (stuckUntil.get(p) ?? 0) > Date.now() };
         const free = (p: number) => !busy.has(p) && !done.has(p);
         const next = async (): Promise<number | undefined> => {
           if (this.halted) return undefined;
-          let p = (await this.urgentParts()).find(free);
+          // Acil bölüm bu turda boşalmış (done) olsa da yeniden alınır: aşırı yükte tur bitmez (bölümler hep dolu),
+          // bölümü erken biten kişinin SOS'u turun sonunu beklerdi (ölçüm: p95 18–37 sn).
+          let p = (await this.urgentParts()).find((x) => !busy.has(x) && !stuck.has(x));
           if (p !== undefined) {
             const i = queue.indexOf(p);
             if (i >= 0) queue.splice(i, 1);
@@ -230,9 +251,14 @@ export class OutboxWorker {
         let total = 0;
         const lane = async () => {
           for (let p = await next(); p !== undefined; p = await next()) {
+            const part = p;
+            // Rutin tur sırasında acil iş: bu bölümde (yeni gelmiş, turun sonunda kalırdı) veya boştaki başka bölümde.
+            const shouldYield: ShouldYield = async (own) =>
+              (await this.urgentParts()).some((x) => (x === part ? own : !busy.has(x) && !stuck.has(x)));
             try {
-              const { delivered, more } = await this.drainPart(p);
+              const { delivered, more } = await this.drainPart(p, shouldYield);
               total += delivered;
+              if (!delivered) stuckUntil.set(p, Date.now() + STUCK_RETRY_MS);
               if (more) queue.push(p);
               else done.add(p);
             } finally {
@@ -284,12 +310,12 @@ export class OutboxWorker {
   }
 
   /** Bir bölümden bir toplu tur (kirası başka işçideyse boş). */
-  private async drainPart(p: number): Promise<{ delivered: number; more: boolean }> {
+  private async drainPart(p: number, shouldYield?: ShouldYield): Promise<{ delivered: number; more: boolean }> {
     const id = PART_LEASE_BASE + p;
     if (!(await this.acquireLease(id))) return { delivered: 0, more: false };
     this.leasedAt.set(p, Date.now());
     try {
-      return await this.drainBatch(p);
+      return await this.drainBatch(p, shouldYield);
     } finally {
       this.leasedAt.delete(p);
       await this.releaseLease(id).catch(() => undefined);
@@ -326,9 +352,10 @@ export class OutboxWorker {
    * Bölümden bir toplu tur. Önce acil satırı olan anahtarlar: o anahtarların bekleyen bütün satırları (acil satırdan
    * önceki rutin satırlar dahil) id sırasıyla; böylece kişinin sırası bozulmadan alarm öne geçer. Acil iş yoksa (veya
    * hepsi bekliyorsa) bölümün satırları id sırasıyla. Takılan (geri çekilmedeki) anahtarın arkasındaki satırları bu turda
-   * atlanır; başka anahtarlar ilerler.
+   * atlanır; başka anahtarlar ilerler. Rutin tur sırasında acil iş belirirse (`shouldYield`) tur bırakılır, bölüm
+   * sıranın sonuna döner (`more`).
    */
-  private async drainBatch(p: number): Promise<{ delivered: number; more: boolean }> {
+  private async drainBatch(p: number, shouldYield?: ShouldYield): Promise<{ delivered: number; more: boolean }> {
     const pending = and(eq(outbox.part, p), isNull(outbox.processedAt));
     const blocked = new Set<string>();
     let delivered = 0;
@@ -350,9 +377,13 @@ export class OutboxWorker {
       if (r.lost) return { delivered: r.delivered, more: false };
       if (r.delivered > 0) return { delivered: r.delivered, more: true };
     }
+    // Bölümün acil anahtarları takılıysa (geri çekilmede) kendi acil satırı turu bıraktırmaz: bırakılan tur yeniden
+    // aynı takılı anahtarı bulurdu.
+    const own = !keys.length;
     const rows = await this.db.select().from(outbox).where(pending).orderBy(asc(outbox.id)).limit(this.batchSize);
-    const r = await this.deliverRows(p, rows, blocked);
+    const r = await this.deliverRows(p, rows, blocked, shouldYield && (() => shouldYield(own)));
     delivered += r.delivered;
+    if (r.yielded) return { delivered, more: true };
     return { delivered, more: !r.lost && r.delivered > 0 && rows.length === this.batchSize };
   }
 
@@ -360,16 +391,23 @@ export class OutboxWorker {
    * Teslim transaction DIŞINDA yapılır: aboneler (ör. EventService) kendi transaction'larını açabilir;
    * işçi bağlantı tutmaz. Teslim ile işaretleme arasında süreç ölürse satır yeniden teslim edilir (en az bir kez).
    * Anahtarın satırı geri çekilmedeyse veya başarısız olursa o anahtar `blocked`'a girer: arkasındaki satırları
-   * ondan önce teslim edilmez (FALL'dan önce CANCEL işlenmesin).
+   * ondan önce teslim edilmez (FALL'dan önce CANCEL işlenmesin). `shouldYield` verilirse en az bir satır teslim
+   * edildikten sonra yieldCheckMs aralıkla yoklanır; acil iş bekliyorsa tur bırakılır (`yielded`).
    */
   private async deliverRows(
     p: number,
     rows: (typeof outbox.$inferSelect)[],
     blocked: Set<string>,
-  ): Promise<{ delivered: number; lost: boolean }> {
+    shouldYield?: () => Promise<boolean>,
+  ): Promise<{ delivered: number; lost: boolean; yielded?: boolean }> {
     let delivered = 0;
+    let checkedAt = Date.now();
     for (const row of rows) {
       if (blocked.has(row.pkey)) continue;
+      if (shouldYield && delivered > 0 && Date.now() - checkedAt >= this.yieldCheckMs) {
+        checkedAt = Date.now();
+        if (await shouldYield()) return { delivered, lost: false, yielded: true };
+      }
       if (!(await this.keepLease(p))) return { delivered, lost: true }; // kira kaybedildi (çok uzun tur)
       const now = this.now();
       if (row.nextAttemptAt > now) {

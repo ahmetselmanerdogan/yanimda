@@ -105,7 +105,8 @@ yatay ölçek ancak API'ler ayrı makinelerde koşunca ölçülebilir (staging, 
 ### 1 milyon kişi için açık
 
 - Yatay ölçek ve gerçek kapasite: ayrılmış ortamda ölçülmeli (yukarıda).
-- Aşırı yükte (alım işlemeden 2–3 kat hızlı) SOS ortancası 2–17 sn, p95 18–37 sn. Öncelik ortancayı düşürüyor ama alarm
+- ~~Aşırı yükte SOS p95 18–37 sn~~ → düzeltildi (2026-11-14): kök neden outbox işçisinin bölüm seçimiydi; SOS p95
+  < 1 sn (1, 2, 4 sunucu). Bkz. `2026-11-14-sos-asiri-yuk.md`. Eski not: Aşırı yükte (alım işlemeden 2–3 kat hızlı) SOS ortancası 2–17 sn, p95 18–37 sn. Öncelik ortancayı düşürüyor ama alarm
   yine aynı süreçlerde ve veritabanında heartbeat'lerle yarışıyor. Değerlendirilmeli: heartbeat'te kapsama değişmiyorsa
   olay motorunu hiç çalıştırmamak (erken çıkış) veya alarmlar için ayrı işçi süreci (`OUTBOX_WORKER`).
 - Otomatik atamanın varsayılanı kapalı. Açmak amirin kararıdır (panodan).
