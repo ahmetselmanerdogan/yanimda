@@ -12,6 +12,7 @@ import {
   NotFoundException,
   Optional,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { catalogs } from '@yanimda/messages';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -21,7 +22,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
-import { contact, device, invite, signal, vendorLink } from '../../db/schema';
+import { contact, device, invite, protectedPerson, signal, vendorLink } from '../../db/schema';
 import { subscriptionProtection } from '../billing/subscription-protection';
 import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
@@ -35,6 +36,7 @@ import {
   signDeviceToken,
   verifyDeviceToken,
 } from './device-token';
+import { simulatorKnownPersonsOnly } from './simulator-mode';
 
 export const INVITE_TTL_MS = 15 * 60_000;
 /** Aynı IP'den 15 dk içinde en fazla bu kadar hatalı kod (6 hane = 10⁶ olasılık; kaba kuvveti durdurur). */
@@ -331,6 +333,7 @@ export class EnrollmentService {
    */
   async assertTokenless(batch: unknown): Promise<void> {
     if (!Array.isArray(batch)) return;
+    if (simulatorKnownPersonsOnly()) await this.assertKnownPersons(batch);
     const ids = [
       ...new Set(
         batch
@@ -345,6 +348,21 @@ export class EnrollmentService {
       .where(and(inArray(sql`${device.id}::text`, ids), or(isNotNull(device.enrolledAt), isNotNull(device.revokedAt))))
       .limit(1);
     if (rows.length) throw new UnauthorizedException('Cihaz token gerekli');
+  }
+
+  /** SIMULATOR_KNOWN_PERSONS_ONLY: token'sız sinyaldeki her kişi kayıtlı olmalı; değilse 422 (kimlik yanıtta yok). */
+  private async assertKnownPersons(batch: unknown[]): Promise<void> {
+    const ids = [
+      ...new Set(batch.map((s) => (s as { protectedPersonId?: unknown })?.protectedPersonId).filter((p) => p != null)),
+    ];
+    if (!ids.length) return;
+    if (ids.some((p) => typeof p !== 'string' || !UUID.test(p)))
+      throw new UnprocessableEntityException('Kayıtsız kişi');
+    const rows = await this.db
+      .select({ id: protectedPerson.id })
+      .from(protectedPerson)
+      .where(inArray(protectedPerson.id, ids as string[]));
+    if (rows.length !== ids.length) throw new UnprocessableEntityException('Kayıtsız kişi');
   }
 
   refresh(p: DevicePrincipal, now = new Date()): TokenResponse {

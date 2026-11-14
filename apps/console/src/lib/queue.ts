@@ -49,12 +49,16 @@ export function keepSelection(prev: QueueItem[], next: QueueItem[], selected: st
   return next[Math.min(Math.max(idx, 0), next.length - 1)]!.eventId;
 }
 
+/** 0039: olay bir operatöre otomatik atandı ve kabulü bekleniyor (süre dolmadı). */
+export const isOffered = (x: { state: string; offerUntil?: string | null }, now: number) =>
+  x.state === 'OPERATOR_ASSIGNED' && !!x.offerUntil && new Date(x.offerUntil).getTime() > now;
+
+/** Durum rozeti: kabul bekleyen teklif "Üstlenildi" değil "Teklif edildi" görünür. */
+export const stateLabel = (x: { state: string; offerUntil?: string | null }, now: number) =>
+  isOffered(x, now) ? 'O-UI-STATE-OFFERED' : `O-STATE-${x.state}`;
+
 /** 0039: olay bana otomatik atandı ve kabulümü bekliyor (süre dolmadı). */
-export const offerFor = (item: QueueItem, me: string, now: number) =>
-  item.lockedBy === me &&
-  item.state === 'OPERATOR_ASSIGNED' &&
-  !!item.offerUntil &&
-  new Date(item.offerUntil).getTime() > now;
+export const offerFor = (item: QueueItem, me: string, now: number) => item.lockedBy === me && isOffered(item, now);
 
 /** Bu güncellemede bana yeni gelen atama (önceki listede bekleyen teklif değildi); yoksa null. */
 export function newOffer(prev: QueueItem[], next: QueueItem[], me: string): QueueItem | null {

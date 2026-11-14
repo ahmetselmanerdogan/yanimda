@@ -5,7 +5,7 @@ import { CALL_ACTIVE, type CallView, type DispatchScript, type EventWithChain, t
 import { action, t } from '../lib/i18n';
 import { isEditing, type Mode } from '../lib/keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from '../lib/ladder';
-import { canTakeOver, offerFor } from '../lib/queue';
+import { canTakeOver, isOffered, offerFor, stateLabel } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
 import { ScriptPanel } from './Panels';
 
@@ -100,7 +100,9 @@ export function EventCard(p: Props) {
           {t(`O-TYPE-${item.type}`)}
           {item.isTest && <span className="badge-test">{t('O-UI-TEST')}</span>}
         </h1>
-        <span className={`state s-${state}`}>{t(`O-STATE-${state}`)}</span>
+        <span className={`state s-${isOffered({ state, offerUntil: item.offerUntil }, now) ? 'OFFERED' : state}`}>
+          {t(stateLabel({ state, offerUntil: item.offerUntil }, now))}
+        </span>
       </header>
 
       {ladder && (ladder.corroborated || ladder.possibleEmergency || ladder.hearingSpeechImpaired) && (

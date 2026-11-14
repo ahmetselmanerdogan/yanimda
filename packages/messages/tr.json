@@ -282,6 +282,11 @@
     "text": "Saatiniz bağlı.",
     "action": "Devam"
   },
+  "P-SETUP-WATCH-NOT-FOUND": {
+    "channel": "phone",
+    "text": "Saatinizi bulamadık. Saatin açık ve telefonunuzun yanında olduğundan emin olun.",
+    "action": "Yeniden dene"
+  },
   "P-SETUP-NO-WATCH": {
     "channel": "phone",
     "text": "Saatiniz yoksa telefonunuz sizi koruyabilir.",
@@ -687,6 +692,10 @@
     "channel": "console",
     "text": "Bu olay size atandı. Kabul etmezseniz {time} sonra başka operatöre geçer.",
     "action": "Kabul et"
+  },
+  "O-UI-STATE-OFFERED": {
+    "channel": "console",
+    "text": "Teklif edildi"
   },
   "O-UI-STATUS-AUTO-BREAK": {
     "channel": "console",

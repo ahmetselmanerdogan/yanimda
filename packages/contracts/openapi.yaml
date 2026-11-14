@@ -45,6 +45,8 @@ paths:
         ile iletebilir (saat `POST /devices/{id}/companions` ile kaydedilmiş olmalı; iptal edilmiş/kayıtsız/başka
         kişiye geçmiş saatin sinyali `DEVICE_NOT_BRIDGED`). Token'sız istek yalnız simülatör açıkken
         (SIMULATOR_ENABLED, geliştirme) kabul edilir; geçersiz/iptal edilmiş token her zaman 401.
+        SIMULATOR_KNOWN_PERSONS_ONLY=true iken token'sız partide kayıtsız kişi (profile.protected_person'da yok)
+        varsa parti 422 alır (varsayılan kapalı).
         T-092: telefon token'ı `POST /devices/bridged` ile bu telefona bağlanmış etkin BLE cihazların sinyallerini de
         cihazın kimliğiyle iletir; yalnız model profilindeki türler (diğerleri `UNSUPPORTED_SIGNAL`). SPO2 (value %)
         ve SKIN_TEMP_DEVIATION (value °C) yeni türlerdir; değer kuralları bayrakla kapalıyken (varsayılan) HEART_RATE,
@@ -72,6 +74,11 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/SignalBatchProblem' }
         '401': { $ref: '#/components/responses/Problem' }
+        '422':
+          description: Token'sız (simülatör) partide kayıtsız kişi; yalnız SIMULATOR_KNOWN_PERSONS_ONLY=true iken
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '403':
           description: Partideki her sinyal reddedildi ve en az biri token yetkisi dışında
           content:
@@ -3157,6 +3164,10 @@ components:
               priority: { type: integer }
               state: { type: string }
               since: { type: string, format: date-time }
+              offerUntil:
+                type: [string, 'null']
+                format: date-time
+                description: 0039 otomatik atama; kabul bekleyen teklifin bitişi, kabul edildiyse null
         claims24h: { type: integer }
         avgClaimSec: { type: [number, 'null'] }
         closed24h: { type: integer }

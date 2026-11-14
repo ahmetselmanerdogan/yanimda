@@ -92,7 +92,7 @@ describe('pano içeriği', () => {
     expect(op1.avgClaimSec).toBeGreaterThanOrEqual(3);
     expect(op1.avgClaimSec).toBeLessThan(6);
     expect(op1.open).toEqual([
-      { eventId: a, type: 'SOS', priority: 1, state: 'OPERATOR_ASSIGNED', since: expect.any(String) },
+      { eventId: a, type: 'SOS', priority: 1, state: 'OPERATOR_ASSIGNED', since: expect.any(String), offerUntil: null },
     ]);
     expect(op2).toMatchObject({ name: null, status: 'BREAK', online: false, claims24h: 1, closed24h: 1, open: [] });
     // Bağlı operatör önce, sonra ad/kimlik sırası.

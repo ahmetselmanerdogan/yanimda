@@ -30,7 +30,14 @@ export interface OperatorCard {
   status: OperatorStatus;
   online: boolean;
   lastSeenAt: string | null;
-  open: { eventId: string; type: string; priority: number; state: string; since: string }[];
+  open: {
+    eventId: string;
+    type: string;
+    priority: number;
+    state: string;
+    since: string;
+    offerUntil: string | null;
+  }[];
   claims24h: number;
   /** Son 24 saatte kuyruktan üstlenmeye ortalama süre (sn). */
   avgClaimSec: number | null;
@@ -362,9 +369,12 @@ export class SupervisorService {
       priority: number;
       state: string;
       since: Date | string | null;
+      offer_until: Date | string | null;
     }>(sql`
       SELECT e.id, e.operator_id, e.type, e.priority, e.state,
-             (SELECT max(at) FROM event.transition t WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_ASSIGNED') AS since
+             (SELECT max(at) FROM event.transition t WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_ASSIGNED') AS since,
+             (SELECT a.expires_at FROM event.assignment a WHERE a.event_id = e.id AND a.outcome IS NULL
+              ORDER BY a.id DESC LIMIT 1) AS offer_until
       FROM event.event e WHERE e.state IN ${OPERATOR_STATES} AND e.operator_id IS NOT NULL
       ORDER BY e.priority, e.created_at`);
     const closed = await this.q<{ actor_id: string; n: number }>(sql`
@@ -395,6 +405,7 @@ export class SupervisorService {
             priority: o.priority,
             state: o.state,
             since: iso(o.since) ?? nowIso,
+            offerUntil: iso(o.offer_until),
           })),
         claims24h: mine.length,
         avgClaimSec: mine.length ? num(mine.reduce((a, c) => a + c.s, 0) / mine.length) : null,

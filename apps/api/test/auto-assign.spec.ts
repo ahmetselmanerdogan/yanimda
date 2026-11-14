@@ -153,8 +153,15 @@ describe('otomatik atama', () => {
     await svc().run(at(1));
     // Konsol geri sayımı: kuyruk satırı kabul son anını taşır.
     expect((await events.queueItem(id))?.offerUntil).toBe(at(21).toISOString());
+    // Amir panosu da teklifi "Üstlenildi"den ayırır (emülatör koşusu 2026-11-14 bulgusu).
+    const sup = new SupervisorService(h.db);
+    const openOf = async () => (await sup.dashboard(at(2))).operators.find((o) => o.subject === 'op-1')!.open;
+    expect(await openOf()).toMatchObject([
+      { eventId: id, state: 'OPERATOR_ASSIGNED', offerUntil: at(21).toISOString() },
+    ]);
     await events.claim(id, 'op-1'); // operatör "Kabul et"
     expect((await events.queueItem(id))?.offerUntil).toBeNull();
+    expect(await openOf()).toMatchObject([{ eventId: id, offerUntil: null }]);
     const updated = await h.rows<{ envelope: { payload: { reason?: string } } }>(
       "SELECT envelope FROM event.outbox WHERE topic = 'event.updated'",
     );

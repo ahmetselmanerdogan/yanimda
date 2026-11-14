@@ -168,7 +168,15 @@ export interface OperatorCard {
   status: OperatorStatus;
   online: boolean;
   lastSeenAt: string | null;
-  open: { eventId: string; type: EventType; priority: number; state: EventState; since: string }[];
+  open: {
+    eventId: string;
+    type: EventType;
+    priority: number;
+    state: EventState;
+    since: string;
+    /** 0039: kabul bekleyen teklifin bitişi; kabul edildiyse null. */
+    offerUntil?: string | null;
+  }[];
   claims24h: number;
   avgClaimSec: number | null;
   closed24h: number;
