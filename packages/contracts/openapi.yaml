@@ -2151,6 +2151,8 @@ paths:
         deviceId istemcide üretilir (UUID, küçük harf) ve sinyallerde aynen kullanılır. Yanıt yolda kaybolursa aynı
         cihaz aynı kodla kodun süresi içinde yeniden dener ve 200 ile yeni token alır. Yanlış/süresi dolmuş/başka
         cihazın kullandığı kod 400; kayıtlı deviceId 409; aynı IP'den 15 dk'da 10 hatalı kod 429.
+        İstemci iki 409'u `code` ile ayırır: F-DEVICE-LIMIT → yaşlıya P-PAIR-LIMIT (yeni deviceId ile denemez);
+        kodsuz 409 → yeni deviceId ile bir kez daha.
       operationId: enrollDevice
       security: [] # davet kodu kimlik doğrular
       requestBody:
