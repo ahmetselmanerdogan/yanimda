@@ -1,6 +1,7 @@
 // T-016 adım 2 · k6 duman testi: 200 cihaz × 5 dk'da bir HEARTBEAT, 10 dk; aynı anda SOS → kuyruk gecikmesi.
 // Kabul: p95 signal→queue < 5 sn, HTTP hata 0.
-//   k6 run -e API_URL=http://127.0.0.1:3000/v1 infra/k6/heartbeat-smoke.js
+//   k6 run -e API_URL=http://127.0.0.1:3000/v1 -e OP_AUTH="Bearer …" infra/k6/heartbeat-smoke.js
+// OP_AUTH: operatör token'ı (kişi durumu ucu OIDC ister, T-020); scripts/load-smoke.sh yerel yığından alır.
 // Süreleri kısaltmak için: -e DURATION=2m -e HEARTBEAT_EVERY=60
 import { check, sleep } from 'k6';
 import http from 'k6/http';
@@ -11,6 +12,7 @@ const DURATION = __ENV.DURATION || '10m';
 const DEVICES = Number(__ENV.DEVICES || 200);
 const HEARTBEAT_EVERY = Number(__ENV.HEARTBEAT_EVERY || 300); // sn
 const SOS_EVERY = Number(__ENV.SOS_EVERY || 30); // sn
+const OP_AUTH = __ENV.OP_AUTH || '';
 
 const signalToQueue = new Trend('signal_to_queue', true);
 const heartbeats = new Counter('heartbeats_sent');
@@ -53,6 +55,10 @@ export function heartbeat() {
   sleep(HEARTBEAT_EVERY);
 }
 
+export function setup() {
+  if (!OP_AUTH) throw new Error("OP_AUTH yok: kişi durumu ucu operatör token'ı ister (scripts/load-smoke.sh)");
+}
+
 export function sosLatency() {
   const person = `k6-sos-${__ITER}-${Date.now()}`;
   const t0 = Date.now();
@@ -61,6 +67,7 @@ export function sosLatency() {
   let queued = false;
   while (!queued && Date.now() - t0 < 15000) {
     const s = http.get(`${API}/protected-persons/${person}/status`, {
+      headers: { authorization: OP_AUTH },
       tags: { name: 'status' },
       responseCallback: http.expectedStatuses(200, 404), // sinyal işlenene kadar 404 beklenir
     });
