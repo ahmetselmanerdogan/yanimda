@@ -113,3 +113,15 @@ test('tema: keycloak.v2 üstüne, betik ve stiller mevcut', () => {
       .filter((x) => x !== 'css/styles.css'))
       assert.ok(existsSync(join(res, f)), f);
 });
+
+test('sync-realms: yer tutucular çözülür, var olan istemci/rol atlanır, tüm istemciler gönderilir', async () => {
+  const { resolvePlaceholders, syncBody } = await import('./sync-realms.mjs');
+  assert.equal(resolvePlaceholders('${YANIMDA_X:http://localhost:1}/*', {}), 'http://localhost:1/*');
+  assert.equal(resolvePlaceholders('${YANIMDA_X:a}', { YANIMDA_X: 'b' }), 'b');
+  assert.equal(resolvePlaceholders('${YANIMDA_X:}', {}), '');
+  const body = syncBody('consumers', {});
+  assert.equal(body.ifResourceExists, 'SKIP');
+  assert.deepEqual(body.clients.map((c) => c.clientId).sort(), realms.consumers.clients.map((c) => c.clientId).sort());
+  assert.ok(body.clients.some((c) => c.clientId === 'family-web'));
+  assert.doesNotMatch(JSON.stringify(body), /\$\{YANIMDA_/);
+});

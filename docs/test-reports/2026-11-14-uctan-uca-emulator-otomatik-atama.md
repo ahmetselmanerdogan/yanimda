@@ -57,6 +57,14 @@ bilerek veya sürücü gecikmesiyle). Teklif olay kuyruğa düştükten 0,4–1,
 - Telefon emülatöründe tekrarlanan ANR'ler (`onStartJob` yanıtı yok, giriş zaman aşımı, açılışta 30 sn) aynı anda
   Google Play hizmetleri ve sistem sürecinde de görüldü; emülatör 3 gündür açıktı ve ana makine aşırı yüklüydü.
   Gerçek cihazda T-045 protokolüyle (adım 5) yeniden bakılmalı.
+- Demo kaydında (2026-11-15) iki yerel yığın sorunu:
+  - Aile web girişi "istemci bulunamadı": 11-09'da açılan Keycloak konteynerinde `family-web` ve `yanimda-signup`
+    yoktu (T-060'ta 11-10'da eklendi; `--import-realm` var olan realm'i atlar). `infra/keycloak/sync-realms.mjs` eksik
+    istemci ve rolleri ekler (var olanlara dokunmaz); yerel Keycloak'ta 2 istemci eklendi, giriş formu açıldı.
+  - Konsolda bir an "İşlem yapılamadı: Internal error": `stack:local` PGlite'ı 5 bağlantılı havuzla kullanıyordu;
+    pglite-socket tek oturumda bağlantıların mesajlarını tek tek sıraya alır, hata + işlem karışınca 26000/08P01/34000
+    ve askıda kalma (yerel deneme: 5 bağlantıda 300 sorgu 45 sn'de bitmedi, 1 bağlantıda hatasız). PGlite'ta havuz
+    artık 1 (gerçek Postgres'te 5); uçtan uca + kaos 8/8 geçti, log'da protokol hatası yok.
 - Yapılmadı:
   - iOS eşlikçi: derlendi ve ayrı simülatöre kuruldu, eşleşme ekranı açıldı; davet bağlantısının sistem onayına
     ("Yanımda ile açılsın mı?") dokunmak için simülatör erişim izni gerekiyordu.
