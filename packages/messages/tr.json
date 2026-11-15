@@ -242,6 +242,10 @@
     "channel": "phone",
     "text": "Bu telefonun eşleşmesi kaldırıldı. Ailenizden yeni kod isteyin."
   },
+  "P-PAIR-LIMIT": {
+    "channel": "phone",
+    "text": "Bu kişiye bağlı başka bir telefon var. Ailenizden eski telefonu uygulamadan kaldırmasını isteyin."
+  },
   "P-SETUP-WELCOME": {
     "channel": "phone",
     "text": "Merhaba. Yanımda, yardım gerektiğinde sizi operatörümüze bağlar. Birlikte kuralım.",
