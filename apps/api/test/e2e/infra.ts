@@ -12,7 +12,7 @@ import { type FakeOidc, startFakeOidc } from '../support/fake-oidc';
 /**
  * T-016 uçtan uca / kaos test altyapısı — Docker'sız, gerçek süreçler:
  *   Redis      : redis-server (kalıcılıksız, sabit port; durdur/başlat)
- *   Postgres   : PGlite socket sunucusu, dosya veri dizini (durdur/başlat veriyi korur), çoklu bağlantı
+ *   Postgres   : PGlite socket sunucusu, dosya veri dizini (durdur/başlat veriyi korur), API havuzu tek bağlantı
  *   API        : `tsx src/main.ts` alt süreci (kill -9 / yeniden başlat)
  * Sınır: Postgres PGlite'tır (TimescaleDB hypertable yok). Gerçek Timescale ile koşum Docker/staging'de (T-083).
  */
@@ -149,7 +149,10 @@ export async function startStack(
     NODE_ENV: 'test',
     PORT: String(apiPort),
     DATABASE_URL: db.url,
-    DATABASE_POOL_MAX: '5',
+    // PGlite tek oturumdur; pglite-socket bağlantıların genişletilmiş protokol mesajlarını (Parse/Bind/Execute)
+    // işlem dışında tek tek sıraya alıp karıştırır → 26000/08P01/34000 ve konsolda "Internal error". Tek bağlantı
+    // PGlite'ın zaten seri çalışmasını değiştirmez; gerçek Postgres'te havuz 5.
+    DATABASE_POOL_MAX: opts.databaseUrl ? '5' : '1',
     // Kaos: Postgres dönerken asılı kalan sorgu 5 sn'de bırakılır (üretim varsayılanı 30 sn)
     DATABASE_QUERY_TIMEOUT_MS: '5000',
     REDIS_URL: redis.url,
