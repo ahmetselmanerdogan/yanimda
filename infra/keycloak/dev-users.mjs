@@ -133,6 +133,6 @@ await partialImport(token, 'operations', [
 await partialImport(token, 'consumers', [user('family1', ['FAMILY'], false)]);
 const signupClient = await ensureSignupClient(token);
 if (signupClient) console.log(`KEYCLOAK_SIGNUP_CLIENT_SECRET=${signupClient}`);
-else console.log("consumers realm'inde yanimda-signup istemcisi yok (realm-consumers.json yeniden içe aktarılmalı).");
+else console.log("consumers realm'inde yanimda-signup istemcisi yok (önce: node infra/keycloak/sync-realms.mjs).");
 if (OTP_SECRET) console.log(`OTP (authenticator uygulamasına elle): ${base32(Buffer.from(OTP_SECRET))}`);
 else console.log('OTP sırrı verilmedi: operations kullanıcıları ilk girişte OTP kuracak.');

@@ -113,6 +113,8 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
 - **İçe aktarma yalnız realm yoksa** çalışır (`--import-realm`, var olan realm atlanır). Var olan ortamda politika
   değişikliği (kara liste, oturum süreleri, `revokeRefreshToken`) yönetici API'siyle veya
   `kc.sh import --file … --override true` ile (bakım penceresinde) uygulanır.
+  Geliştirmede realm dosyasına sonradan eklenen istemci/roller (ör. `family-web`, `yanimda-signup`) eski konteynere
+  `KEYCLOAK_URL=… node infra/keycloak/sync-realms.mjs` ile eklenir; var olanlara dokunulmaz.
 - **Giriş teması** `themes/yanimda` (keycloak.v2 üstüne): kayıt ve parola güncelleme sayfalarında parola gücü
   göstergesi; metinler `packages/messages/tr.json` "auth" kanalından `node infra/keycloak/generate.mjs` ile üretilir,
   CI `--check` ile kaymayı yakalar. Compose'da dizin, Helm'de ConfigMap olarak bağlanır.
