@@ -1,5 +1,6 @@
 import type { QueueItem } from '../lib/api';
 import { t } from '../lib/i18n';
+import { isOffered, stateLabel } from '../lib/queue';
 import { clock, slaOf } from '../lib/sla';
 
 interface Props {
@@ -61,7 +62,7 @@ function QueueRow({
       </span>
       <span className="queue-side small">
         <time dateTime={item.createdAt}>{clock(sla.ageSec)}</time>
-        <span className="muted">{lock ?? t(`O-STATE-${item.state}`)}</span>
+        <span className="muted">{(!isOffered(item, now) && lock) || t(stateLabel(item, now))}</span>
       </span>
     </li>
   );

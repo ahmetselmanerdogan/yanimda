@@ -17,6 +17,7 @@ import {
 import type { Backend } from './lib/backend';
 import { action, t } from './lib/i18n';
 import { disablePush, enablePush, type PushState, pushState } from './lib/push';
+import { stateLabel } from './lib/queue';
 import { clock } from './lib/sla';
 
 const COVERAGE_LEVELS: CoverageLevel[] = ['FULL', 'BASIC', 'PHONE_ONLY', 'NIGHT', 'NONE'];
@@ -316,6 +317,7 @@ export function SupervisorBoard({
                   <OperatorTile
                     key={o.subject}
                     o={o}
+                    now={Date.parse(d.at)}
                     busy={busy}
                     onStatus={(s) => void act(() => api.setOperatorStatus(o.subject, s))}
                     onUnclaim={(id) => void act(() => api.unclaim(id))}
@@ -443,11 +445,13 @@ function Breaches({
 
 function OperatorTile({
   o,
+  now,
   busy,
   onStatus,
   onUnclaim,
 }: {
   o: OperatorCard;
+  now: number;
   busy: boolean;
   onStatus(s: OperatorStatus): void;
   onUnclaim(eventId: string): void;
@@ -475,7 +479,7 @@ function OperatorTile({
       {o.open.map((e) => (
         <div key={e.eventId} className="op-event">
           <span>
-            {t('O-UI-PRIORITY', { n: e.priority })} {t(`O-TYPE-${e.type}`)} · {t(`O-STATE-${e.state}`)}
+            {t('O-UI-PRIORITY', { n: e.priority })} {t(`O-TYPE-${e.type}`)} · {t(stateLabel(e, now))}
           </span>
           <button type="button" disabled={busy} title={t('O-UI-SUP-UNCLAIM')} onClick={() => onUnclaim(e.eventId)}>
             {action('O-UI-SUP-UNCLAIM')}

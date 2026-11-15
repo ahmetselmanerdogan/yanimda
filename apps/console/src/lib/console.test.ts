@@ -8,7 +8,7 @@ import type { EventRecord, QueueItem } from './api';
 import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from './ladder';
-import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './queue';
+import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer, stateLabel } from './queue';
 import { clock, slaOf } from './sla';
 import { viewportOf } from './viewport';
 
@@ -77,6 +77,16 @@ describe('otomatik atama (0039)', () => {
     expect(offerFor(offered('2026-11-13T09:59:59Z'), 'me', now)).toBe(false); // süre doldu
     expect(offerFor(offered('2026-11-13T10:00:15Z', 'other'), 'me', now)).toBe(false);
     expect(offerFor({ ...offered('2026-11-13T10:00:15Z'), offerUntil: null }, 'me', now)).toBe(false); // kabul edildi
+  });
+  it('stateLabel: kabul bekleyen teklif "Teklif edildi", kabul edilen ya da süresi dolan "Üstlenildi"', () => {
+    expect(stateLabel(offered('2026-11-13T10:00:15Z'), now)).toBe('O-UI-STATE-OFFERED');
+    expect(stateLabel(offered('2026-11-13T10:00:15Z', 'other'), now)).toBe('O-UI-STATE-OFFERED');
+    expect(stateLabel({ ...offered('2026-11-13T10:00:15Z'), offerUntil: null }, now)).toBe('O-STATE-OPERATOR_ASSIGNED');
+    expect(stateLabel(offered('2026-11-13T09:59:59Z'), now)).toBe('O-STATE-OPERATOR_ASSIGNED');
+    expect(stateLabel({ state: 'OPERATOR_QUEUE', offerUntil: '2026-11-13T10:00:15Z' }, now)).toBe(
+      'O-STATE-OPERATOR_QUEUE',
+    );
+    expect(catalog['O-UI-STATE-OFFERED']?.text).toBe('Teklif edildi');
   });
   it('newOffer: yalnız bu güncellemede gelen atama; aynı teklif tekrar seçtirmez, yeni teklif seçtirir', () => {
     const a = item('a', 1, '2026-11-13T09:58:00Z');

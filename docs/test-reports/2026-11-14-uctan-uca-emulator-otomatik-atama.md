@@ -45,11 +45,15 @@ bilerek veya sürücü gecikmesiyle). Teklif olay kuyruğa düştükten 0,4–1,
 
 ## Açık (gözlem / karar)
 
-- Teklif edilmiş ama kabul edilmemiş olayın durum rozeti "Üstlenildi" (durum OPERATOR_ASSIGNED). "Teklif edildi" gibi
-  ayrı bir rozet amir ve operatör için daha doğru olur.
+- ~~Teklif edilmiş ama kabul edilmemiş olayın durum rozeti "Üstlenildi"~~ — düzeltildi (2026-11-15): kuyrukta, olay
+  kartında ve amir panosunda kabul bekleyen teklif "Teklif edildi" (O-UI-STATE-OFFERED); amir panosu operatör kartının
+  açık olaylarında `offerUntil` döner.
 - Simülatör modunda (yalnız geliştirme) token'sız sinyal, veritabanında olmayan kişi için de kabul ediliyor ve kapsama
-  denetimi bu kişi için olay açıyor. Üretimi etkilemez; geliştirmede kayıtsız kişiyi reddetmek değerlendirilebilir.
-- Telefon kurulumunda "Kontrol et": saat bulunamadığında ekranda hâlâ geri bildirim yok (önceki koşudan açık).
+  denetimi bu kişi için olay açıyor. Üretimi etkilemez. 2026-11-15: `SIMULATOR_KNOWN_PERSONS_ONLY=true` ile kayıtsız
+  kişiye token'sız sinyal 422 alır. Varsayılan kapalı kaldı: belgelenmiş simülatör komutu (`--person pp_demo`) ve
+  yük / kaos senaryoları kayıtsız kişi kimliği kullanıyor.
+- ~~Telefon kurulumunda "Kontrol et": saat bulunamadığında ekranda geri bildirim yok~~ — düzeltildi (2026-11-15, yerel
+  `yanimda-android` dalı `setup-watch-not-found`): kontrolden sonra P-SETUP-WATCH-NOT-FOUND ve "Yeniden dene".
 - Telefon emülatöründe tekrarlanan ANR'ler (`onStartJob` yanıtı yok, giriş zaman aşımı, açılışta 30 sn) aynı anda
   Google Play hizmetleri ve sistem sürecinde de görüldü; emülatör 3 gündür açıktı ve ana makine aşırı yüklüydü.
   Gerçek cihazda T-045 protokolüyle (adım 5) yeniden bakılmalı.

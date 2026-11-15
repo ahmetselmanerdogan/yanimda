@@ -480,6 +480,31 @@ describe('guard: POST /signals ve cihaz uçları', () => {
     expect(await g.canActivate(withBody('sim-1'))).toBe(true); // kayıtsız
   });
 
+  it("SIMULATOR_KNOWN_PERSONS_ONLY: token'sız sinyal kayıtsız kişi için 422; kayıtlı kişi geçer; kapalıyken eskisi gibi", async () => {
+    process.env.SIMULATOR_ENABLED = 'true';
+    const g = new SignalAuthGuard(svc);
+    const withBody = (...persons: unknown[]) => {
+      const c = ctx({});
+      (c.req as { body?: unknown }).body = persons.map((protectedPersonId) => ({
+        deviceId: 'sim-1',
+        protectedPersonId,
+      }));
+      return c.ctx;
+    };
+    const ghost = '0f0f0f0f-0000-4000-8000-000000000000';
+    try {
+      process.env.SIMULATOR_KNOWN_PERSONS_ONLY = 'true';
+      expect(await g.canActivate(withBody(PERSON))).toBe(true);
+      expect(await status(g.canActivate(withBody(ghost)))).toBe(422);
+      expect(await status(g.canActivate(withBody('pp_demo')))).toBe(422);
+      expect(await status(g.canActivate(withBody(PERSON, ghost)))).toBe(422); // toplu istekte biri bile kayıtsızsa
+      process.env.SIMULATOR_KNOWN_PERSONS_ONLY = 'false';
+      expect(await g.canActivate(withBody('pp_demo'))).toBe(true); // varsayılan: belgelenmiş simülatör komutu
+    } finally {
+      delete process.env.SIMULATOR_KNOWN_PERSONS_ONLY;
+    }
+  });
+
   it("DeviceTokenGuard token'sız 401", async () => {
     expect(await status(new DeviceTokenGuard(svc).canActivate(ctx({}).ctx))).toBe(401);
   });
