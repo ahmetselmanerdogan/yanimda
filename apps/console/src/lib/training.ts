@@ -141,7 +141,7 @@ export class TrainingSim {
         d.ev.operatorId = this.me;
         this.go(d, 'OPERATOR_ASSIGNED');
         if (!d.steps.length) d.steps = (CHAINS[d.ev.type] ?? ['CALL_PHONE']).map((e, i) => step(e, i + 1));
-      } else if (d.ev.operatorId !== this.me) throw new ApiError(409, 'Başka operatör üstlendi');
+      } else if (d.ev.operatorId !== this.me) throw new ApiError(409, t('O-TRAIN-ERR-TAKEN'));
       return this.changed(d);
     },
     heartbeat: async () => ({}),
@@ -163,7 +163,7 @@ export class TrainingSim {
     result: async (id, n, b: StepResultBody) => {
       const d = this.mine(id);
       const s = this.current(d, n);
-      if (b.result === 'SKIPPED' && !b.reason?.trim()) throw new ApiError(400, 'Atlama gerekçe ister');
+      if (b.result === 'SKIPPED' && !b.reason?.trim()) throw new ApiError(400, t('O-TRAIN-ERR-SKIP-REASON'));
       for (const c of d.calls.filter((x) => x.stepN === n)) this.end(c);
       Object.assign(s, {
         result: b.result,
@@ -248,81 +248,81 @@ export class TrainingSim {
     deviceCommand: async (_id, type, eventId) => ({ type, eventId: eventId ?? null, sent: true, outcome: 'sent' }),
     // T-092: tatbikatta değer grafiği yok (değer olayı açılmaz).
     vitals: async () => {
-      throw new ApiError(404, 'Eğitim modunda değer yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-VITALS'));
     },
     supervisorCoverage: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     coverageBoard: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     // Amir panosu eğitim modunda yok (T-074).
     dashboard: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     setOperatorStatus: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     setOverflow: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     setAutoAssign: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     unclaim: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     // T-085 OEM: ortak gecikmesi ve kolye iş emirleri eğitim modunda yok (amir panosu yok).
     supervisorPartners: async () => [],
     workOrders: async () => [],
     vitalReviews: async () => [],
     resolveVitalReview: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     completeWorkOrder: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir panosu yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-SUPERVISOR'));
     },
     // 112 süreç takibi eğitim modunda yok (gerçek 112 aranmaz).
     dispatch: async () => {
-      throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-DISPATCH'));
     },
     updateDispatch: async () => {
-      throw new ApiError(404, 'Eğitim modunda 112 süreci yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-DISPATCH'));
     },
     dispatches: async () => [],
     // Yönetim paneli eğitim modunda yok.
     adminCalls: async () => [],
     adminAnalytics: async () => {
-      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-ADMIN'));
     },
     adminHealth: async () => {
-      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-ADMIN'));
     },
     adminCoverageMetrics: async () => {
-      throw new ApiError(404, 'Eğitim modunda yönetim paneli yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-ADMIN'));
     },
     adminAudit: async () => [],
     adminEvents: async () => [],
     adminCase: async () => {
-      throw new ApiError(404, 'Eğitim modunda vaka dosyası yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-CASE'));
     },
     wellnessChecks: async () => [],
     alerts: async () => [],
     ackAlert: async () => {
-      throw new ApiError(404, 'Eğitim modunda amir uyarısı yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-ALERT'));
     },
     pushConfig: async () => ({ enabled: false, publicKey: null }),
     pushSubscribe: async () => ({ enabled: false }),
     pushUnsubscribe: async () => undefined,
     recordingUrl: async () => {
-      throw new ApiError(404, 'Eğitim modunda kayıt yok');
+      throw new ApiError(404, t('O-TRAIN-ERR-NO-RECORD'));
     },
     close: async (id, outcome: CloseOutcome) => {
       const d = this.mine(id);
       const emergency = outcome === 'EMERGENCY';
       if ((d.ev.state === 'CONFIRMED_EMERGENCY' || d.ev.state === 'DISPATCH') && !emergency)
-        throw new ApiError(409, 'Acil teyitli olay yalnız EMERGENCY ile kapanır');
-      if (d.ev.state === 'CONFIRMED_OK' && emergency) throw new ApiError(409, 'Olay iyi olarak teyit edildi');
+        throw new ApiError(409, t('O-TRAIN-ERR-CLOSE-EMERGENCY'));
+      if (d.ev.state === 'CONFIRMED_OK' && emergency) throw new ApiError(409, t('O-TRAIN-ERR-CONFIRMED-OK'));
       this.skipPending(d, 'closed');
       for (const c of d.calls) this.end(c);
       d.ev.state = 'CLOSED';
@@ -365,30 +365,30 @@ export class TrainingSim {
     for (const d of this.drills.values()) {
       const call = d.calls.find((c) => c.id === callId);
       if (call) {
-        if (d.ev.operatorId !== this.me) throw new ApiError(403, 'Arama başka operatörde');
+        if (d.ev.operatorId !== this.me) throw new ApiError(403, t('O-TRAIN-ERR-CALL-OTHER'));
         return { d, call };
       }
     }
-    throw new ApiError(404, 'Arama yok');
+    throw new ApiError(404, t('O-TRAIN-ERR-NO-CALL'));
   }
   private talking(callId: string): CallView {
     const { call } = this.callOf(callId);
-    if (call.status !== 'in-progress') throw new ApiError(409, 'Görüşme sürmüyor');
+    if (call.status !== 'in-progress') throw new ApiError(409, t('O-TRAIN-ERR-CALL-ENDED'));
     return call;
   }
   private get(id: string): Drill {
     const d = this.drills.get(id);
-    if (!d) throw new ApiError(404, 'Olay yok');
+    if (!d) throw new ApiError(404, t('O-TRAIN-ERR-NO-EVENT'));
     return d;
   }
   private mine(id: string): Drill {
     const d = this.get(id);
-    if (d.ev.operatorId !== this.me || !OPEN.includes(d.ev.state)) throw new ApiError(409, 'Olay sizde değil');
+    if (d.ev.operatorId !== this.me || !OPEN.includes(d.ev.state)) throw new ApiError(409, t('O-TRAIN-ERR-NOT-YOURS'));
     return d;
   }
   private current(d: Drill, n: number): ChainStep {
     const s = d.steps.find((x) => !x.result);
-    if (!s || s.n !== n) throw new ApiError(409, 'Sıra dışı adım');
+    if (!s || s.n !== n) throw new ApiError(409, t('O-TRAIN-ERR-STEP-ORDER'));
     return s;
   }
   private go(d: Drill, to: EventState) {

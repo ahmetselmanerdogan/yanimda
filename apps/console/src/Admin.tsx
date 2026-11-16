@@ -6,6 +6,7 @@ import { DispatchPanel } from './components/Dispatch';
 import type { AdminAnalytics, AdminCall, AdminHealth, AuditRow, DispatchView, WellnessCheck } from './lib/api';
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
+import { resultCode } from './lib/ladder';
 
 /**
  * Yönetim ve çağrı merkezi paneli (/yonetim; amir ve yönetici). Sekmeler: genel bakış (analiz + sağlık), çağrılar
@@ -558,8 +559,8 @@ function CaseFile({
         {c.steps.map((s) => (
           <li key={s.n}>
             {s.n}. {t(`O-UI-ADM-PARTY-${s.kind}`)}
-            {s.contactIndex ? ` ${s.contactIndex}` : ''} · {s.result ?? '–'}
-            {s.assessment ? ` · ${s.assessment}` : ''}
+            {s.contactIndex ? ` ${s.contactIndex}` : ''} · {s.result ? t(resultCode(s.result)) : '–'}
+            {s.assessment ? ` · ${t(`O-ASSESS-${s.assessment}`)}` : ''}
             {s.reason ? ` · ${s.reason}` : ''}
             {s.note ? ` · ${s.note}` : ''}
           </li>
