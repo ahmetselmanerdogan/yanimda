@@ -12,7 +12,7 @@ import {
 import { type KafkaEnvelope, type Signal, TOPICS } from '@yanimda/contracts';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
-import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { OutboxBus } from '../../common/outbox';
@@ -20,7 +20,7 @@ import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, device, signal } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
-import { IdempotencyStore } from './idempotency.store';
+import { IDEM_TTL_SEC, IdempotencyStore } from './idempotency.store';
 import { AUTH_REJECT_REASONS, rejectedEntry, type RejectedSignal, type SignalRejectReason } from './signal-reject';
 
 export interface AcceptResult {
@@ -124,7 +124,7 @@ export class SignalService {
 
       let inserted: boolean;
       try {
-        inserted = await this.db.transaction((tx) => this.persist(tx, s));
+        inserted = await this.db.transaction((tx) => this.persist(tx, s, claim === 'unavailable'));
       } catch (e) {
         await this.idem.release(s.idempotencyKey);
         this.log.error(`Sinyal yazılamadı (kind=${s.kind}): ${safeError(e)}`);
@@ -161,9 +161,32 @@ export class SignalService {
     }
   }
 
-  /** Tek transaction. Veritabanında zaten varsa (Redis anahtarı kaybolmuşsa) false döner, outbox'a yazmaz. */
-  private async persist(tx: Tx, s: Signal): Promise<boolean> {
+  /**
+   * Tek transaction. Veritabanında zaten varsa (Redis anahtarı kaybolmuşsa) false döner, outbox'a yazmaz.
+   *
+   * Tekil indeks (idempotency_key, time): hypertable'da yalnız anahtar tekil olamaz (bölümleme sütunu şart). Redis
+   * erişilemezken (`byKey`) aynı anahtarın farklı occurredAt ile tekrarı da yakalansın diye anahtar ±24 saat
+   * (Redis TTL'i) penceresinde aranır; anahtar başına transaction kilidi eş zamanlı tekrarları sıraya koyar.
+   * Normal yolda (Redis var) ek sorgu yok.
+   */
+  private async persist(tx: Tx, s: Signal, byKey = false): Promise<boolean> {
     const occurredAt = new Date(s.occurredAt);
+    if (byKey) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${s.idempotencyKey}, 0))`);
+      const win = IDEM_TTL_SEC * 1000;
+      const [hit] = await tx
+        .select({ key: signal.idempotencyKey })
+        .from(signal)
+        .where(
+          and(
+            eq(signal.idempotencyKey, s.idempotencyKey),
+            gte(signal.time, new Date(occurredAt.getTime() - win)),
+            lte(signal.time, new Date(occurredAt.getTime() + win)),
+          ),
+        )
+        .limit(1);
+      if (hit) return false;
+    }
     const rows = await tx
       .insert(signal)
       .values({
