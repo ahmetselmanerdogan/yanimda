@@ -291,6 +291,10 @@
     "text": "Saatinizi bulamadık. Saatin açık ve telefonunuzun yanında olduğundan emin olun.",
     "action": "Yeniden dene"
   },
+  "P-SETUP-WATCH-OTHER": {
+    "channel": "phone",
+    "text": "Bu saat başka bir kişiye kayıtlı. Ailenizden yardım isteyin."
+  },
   "P-SETUP-NO-WATCH": {
     "channel": "phone",
     "text": "Saatiniz yoksa telefonunuz sizi koruyabilir.",
@@ -2921,6 +2925,14 @@
     "channel": "family",
     "text": "Atlandı"
   },
+  "F-UI-STEP-SILENT": {
+    "channel": "family",
+    "text": "Bağlandı, ses yok"
+  },
+  "F-UI-STEP-OFFLINE_SKIPPED": {
+    "channel": "family",
+    "text": "Cihaz kapalıydı, atlandı"
+  },
   "F-UI-OUTCOME-OK": {
     "channel": "family",
     "text": "İyi"
@@ -3361,6 +3373,18 @@
     "channel": "family",
     "text": "Koruma beklemede"
   },
+  "F-UI-COVERAGE-REASON-PARTNER_LATENCY": {
+    "channel": "family",
+    "text": "Ortak merkez geç yanıt veriyor"
+  },
+  "F-UI-COVERAGE-REASON-HOME_UNIT_POWER_LOSS": {
+    "channel": "family",
+    "text": "Ev ünitesinin elektriği kesik"
+  },
+  "F-UI-COVERAGE-REASON-LINE_LOSS": {
+    "channel": "family",
+    "text": "Kolye veya ev ünitesi hattı düştü"
+  },
   "F-UI-COVERAGE-CAP-SOS": {
     "channel": "family",
     "text": "Yardım düğmesi"
@@ -3436,6 +3460,10 @@
   "F-UI-DEVICE-CAT-CLOUD": {
     "channel": "family",
     "text": "Sağlık uygulaması"
+  },
+  "F-UI-DEVICE-CAT-SENSOR": {
+    "channel": "family",
+    "text": "Ölçüm cihazı"
   },
   "F-UI-BODY-WRIST_LEFT": {
     "channel": "family",
