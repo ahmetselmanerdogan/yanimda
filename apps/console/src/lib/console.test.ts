@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { EventState } from '@yanimda/contracts';
 import catalog from '@yanimda/messages/tr.json';
 import { describe, expect, it } from 'vitest';
 
@@ -196,17 +197,30 @@ describe('katalog', () => {
       'COVERAGE_GAP',
       'WELFARE_CHECK',
     ];
-    const states = [
+    // Vaka dosyası (Admin) her geçişi gösterir: EventState'in tamamı (CREATED dahil).
+    const states: EventState[] = [
+      'CREATED',
+      'DEVICE_PROMPT',
+      'CANCELLED_BY_USER',
+      'ESCALATED',
       'OPERATOR_QUEUE',
       'OPERATOR_ASSIGNED',
       'CONTACT_CHAIN',
       'CONFIRMED_OK',
       'CONFIRMED_EMERGENCY',
       'DISPATCH',
+      'FOLLOW_UP',
+      'CLOSED',
     ];
+    // Prosedür paketindeki her adım türü vaka dosyasında ve arama listesinde O-UI-ADM-PARTY-* ile görünür.
+    const procedures = readFileSync(join(__dirname, '../../../../packages/rules/procedures.tr.yaml'), 'utf8');
+    const parties = [...new Set([...procedures.matchAll(/\b(CALL_[A-Z0-9_]+|NOTIFY_[A-Z_]+)\b/g)].map((m) => m[1]!))];
+    expect(parties.length).toBeGreaterThan(5);
     const codes = [
       ...types.map((x) => `O-TYPE-${x}`),
       ...states.map((x) => `O-STATE-${x}`),
+      ...parties.map((x) => `O-UI-ADM-PARTY-${x}`),
+      ...['OK', 'EMERGENCY'].map((x) => `O-ASSESS-${x}`),
       ...(['REACHED', 'NO_ANSWER', 'BUSY', 'WRONG_NUMBER', 'SKIPPED', 'SILENT', 'OFFLINE_SKIPPED'] as const).map(
         resultCode,
       ),
@@ -214,6 +228,12 @@ describe('katalog', () => {
       ...['OK', 'EMERGENCY', 'FALSE_ALARM', 'TEST', 'UNREACHABLE'].map((x) => `O-OUT-${x}`),
     ];
     expect(codes.filter((c) => !(c in catalog))).toEqual([]);
+  });
+  it('eğitim modu hataları katalogdan (ApiError içinde düz metin yok)', () => {
+    const src = readFileSync(join(__dirname, 'training.ts'), 'utf8');
+    const literal = [...src.matchAll(/new ApiError\(\d+, '([^']*)'/g)].map((m) => m[1]);
+    expect(literal).toEqual([]);
+    expect(src).toMatch(/new ApiError\(\d+, t\('O-TRAIN-/);
   });
 });
 

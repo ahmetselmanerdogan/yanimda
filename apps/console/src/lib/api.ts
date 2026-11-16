@@ -413,8 +413,8 @@ export interface AdminCase {
     n: number;
     kind: string;
     contactIndex: number | null;
-    result: string | null;
-    assessment: string | null;
+    result: StepResult | null;
+    assessment: StepAssessment | null;
     reason: string | null;
     note: string | null;
     operatorId: string | null;

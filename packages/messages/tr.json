@@ -1215,6 +1215,86 @@
     "channel": "console",
     "text": "Aile bildirimi"
   },
+  "O-UI-ADM-PARTY-CALL_VOICE_2": {
+    "channel": "console",
+    "text": "2. sesli cihaz"
+  },
+  "O-UI-ADM-PARTY-CALL_REDIAL": {
+    "channel": "console",
+    "text": "Yeniden arama"
+  },
+  "O-UI-ADM-PARTY-CALL_KEY_HOLDER": {
+    "channel": "console",
+    "text": "Anahtar sahibi"
+  },
+  "O-TRAIN-ERR-TAKEN": {
+    "channel": "console",
+    "text": "Başka operatör üstlendi"
+  },
+  "O-TRAIN-ERR-SKIP-REASON": {
+    "channel": "console",
+    "text": "Atlama gerekçe ister"
+  },
+  "O-TRAIN-ERR-NO-VITALS": {
+    "channel": "console",
+    "text": "Eğitim modunda değer yok"
+  },
+  "O-TRAIN-ERR-NO-SUPERVISOR": {
+    "channel": "console",
+    "text": "Eğitim modunda amir panosu yok"
+  },
+  "O-TRAIN-ERR-NO-DISPATCH": {
+    "channel": "console",
+    "text": "Eğitim modunda 112 süreci yok"
+  },
+  "O-TRAIN-ERR-NO-ADMIN": {
+    "channel": "console",
+    "text": "Eğitim modunda yönetim paneli yok"
+  },
+  "O-TRAIN-ERR-NO-CASE": {
+    "channel": "console",
+    "text": "Eğitim modunda vaka dosyası yok"
+  },
+  "O-TRAIN-ERR-NO-ALERT": {
+    "channel": "console",
+    "text": "Eğitim modunda amir uyarısı yok"
+  },
+  "O-TRAIN-ERR-NO-RECORD": {
+    "channel": "console",
+    "text": "Eğitim modunda kayıt yok"
+  },
+  "O-TRAIN-ERR-CLOSE-EMERGENCY": {
+    "channel": "console",
+    "text": "Acil teyitli olay yalnız \"Acil\" sonucuyla kapanır"
+  },
+  "O-TRAIN-ERR-CONFIRMED-OK": {
+    "channel": "console",
+    "text": "Olay iyi olarak teyit edildi"
+  },
+  "O-TRAIN-ERR-CALL-OTHER": {
+    "channel": "console",
+    "text": "Arama başka operatörde"
+  },
+  "O-TRAIN-ERR-NO-CALL": {
+    "channel": "console",
+    "text": "Arama yok"
+  },
+  "O-TRAIN-ERR-CALL-ENDED": {
+    "channel": "console",
+    "text": "Görüşme sürmüyor"
+  },
+  "O-TRAIN-ERR-NO-EVENT": {
+    "channel": "console",
+    "text": "Olay yok"
+  },
+  "O-TRAIN-ERR-NOT-YOURS": {
+    "channel": "console",
+    "text": "Olay sizde değil"
+  },
+  "O-TRAIN-ERR-STEP-ORDER": {
+    "channel": "console",
+    "text": "Sıra dışı adım"
+  },
   "O-UI-ADM-CHANNEL-CALL": {
     "channel": "console",
     "text": "Arama"
@@ -1613,6 +1693,26 @@
   "O-STATE-CLOSED": {
     "channel": "console",
     "text": "Kapandı"
+  },
+  "O-STATE-CREATED": {
+    "channel": "console",
+    "text": "Oluşturuldu"
+  },
+  "O-STATE-DEVICE_PROMPT": {
+    "channel": "console",
+    "text": "Cihazda soruldu"
+  },
+  "O-STATE-CANCELLED_BY_USER": {
+    "channel": "console",
+    "text": "Kişi iptal etti"
+  },
+  "O-STATE-ESCALATED": {
+    "channel": "console",
+    "text": "Operatöre aktarıldı"
+  },
+  "O-STATE-FOLLOW_UP": {
+    "channel": "console",
+    "text": "Takipte"
   },
   "O-UI-SECONDS": {
     "channel": "console",
