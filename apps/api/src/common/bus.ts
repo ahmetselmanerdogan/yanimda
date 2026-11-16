@@ -38,7 +38,7 @@ export interface Bus {
  * OutboxWorker satırları `deliver` ile buradaki abonelere verir. `deliver` aboneleri bekler ve hata fırlatırsa
  * işçi yeniden dener (en az bir kez teslim) — aboneler idempotent olmalıdır.
  *
- * Not: `publish` (outbox'sız, anında) yalnız henüz kalıcı olmayan modüller içindir (EventService → T-011b).
+ * Not: `publish` (outbox'sız, anında) yalnız testler içindir; uygulamadaki her yayın outbox'tan geçer (T-011b).
  */
 export class LocalBus implements Bus {
   private readonly handlers = new Map<string, Set<BusHandler<unknown>>>();

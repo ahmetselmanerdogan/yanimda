@@ -191,7 +191,7 @@ export class SignalService {
     };
     await this.outbox.publish(TOPICS.signalReceived, envelope, tx);
 
-    // Cihaz durumu (T-010 adım 6). Geçici olarak burada: device modülü (T-041) gelince onun servisine taşınır.
+    // Cihaz durumu (T-010 adım 6): sinyal ve outbox ile aynı transaction'da kalsın diye burada (T-041 sonrası da).
     // Tamponlanıp geç gelen eski sinyal yeni durumu ezmesin diye yalnız daha yeni occurredAt yazılır.
     const battery = s.device?.batteryPct ?? (s.kind === 'BATTERY' && s.value != null ? Math.round(s.value) : null);
     const onWrist = s.device?.onWrist ?? (s.kind === 'ON_BODY' ? true : s.kind === 'OFF_BODY' ? false : null);

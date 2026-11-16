@@ -386,7 +386,7 @@ Altyapı maddeleri:
 | 14.4.4 nosniff, 14.4.5 HSTS, 14.4.6 Referrer-Policy, 14.4.7 X-Frame-Options | ✅ | `security_headers` parçası |
 | 14.2.6 sandbox | ✅ | `read_only: true`, `cap_drop: [ALL]` |
 | 1.14.1 metrik ayrımı | ✅ | 9464 yalnız iç ağ, vekilde yayınlanmıyor |
-| 14.4.3 CSP | ❌ kalır | Konsol Caddyfile'da CSP yok |
+| 14.4.3 CSP | ❌ kalır → ✅ (ikinci tur) | O gün konsol Caddyfile'da CSP yoktu; 2026-11-11'de eklendi (yukarıdaki tablo) |
 | 14.3.3 sürüm bilgisi | ⚠️ | `-Server` var; Express `X-Powered-By` vekilden geçer |
 
 Hedef (≥ %90) yine karşılanmıyor. Ayrıca `docker-compose.prod.yml`
