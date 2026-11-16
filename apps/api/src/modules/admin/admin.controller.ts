@@ -38,10 +38,10 @@ export class AdminController {
     });
   }
 
-  /** GET /v1/admin/calls/{id}/recording?reason= — ses kaydı (her dinleme denetim kaydına yazılır). */
-  @Get('calls/:id/recording')
+  /** GET /v1/admin/calls/{callId}/recording?reason= — ses kaydı (her dinleme denetim kaydına yazılır). */
+  @Get('calls/:callId/recording')
   @Header('Cache-Control', 'no-store')
-  async recording(@Param('id') id: string, @Query('reason') reason: string | undefined, @Req() req: UserRequest) {
+  async recording(@Param('callId') id: string, @Query('reason') reason: string | undefined, @Req() req: UserRequest) {
     const u = userOf(req);
     const r = await this.admin.recording(
       id,
