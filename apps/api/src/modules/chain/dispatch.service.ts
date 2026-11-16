@@ -18,11 +18,11 @@ import {
   type SupervisorAlert,
   TOPICS,
 } from '@yanimda/contracts';
-import { t } from '@yanimda/messages';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { type TimerJob, TIMERS, type Timers } from '../../common/timers/timers';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -200,44 +200,44 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     const status = b.status as DispatchStage | undefined;
     if (status !== undefined && status !== 'CANCELLED' && !DISPATCH_STAGES.includes(status as never))
-      throw new BadRequestException('Geçersiz aşama');
+      throw fail(BadRequestException, 'O-ERR-DISPATCH-STAGE');
     const source = (b.source ?? (b.followUp === true ? 'EMS' : 'OPERATOR')) as DispatchSource;
-    if (!['OPERATOR', 'EMS', 'FAMILY'].includes(source)) throw new BadRequestException('Geçersiz kaynak');
+    if (!['OPERATOR', 'EMS', 'FAMILY'].includes(source)) throw fail(BadRequestException, 'O-ERR-DISPATCH-SOURCE');
     const text = (k: string, max: number) => {
       const v = b[k];
       if (v === undefined) return undefined;
       if (v === null) return null;
-      if (typeof v !== 'string' || v.length > max) throw new BadRequestException(`${k} en çok ${max} karakter`);
+      if (typeof v !== 'string' || v.length > max)
+        throw fail(BadRequestException, 'A-ERR-FIELD-MAX', { field: k, max });
       return v.trim() || null;
     };
     const caseRef = text('caseRef', 64);
     const hospital = text('hospital', 160);
     const note = text('note', 1000);
     if (b.followUp !== undefined && typeof b.followUp !== 'boolean')
-      throw new BadRequestException('followUp true/false');
+      throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'followUp' });
     const followUp = b.followUp === true;
     const eta = b.etaMin;
     if (eta !== undefined && eta !== null && (!Number.isInteger(eta) || (eta as number) < 0 || (eta as number) > 600))
-      throw new BadRequestException('etaMin 0–600 dk');
-    if (!UUID.test(eventId)) throw new NotFoundException('Süreç yok');
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'etaMin', min: 0, max: 600 });
+    if (!UUID.test(eventId)) throw fail(NotFoundException, 'O-ERR-DISPATCH-NOT-FOUND');
 
     const result = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(dispatch).where(eq(dispatch.eventId, eventId)).for('update');
-      if (!row) throw new NotFoundException('Süreç yok');
+      if (!row) throw fail(NotFoundException, 'O-ERR-DISPATCH-NOT-FOUND');
       if (actor.kind === 'OPERATOR') {
         const [ev] = await tx.select({ operatorId: event.operatorId }).from(event).where(eq(event.id, eventId));
-        if (!ev || ev.operatorId !== actor.id)
-          throw new ForbiddenException({ message: t('O-DISPATCH-NOT-OWNER', 'tr'), code: 'O-DISPATCH-NOT-OWNER' });
+        if (!ev || ev.operatorId !== actor.id) throw fail(ForbiddenException, 'O-DISPATCH-NOT-OWNER');
       }
       const cur = row.status as DispatchStage;
-      if (TERMINAL.has(cur)) throw new ConflictException('Süreç kapandı');
+      if (TERMINAL.has(cur)) throw fail(ConflictException, 'O-ERR-DISPATCH-CLOSED');
       const advance = status !== undefined && status !== cur;
       if (
         advance &&
         status !== 'CANCELLED' &&
         DISPATCH_STAGES.indexOf(status as never) < DISPATCH_STAGES.indexOf(cur as never)
       )
-        throw new ConflictException('Aşama geri alınamaz');
+        throw fail(ConflictException, 'O-ERR-DISPATCH-NO-ROLLBACK');
       const set: Partial<typeof dispatch.$inferInsert> = { updatedAt: now };
       if (caseRef !== undefined) set.caseRef = caseRef;
       if (hospital !== undefined) set.hospital = hospital;

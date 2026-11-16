@@ -13,6 +13,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -275,7 +276,7 @@ export class PendantMaintenanceService implements OnModuleInit, OnModuleDestroy 
 
   /** Amir "tamamlandı" (yerinde değişim yapıldı): kim, ne zaman; denetimde. Zaten kapalıysa 409. */
   async done(id: string, by: string, now = this.clock()): Promise<WorkOrder> {
-    if (!UUID.test(id)) throw new NotFoundException('İş emri yok');
+    if (!UUID.test(id)) throw fail(NotFoundException, 'O-ERR-WORK-ORDER-NOT-FOUND');
     const row = await this.db.transaction(async (tx) => {
       const [r] = await tx
         .update(workOrder)
@@ -287,7 +288,9 @@ export class PendantMaintenanceService implements OnModuleInit, OnModuleDestroy 
     });
     if (row) return view(row);
     const [exists] = await this.db.select({ id: workOrder.id }).from(workOrder).where(eq(workOrder.id, id));
-    throw exists ? new ConflictException('İş emri zaten kapalı') : new NotFoundException('İş emri yok');
+    throw exists
+      ? fail(ConflictException, 'O-ERR-WORK-ORDER-CLOSED')
+      : fail(NotFoundException, 'O-ERR-WORK-ORDER-NOT-FOUND');
   }
 
   private async audit(tx: Tx, action: string, id: string, data: Record<string, unknown>, by?: string) {

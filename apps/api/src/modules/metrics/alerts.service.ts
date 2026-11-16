@@ -12,6 +12,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
@@ -149,7 +150,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
 
   /** "Gördüm" (amir/yönetici): kim, ne zaman; audit. Zaten görülmüşse 409. */
   async ack(id: string, by: string, now = new Date()): Promise<AlertView> {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new NotFoundException('Uyarı yok');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail(NotFoundException, 'O-ERR-ALERT-NOT-FOUND');
     const done = await this.db.transaction(async (tx) => {
       const [r] = await tx
         .update(supervisorAlert)
@@ -172,7 +173,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
         .select({ id: supervisorAlert.id })
         .from(supervisorAlert)
         .where(eq(supervisorAlert.id, id));
-      throw exists ? new ConflictException('Uyarı zaten görüldü') : new NotFoundException('Uyarı yok');
+      throw exists ? fail(ConflictException, 'O-ERR-ALERT-ACKED') : fail(NotFoundException, 'O-ERR-ALERT-NOT-FOUND');
     }
     return (await this.list({ limit: 1000 })).find((x) => x.id === id)!;
   }

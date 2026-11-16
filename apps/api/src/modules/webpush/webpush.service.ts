@@ -13,6 +13,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import webpush from 'web-push';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { webPushSubscription } from '../../db/schema';
@@ -86,9 +87,9 @@ export class WebPushService implements OnModuleInit, OnModuleDestroy {
       keys?: { p256dh?: unknown; auth?: unknown };
     };
     if (typeof b.endpoint !== 'string' || !/^https:\/\//.test(b.endpoint) || b.endpoint.length > 1000)
-      throw new BadRequestException('endpoint https olmalı');
+      throw fail(BadRequestException, 'F-ERR-PUSH-ENDPOINT-HTTPS');
     if (typeof b.keys?.p256dh !== 'string' || typeof b.keys?.auth !== 'string')
-      throw new BadRequestException('keys gerekli');
+      throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'keys' });
     await this.db
       .insert(webPushSubscription)
       .values({ endpoint: b.endpoint, subject, roles, p256dh: b.keys.p256dh, auth: b.keys.auth })
@@ -100,7 +101,7 @@ export class WebPushService implements OnModuleInit, OnModuleDestroy {
   }
 
   async unregister(subject: string, endpoint: unknown) {
-    if (typeof endpoint !== 'string') throw new BadRequestException('endpoint gerekli');
+    if (typeof endpoint !== 'string') throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'endpoint' });
     await this.db
       .delete(webPushSubscription)
       .where(and(eq(webPushSubscription.endpoint, endpoint), eq(webPushSubscription.subject, subject)));

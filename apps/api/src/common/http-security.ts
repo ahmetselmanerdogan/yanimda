@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { INestApplication } from '@nestjs/common';
+import { t } from '@yanimda/messages';
 
 /**
  * T-081 (ASVS 14.3.3, 14.4.1–14.4.7, 8.2.1, 7.1.4) HTTP güvenliği. Ters vekil (Caddy) HSTS'yi ekler; burada API'nin
@@ -73,7 +74,8 @@ export function contentTypeGuard(req: BodyReq, res: ProblemRes, next: Next) {
       type: 'about:blank',
       title: 'UNSUPPORTED_MEDIA_TYPE',
       status: 415,
-      detail: 'Desteklenmeyen içerik türü',
+      detail: t('A-ERR-CONTENT-TYPE', 'tr'),
+      code: 'A-ERR-CONTENT-TYPE',
     }),
   );
 }

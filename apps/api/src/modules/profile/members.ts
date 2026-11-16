@@ -1,16 +1,10 @@
 import { createHash, randomInt } from 'node:crypto';
 
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  type HttpException,
-  NotFoundException,
-} from '@nestjs/common';
-import { t } from '@yanimda/messages';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import type { Db, Tx } from '../../db/client';
 import { auditLog, familyMember, memberInvite, protectedPerson } from '../../db/schema';
 import type { Actor } from './contacts';
@@ -55,19 +49,14 @@ export function normalizeMemberCode(input: unknown): string | null {
 
 const hashCode = (canonical: string) => createHash('sha256').update(`yanimda-member-invite:${canonical}`).digest('hex');
 
-/** Katalog kodlu hata: `detail` katalog metni, `code` istemcinin kendi kataloğu için (ProblemFilter). */
-function fail(Ex: new (body: object) => HttpException, code: string): HttpException {
-  return new Ex({ message: t(code, 'tr'), code });
-}
-
 function relationOf(body: unknown): string | null {
   if (body === undefined || body === null) return null;
-  if (typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Nesne bekleniyor');
+  if (typeof body !== 'object' || Array.isArray(body)) throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   const v = (body as Record<string, unknown>).relation;
   if (v === undefined || v === null) return null;
-  if (typeof v !== 'string') throw new BadRequestException('relation metin olmalı');
+  if (typeof v !== 'string') throw fail(BadRequestException, 'A-ERR-FIELD-TEXT', { field: 'relation' });
   const s = v.trim();
-  if (s.length > 50) throw new BadRequestException('relation en fazla 50 karakter');
+  if (s.length > 50) throw fail(BadRequestException, 'A-ERR-FIELD-MAX', { field: 'relation', max: 50 });
   return s || null;
 }
 
@@ -140,8 +129,9 @@ export async function createMemberInvite(db: Db, actor: Actor, personId: string,
 
 /** POST /v1/family/members/accept — yalnız aile hesabı (consumers FAMILY). */
 export async function acceptMemberInvite(db: Db, actor: Actor, body: unknown, now = new Date()) {
-  if (actor.kind !== 'FAMILY' || !actor.id) throw new ForbiddenException('Yalnız aile hesabı');
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Nesne bekleniyor');
+  if (actor.kind !== 'FAMILY' || !actor.id) throw fail(ForbiddenException, 'F-ERR-FAMILY-ONLY');
+  if (!body || typeof body !== 'object' || Array.isArray(body))
+    throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   const canonical = normalizeMemberCode((body as Record<string, unknown>).code);
   if (!canonical) throw fail(BadRequestException, 'F-MEMBER-CODE-INVALID');
   const subject = actor.id;
@@ -208,14 +198,14 @@ export async function listMembers(db: Db, actor: Actor, personId: string): Promi
  * `role`: çağıranın bu kişideki rolü (erişim denetiminden).
  */
 export async function removeMember(db: Db, actor: Actor, role: MemberRole | null, personId: string, memberId: string) {
-  if (!UUID.test(memberId)) throw new NotFoundException('Üye bulunamadı');
+  if (!UUID.test(memberId)) throw fail(NotFoundException, 'F-ERR-MEMBER-NOT-FOUND');
   await db.transaction(async (tx) => {
     const [target] = await tx
       .select()
       .from(familyMember)
       .where(and(eq(familyMember.id, memberId), eq(familyMember.protectedPersonId, personId)))
       .for('update');
-    if (!target) throw new NotFoundException('Üye bulunamadı');
+    if (!target) throw fail(NotFoundException, 'F-ERR-MEMBER-NOT-FOUND');
     const self = actor.kind === 'FAMILY' && target.subject === actor.id;
     if (actor.kind === 'FAMILY' && role !== 'OWNER' && !self) throw fail(ForbiddenException, 'F-MEMBER-OWNER-ONLY');
     if (target.role === 'OWNER') {

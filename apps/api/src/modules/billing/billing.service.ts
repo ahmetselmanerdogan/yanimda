@@ -22,6 +22,7 @@ import type { Redis } from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -125,7 +126,8 @@ const SIGNUP_PER_IP_HOUR = 10;
 const DAY = 86_400_000;
 
 const text = (v: unknown, name: string, max: number): string => {
-  if (typeof v !== 'string' || !v.trim() || v.trim().length > max) throw new BadRequestException(`${name} geçersiz`);
+  if (typeof v !== 'string' || !v.trim() || v.trim().length > max)
+    throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: name });
   return v.trim();
 };
 const obj = (v: unknown): Record<string, unknown> =>
@@ -192,23 +194,22 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   async signup(body: unknown, ip = 'unknown', now = new Date()): Promise<SignupResult> {
     const b = obj(body);
     const plan = planOf(b.plan);
-    if (!plan) throw new BadRequestException('plan geçersiz');
-    if (!isCountry(b.country)) throw new BadRequestException('country geçersiz');
+    if (!plan) throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'plan' });
+    if (!isCountry(b.country)) throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'country' });
     const country = b.country;
     const fam = obj(b.account);
     const email = text(fam.email, 'email', 254).toLowerCase();
-    if (!EMAIL.test(email)) throw new BadRequestException('email geçersiz');
+    if (!EMAIL.test(email)) throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'email' });
     const phone = text(fam.phone, 'phone', 16);
-    if (!E164.test(phone)) throw new BadRequestException('phone E.164 olmalı');
+    if (!E164.test(phone)) throw fail(BadRequestException, 'A-ERR-FIELD-E164', { field: 'phone' });
     const firstName = text(fam.firstName, 'firstName', 60);
     const lastName = text(fam.lastName, 'lastName', 60);
     const displayName = text(obj(b.protectedPerson).displayName, 'protectedPerson.displayName', 100);
     const consents = obj(b.consents);
     if (consents.kvkkNoticeVersion !== this.cfg.kvkkNoticeVersion)
-      throw new BadRequestException('KVKK aydınlatma metni sürümü güncel değil');
-    if (consents.explicitConsent !== true) throw new BadRequestException('Açık rıza gerekli');
-    if (!this.providers.forCountry(country))
-      throw new HttpException('Ödeme bu ülkede kapalı', HttpStatus.SERVICE_UNAVAILABLE);
+      throw fail(BadRequestException, 'F-ERR-KVKK-VERSION');
+    if (consents.explicitConsent !== true) throw fail(BadRequestException, 'F-ERR-EXPLICIT-CONSENT');
+    if (!this.providers.forCountry(country)) throw fail(HttpStatus.SERVICE_UNAVAILABLE, 'F-ERR-PAYMENT-COUNTRY-OFF');
 
     await this.limit(`signup:ip:${ip}`, SIGNUP_PER_IP_HOUR, 3600);
 
@@ -273,8 +274,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     const sub = await this.bySignupToken(subscriptionId, token);
     const subject = await this.ownerOf(sub.protectedPersonId);
     const c = await this.accounts.contactOf(subject);
-    if (!c) throw new NotFoundException('Hesap bulunamadı');
-    if (c.phoneVerified) throw new ConflictException('Telefon zaten doğrulandı');
+    if (!c) throw fail(NotFoundException, 'F-ERR-ACCOUNT-NOT-FOUND');
+    if (c.phoneVerified) throw fail(ConflictException, 'F-ERR-PHONE-ALREADY-VERIFIED');
     const code = await this.sendCode(sub.id, c.phone);
     return {
       phoneVerification: 'SENT',
@@ -285,15 +286,15 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   async verifyPhone(subscriptionId: string, token: unknown, body: unknown): Promise<{ phoneVerified: true }> {
     const sub = await this.bySignupToken(subscriptionId, token);
     const code = obj(body).code;
-    if (typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new BadRequestException('Kod 6 hane olmalı');
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code)) throw fail(BadRequestException, 'F-ERR-CODE-FORMAT');
     const key = `signup:otp:${sub.id}`;
     const want = await this.redis.get(key);
-    if (!want) throw new HttpException('Kodun süresi doldu', HttpStatus.GONE);
+    if (!want) throw fail(HttpStatus.GONE, 'F-ERR-CODE-EXPIRED');
     if (want !== this.otpHash(sub.id, code)) {
       const fails = await this.redis.incr(`${key}:fail`);
       await this.redis.expire(`${key}:fail`, OTP_TTL_SEC);
       if (fails >= OTP_MAX_FAIL) await this.redis.del(key); // yeni kod istensin
-      throw new BadRequestException('Kod hatalı');
+      throw fail(BadRequestException, 'F-ERR-CODE-WRONG');
     }
     await this.redis.del(key);
     await this.accounts.markPhoneVerified(await this.ownerOf(sub.protectedPersonId));
@@ -315,24 +316,24 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async checkout(sub: Row, body: unknown): Promise<CheckoutSession> {
-    if (sub.status === 'CANCELED') throw new ConflictException('Abonelik iptal edilmiş');
-    if (sub.status === 'ACTIVE') throw new ConflictException('Abonelik zaten etkin');
+    if (sub.status === 'CANCELED') throw fail(ConflictException, 'F-ERR-SUB-CANCELED');
+    if (sub.status === 'ACTIVE') throw fail(ConflictException, 'F-ERR-SUB-ACTIVE');
     const country = sub.countryCode as Country;
     const provider = this.providers.forCountry(country);
-    if (!provider) throw new HttpException('Ödeme bu ülkede kapalı', HttpStatus.SERVICE_UNAVAILABLE);
+    if (!provider) throw fail(HttpStatus.SERVICE_UNAVAILABLE, 'F-ERR-PAYMENT-COUNTRY-OFF');
     const plan = planOf(sub.plan) ?? planOf('STANDARD')!;
     const priceRef = priceRefOf(plan, provider.name, this.cfg.env);
-    if (!priceRef) throw new HttpException('Paket fiyatı yapılandırılmamış', HttpStatus.SERVICE_UNAVAILABLE);
+    if (!priceRef) throw fail(HttpStatus.SERVICE_UNAVAILABLE, 'F-ERR-PRICE-NOT-CONFIGURED');
     const contact = await this.accounts.contactOf(await this.ownerOf(sub.protectedPersonId));
-    if (!contact) throw new NotFoundException('Hesap bulunamadı');
-    if (!contact.phoneVerified) throw new ConflictException('Telefon doğrulanmadı');
+    if (!contact) throw fail(NotFoundException, 'F-ERR-ACCOUNT-NOT-FOUND');
+    if (!contact.phoneVerified) throw fail(ConflictException, 'F-ERR-PHONE-NOT-VERIFIED');
     const b = obj(body);
     const billingIn = obj(b.billing);
     const billing =
       typeof billingIn.city === 'string' && typeof billingIn.address === 'string'
         ? { city: text(billingIn.city, 'billing.city', 60), address: text(billingIn.address, 'billing.address', 200) }
         : undefined;
-    if (provider.name === 'IYZICO' && !billing) throw new BadRequestException('Fatura adresi gerekli');
+    if (provider.name === 'IYZICO' && !billing) throw fail(BadRequestException, 'F-ERR-BILLING-ADDRESS');
     let session: CheckoutSession;
     try {
       session = await provider.createCheckout({
@@ -351,7 +352,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (e) {
       this.log.warn(`Checkout (abonelik=${sub.id}, ${provider.name}): ${safeError(e)}`);
-      throw new BadGatewayException('Ödeme sağlayıcısına ulaşılamadı');
+      throw fail(BadGatewayException, 'F-ERR-PROVIDER-UNREACHABLE');
     }
     await this.db
       .update(subscription)
@@ -365,18 +366,18 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   /** POST /v1/webhooks/payments — sağlayıcı başlıktan bulunur; imza geçersizse 400, tekrar 200 (duplicate). */
   async webhook(input: WebhookInput, now = new Date()): Promise<WebhookResult> {
     const provider = this.providers.all().find((p) => p.owns(input.headers));
-    if (!provider) throw new BadRequestException('Sağlayıcı imzası yok');
+    if (!provider) throw fail(BadRequestException, 'A-ERR-SIGNATURE-MISSING');
     let ev: PaymentEvent;
     try {
       ev = provider.parseWebhook(input, now);
     } catch (e) {
       if (e instanceof SignatureError) {
         this.log.warn(`Webhook imzası reddedildi (${provider.name})`);
-        throw new BadRequestException('İmza geçersiz');
+        throw fail(BadRequestException, 'A-ERR-SIGNATURE');
       }
       throw e;
     }
-    if (!ev.eventId) throw new BadRequestException('Olay kimliği yok');
+    if (!ev.eventId) throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'eventId' });
     return this.apply(ev, now);
   }
 
@@ -384,12 +385,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   async iyzicoCallback(token: unknown): Promise<string> {
     const provider = this.providers.byName('IYZICO');
     if (!provider?.completeCheckout || typeof token !== 'string' || !token || token.length > 200)
-      throw new BadRequestException('token geçersiz');
+      throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'token' });
     const [sub] = await this.db
       .select({ id: subscription.id })
       .from(subscription)
       .where(and(eq(subscription.provider, 'IYZICO'), eq(subscription.checkoutRef, token)));
-    if (!sub) throw new NotFoundException('Ödeme bulunamadı');
+    if (!sub) throw fail(NotFoundException, 'F-ERR-PAYMENT-NOT-FOUND');
     try {
       await this.apply({ ...(await provider.completeCheckout(token)), subscriptionId: sub.id });
     } catch (e) {
@@ -409,12 +410,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    */
   async fakePay(checkoutRef: string, body: unknown): Promise<WebhookResult & { redirect: string }> {
     const fake = this.providers.byName('FAKE') as (PaymentProvider & { webhook?: (b: object) => WebhookInput }) | null;
-    if (!fake?.webhook) throw new NotFoundException('Sahte sağlayıcı kapalı');
+    if (!fake?.webhook) throw fail(NotFoundException, 'F-ERR-FAKE-PROVIDER-OFF');
     const [sub] = await this.db
       .select()
       .from(subscription)
       .where(and(eq(subscription.provider, 'FAKE'), eq(subscription.checkoutRef, checkoutRef)));
-    if (!sub) throw new NotFoundException('Ödeme bulunamadı');
+    if (!sub) throw fail(NotFoundException, 'F-ERR-PAYMENT-NOT-FOUND');
     const ok = obj(body).outcome !== 'fail';
     const now = Date.now();
     const r = await this.webhook(
@@ -524,7 +525,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       } catch (e) {
         // Sağlayıcıda kesilmeden yerelde iptal etmek ücretlendirmeyi sürdürür: kullanıcı tekrar dener.
         this.log.warn(`İptal (abonelik=${sub.id}, ${sub.provider}): ${safeError(e)}`);
-        throw new BadGatewayException('Ödeme sağlayıcısına ulaşılamadı, tekrar deneyin');
+        throw fail(BadGatewayException, 'F-ERR-PROVIDER-UNREACHABLE');
       }
     }
     await this.db.transaction(async (tx) => {
@@ -551,7 +552,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       .where(eq(subscription.protectedPersonId, personId))
       .orderBy(sql`${subscription.status} = 'CANCELED', ${subscription.startedAt} DESC`)
       .limit(1);
-    if (!r) throw new NotFoundException('Abonelik yok');
+    if (!r) throw fail(NotFoundException, 'F-ERR-SUB-NOT-FOUND');
     return this.view(r.id, now);
   }
 
@@ -563,7 +564,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
   async view(id: string, now = new Date()): Promise<SubscriptionView> {
     const [r] = await this.db.select().from(subscription).where(eq(subscription.id, id));
-    if (!r) throw new NotFoundException('Abonelik yok');
+    if (!r) throw fail(NotFoundException, 'F-ERR-SUB-NOT-FOUND');
     const e = effective(factsOf(r), now);
     return {
       id: r.id,
@@ -710,9 +711,9 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
   private async bySignupToken(subscriptionId: string, token: unknown): Promise<Row> {
     const id = verifySignupToken(this.cfg.signupSecret, token);
-    if (!id || id !== subscriptionId) throw new ForbiddenException('Kayıt oturumu geçersiz veya süresi doldu');
+    if (!id || id !== subscriptionId) throw fail(ForbiddenException, 'F-ERR-SIGNUP-SESSION');
     const [r] = await this.db.select().from(subscription).where(eq(subscription.id, id));
-    if (!r) throw new NotFoundException('Abonelik yok');
+    if (!r) throw fail(NotFoundException, 'F-ERR-SUB-NOT-FOUND');
     return r;
   }
 
@@ -721,7 +722,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       .select()
       .from(subscription)
       .where(and(eq(subscription.protectedPersonId, personId), ne(subscription.status, 'CANCELED')));
-    if (!r) throw new NotFoundException('Açık abonelik yok');
+    if (!r) throw fail(NotFoundException, 'F-ERR-SUB-NONE-OPEN');
     return r;
   }
 
@@ -730,7 +731,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       .select({ subject: familyMember.subject })
       .from(familyMember)
       .where(and(eq(familyMember.protectedPersonId, personId), eq(familyMember.role, 'OWNER')));
-    if (!m) throw new NotFoundException('Hesap bulunamadı');
+    if (!m) throw fail(NotFoundException, 'F-ERR-ACCOUNT-NOT-FOUND');
     return m.subject;
   }
 
@@ -742,7 +743,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       .select({ role: familyMember.role })
       .from(familyMember)
       .where(and(eq(familyMember.protectedPersonId, personId), eq(familyMember.subject, actor.id ?? '')));
-    if (m?.role !== 'OWNER') throw new ForbiddenException('Aboneliği yalnız hesap sahibi yönetir');
+    if (m?.role !== 'OWNER') throw fail(ForbiddenException, 'F-ERR-SUB-OWNER-ONLY');
   }
 
   private otpHash(id: string, code: string) {
@@ -762,6 +763,6 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   private async limit(key: string, max: number, windowSec: number) {
     const n = await this.redis.incr(key);
     if (n === 1) await this.redis.expire(key, windowSec);
-    if (n > max) throw new HttpException('Çok fazla deneme, biraz sonra tekrar deneyin', HttpStatus.TOO_MANY_REQUESTS);
+    if (n > max) throw fail(HttpStatus.TOO_MANY_REQUESTS, 'F-WEB-ERROR-TOO-MANY');
   }
 }

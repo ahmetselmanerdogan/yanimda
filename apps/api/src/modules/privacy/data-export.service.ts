@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import type { DataExport, DataExportPerson, DataExportWithheld } from '@yanimda/contracts';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import {
   auditLog,
@@ -53,7 +54,7 @@ export class DataExportService {
 
   async export(actor: Actor, now = new Date()): Promise<DataExport> {
     // Yönetici "kendi verisi" yoktur; başkası adına KVKK başvurusu operasyon sürecindedir (saklama.md).
-    if (actor.kind !== 'FAMILY' || !actor.id) throw new ForbiddenException('Yalnız aile hesabı');
+    if (actor.kind !== 'FAMILY' || !actor.id) throw fail(ForbiddenException, 'F-ERR-FAMILY-ONLY');
     const subject = actor.id;
 
     const memberships = await this.db

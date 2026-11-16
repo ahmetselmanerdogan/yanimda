@@ -14,6 +14,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import {
@@ -516,9 +517,9 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
   /** Aile/kişi uygulaması push token'ı (aynı token başka hesaba geçmişse taşınır). */
   async setPushTarget(subject: string, body: unknown, now = new Date()) {
     const b = (body ?? {}) as { platform?: unknown; token?: unknown };
-    if (b.platform !== 'FCM') throw new BadRequestException('platform: FCM');
+    if (b.platform !== 'FCM') throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'platform', values: 'FCM' });
     if (typeof b.token !== 'string' || b.token.length < 20 || b.token.length > 4096)
-      throw new BadRequestException('token geçersiz');
+      throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'token' });
     await this.db
       .insert(pushTarget)
       .values({ id: uuidv7(), subject, platform: 'FCM', token: b.token, updatedAt: now })

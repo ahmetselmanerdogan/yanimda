@@ -15,6 +15,8 @@ import type {
   WorkOrder,
 } from '@yanimda/contracts';
 
+import { has, hasVars, t } from './i18n';
+
 export interface AutoAssignState {
   enabled: boolean;
   changedAt: string | null;
@@ -470,12 +472,17 @@ export interface DeviceCommandResult {
   outcome: string;
 }
 
+/**
+ * RFC 7807 hatası. `message` kullanıcıya gösterilen metin: sunucu katalog kodu (`code`) verdiyse konsol kataloğundan
+ * (`t(code)`), yer tutuculu kod veya katalogda olmayan kodda sunucunun doldurduğu `detail`.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
+    readonly code?: string,
   ) {
-    super(detail);
+    super(code && has(code) && !hasVars(code) ? t(code) : detail);
   }
 }
 
@@ -494,8 +501,8 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     if (!r.ok) {
-      const p = (await r.json().catch(() => ({}))) as { detail?: string; title?: string };
-      throw new ApiError(r.status, p.detail ?? p.title ?? String(r.status));
+      const p = (await r.json().catch(() => ({}))) as { detail?: string; title?: string; code?: string };
+      throw new ApiError(r.status, p.detail ?? p.title ?? String(r.status), p.code);
     }
     return (r.status === 204 ? undefined : await r.json()) as T;
   }

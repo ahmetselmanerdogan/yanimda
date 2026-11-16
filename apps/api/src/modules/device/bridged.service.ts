@@ -14,6 +14,7 @@ import type { BodyLocation, BridgedDeviceModel, BridgedDeviceView } from '@yanim
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
@@ -95,7 +96,7 @@ export class BridgedDeviceService {
     body: unknown,
     now = new Date(),
   ): Promise<{ created: boolean; view: BridgedDeviceView }> {
-    if (!PHONE_KINDS.includes(p.kind)) throw new ForbiddenException('Köprülü cihazı yalnız yaşlının telefonu kaydeder');
+    if (!PHONE_KINDS.includes(p.kind)) throw fail(ForbiddenException, 'P-ERR-BRIDGED-PHONE-ONLY');
     const b = parseRegister(body);
     const hash = storedAddressHash(this.key, p.deviceId, b.addressHash);
     const cls = await classOf(this.db, b.model);
@@ -109,7 +110,7 @@ export class BridgedDeviceService {
           )
           .for('update');
         if (existing) {
-          if (existing.kind !== b.model) throw new ConflictException('Bu adres başka bir modelle kayıtlı');
+          if (existing.kind !== b.model) throw fail(ConflictException, 'P-ERR-ADDRESS-OTHER-MODEL');
           if (b.name !== undefined && b.name !== existing.nickname) {
             await tx.update(device).set({ nickname: b.name }).where(eq(device.id, existing.id));
             existing.nickname = b.name;
@@ -155,7 +156,7 @@ export class BridgedDeviceService {
   }
 
   async list(p: DevicePrincipal): Promise<BridgedDeviceView[]> {
-    if (!PHONE_KINDS.includes(p.kind)) throw new ForbiddenException('Yalnız yaşlının telefonu');
+    if (!PHONE_KINDS.includes(p.kind)) throw fail(ForbiddenException, 'P-ERR-ELDER-PHONE-ONLY');
     const rows = await this.db
       .select()
       .from(device)
@@ -167,14 +168,14 @@ export class BridgedDeviceService {
 
   /** Köprüyü kaldırır (yalnız bu telefona bağlı cihaz; yoksa 404). Zaten kaldırılmışsa sessizce biter. */
   async unbridge(p: DevicePrincipal, deviceId: string, now = new Date()): Promise<void> {
-    if (!PHONE_KINDS.includes(p.kind)) throw new ForbiddenException('Yalnız yaşlının telefonu');
-    if (!UUID.test(deviceId)) throw new NotFoundException('Cihaz bulunamadı');
+    if (!PHONE_KINDS.includes(p.kind)) throw fail(ForbiddenException, 'P-ERR-ELDER-PHONE-ONLY');
+    if (!UUID.test(deviceId)) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     const id = deviceId.toLowerCase();
     const [r] = await this.db
       .select({ id: device.id, revokedAt: device.revokedAt })
       .from(device)
       .where(and(eq(device.id, id), eq(device.bridgeDeviceId, p.deviceId), inArray(device.kind, BRIDGED_MODELS)));
-    if (!r) throw new NotFoundException('Cihaz bulunamadı');
+    if (!r) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     if (r.revokedAt) return;
     await this.revoke([id], p.protectedPersonId, { kind: 'USER', id: p.deviceId }, now);
   }
@@ -223,19 +224,21 @@ export class BridgedDeviceService {
 
 function parseRegister(body: unknown): { model: BridgedDeviceModel; addressHash: string; name?: string | null } {
   if (typeof body !== 'object' || body === null || Array.isArray(body))
-    throw new BadRequestException('Nesne bekleniyor');
+    throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   const b = body as Record<string, unknown>;
   const unknownKeys = Object.keys(b).filter((k) => !['model', 'addressHash', 'name'].includes(k));
-  if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
-  if (!isBridgedModel(b.model)) throw new BadRequestException(`model: ${BRIDGED_MODELS.join(' | ')}`);
-  if (typeof b.addressHash !== 'string') throw new BadRequestException('addressHash zorunlu');
-  if (RAW_MAC.test(b.addressHash)) throw new BadRequestException('Ham BLE adresi gönderilmez; SHA-256 özeti gönderin');
-  if (!SHA256_HEX.test(b.addressHash)) throw new BadRequestException('addressHash 64 haneli küçük harf hex olmalı');
+  if (unknownKeys.length) throw fail(BadRequestException, 'A-ERR-UNKNOWN-FIELD', { fields: unknownKeys.join(', ') });
+  if (!isBridgedModel(b.model))
+    throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'model', values: BRIDGED_MODELS.join(' | ') });
+  if (typeof b.addressHash !== 'string')
+    throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'addressHash' });
+  if (RAW_MAC.test(b.addressHash)) throw fail(BadRequestException, 'P-ERR-RAW-BLE-ADDRESS');
+  if (!SHA256_HEX.test(b.addressHash)) throw fail(BadRequestException, 'P-ERR-ADDRESS-HASH-FORMAT');
   let name: string | null | undefined;
   if (b.name !== undefined) {
     const n = typeof b.name === 'string' ? b.name.trim() : b.name;
     if (n !== null && (typeof n !== 'string' || n.length < 1 || n.length > 40))
-      throw new BadRequestException('name 1–40 karakter olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-LENGTH', { field: 'name', min: 1, max: 40 });
     name = n as string | null;
   }
   return { model: b.model, addressHash: b.addressHash, ...(name !== undefined ? { name } : {}) };

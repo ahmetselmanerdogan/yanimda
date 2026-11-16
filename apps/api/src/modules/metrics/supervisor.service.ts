@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog, operator, supervisorFlag } from '../../db/schema';
 import { falseAlarmOf, loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -247,9 +248,10 @@ export class SupervisorService {
 
   /** PUT /v1/supervisor/operators/{sub}/status — amir operatör durumunu değiştirir (audit). */
   async setStatus(subject: string, status: unknown, by: string, now = new Date()) {
-    if (typeof subject !== 'string' || !subject || subject.length > 200) throw new BadRequestException('Operatör yok');
+    if (typeof subject !== 'string' || !subject || subject.length > 200)
+      throw fail(BadRequestException, 'O-ERR-OPERATOR-NOT-FOUND');
     if (!OPERATOR_STATUSES.includes(status as OperatorStatus))
-      throw new BadRequestException(`status: ${OPERATOR_STATUSES.join(' | ')}`);
+      throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'status', values: OPERATOR_STATUSES.join(' | ') });
     const s = status as OperatorStatus;
     return this.db.transaction(async (tx) => {
       const [row] = await tx
@@ -271,7 +273,7 @@ export class SupervisorService {
 
   /** PUT /v1/supervisor/overflow — yedek merkeze taşma bayrağı (v1.0'da yalnız işaret; yönlendirme v2.0). */
   async setOverflow(enabled: unknown, by: string, now = new Date()) {
-    if (typeof enabled !== 'boolean') throw new BadRequestException('enabled (true/false) gerekli');
+    if (typeof enabled !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'enabled' });
     await this.db.transaction(async (tx) => {
       await tx
         .insert(supervisorFlag)
@@ -291,7 +293,7 @@ export class SupervisorService {
 
   /** PUT /v1/supervisor/auto-assign — otomatik atama bayrağı (0039). */
   async setAutoAssign(enabled: unknown, by: string, now = new Date()) {
-    if (typeof enabled !== 'boolean') throw new BadRequestException('enabled (true/false) gerekli');
+    if (typeof enabled !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'enabled' });
     await this.db.transaction(async (tx) => {
       await tx
         .insert(supervisorFlag)

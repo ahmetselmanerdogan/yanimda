@@ -1,5 +1,6 @@
 import { type CanActivate, type ExecutionContext, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { type DevicePrincipal, EnrollmentService } from './enrollment.service';
 import { simulatorEnabled } from './simulator-mode';
 
@@ -22,7 +23,7 @@ export class DeviceTokenGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<DeviceRequest>();
     const h = authHeader(req);
-    if (!h) throw new UnauthorizedException('Cihaz token gerekli');
+    if (!h) throw fail(UnauthorizedException, 'P-ERR-TOKEN-REQUIRED');
     req.device = await this.enrollment.authenticate(h);
     return true;
   }
@@ -40,7 +41,7 @@ export class SignalAuthGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<DeviceRequest>();
     const h = authHeader(req);
     if (!h) {
-      if (!simulatorEnabled()) throw new UnauthorizedException('Cihaz token gerekli');
+      if (!simulatorEnabled()) throw fail(UnauthorizedException, 'P-ERR-TOKEN-REQUIRED');
       await this.enrollment.assertTokenless(req.body); // kayıtlı/kaldırılmış cihaz token'sız gönderemez
       return true;
     }

@@ -29,6 +29,7 @@ import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
@@ -780,8 +781,8 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
    * eklenmiş olayda (yoksa 404). Son windowMin dk'nın bucketMin dk ortancaları; erişim denetime yazılır (değer yok).
    */
   async eventVitals(eventId: string, actor: VitalsActor, now = this.clock()): Promise<EventVitalsView> {
-    if (!this.enabled()) throw new NotFoundException('Değer görünümü kapalı');
-    if (!/^[0-9a-f-]{36}$/i.test(eventId)) throw new NotFoundException('Olay bulunamadı');
+    if (!this.enabled()) throw fail(NotFoundException, 'O-ERR-VITALS-OFF');
+    if (!/^[0-9a-f-]{36}$/i.test(eventId)) throw fail(NotFoundException, 'F-ERR-EVENT-NOT-FOUND');
     const e = (await this.db.execute(sql`
       SELECT id::text AS id, protected_person_id AS person, type, state FROM event.event WHERE id = ${eventId}::uuid`)) as unknown as Rows<{
       id: string;
@@ -790,15 +791,15 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
       state: string;
     }>;
     const ev = e.rows[0];
-    if (!ev) throw new NotFoundException('Olay bulunamadı');
+    if (!ev) throw fail(NotFoundException, 'F-ERR-EVENT-NOT-FOUND');
     const alerts = (await this.db.execute(sql`
       SELECT rule, value, at FROM health.vital_alert WHERE event_id = ${eventId}::uuid ORDER BY at`)) as unknown as Rows<{
       rule: VitalRule;
       value: number;
       at: Date | string;
     }>;
-    if (!VITAL_EVENT_TYPES.has(ev.type) && !alerts.rows.length) throw new NotFoundException('Bu olayda değer yok');
-    if (ev.state === 'CLOSED') throw new ForbiddenException('Değerler yalnız olay açıkken görünür');
+    if (!VITAL_EVENT_TYPES.has(ev.type) && !alerts.rows.length) throw fail(NotFoundException, 'O-ERR-VITALS-NONE');
+    if (ev.state === 'CLOSED') throw fail(ForbiddenException, 'O-ERR-VITALS-OPEN-ONLY');
     const v = this.params;
     const from = now.getTime() - v.view.windowMin * 60_000;
     const r = (await this.db.execute(sql`
@@ -874,7 +875,7 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
 
   /** GET /protected-persons/{id}/trends/weekly — aile (yetki çağıranda); haftalık özet + "iyi" olmayan sonuçlar. */
   async weeklyTrends(person: string, weeks = 4, now = this.clock()): Promise<WeeklyTrendsView> {
-    if (!this.enabled()) throw new NotFoundException('Sağlık eğilimleri kapalı');
+    if (!this.enabled()) throw fail(NotFoundException, 'F-ERR-TRENDS-OFF');
     const w = Math.min(Math.max(Math.trunc(Number(weeks)) || 4, 1), 13);
     const v = this.params;
     const tz = (await this.protection.settingsOf(person)).timezone;
@@ -968,9 +969,9 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
    */
   async setSettings(person: string, body: unknown, actorId: string, now = this.clock()) {
     // Kapalıyken (mevzuat görüşü öncesi) kişiye özel eşik veya susturma saklanmaz; GET `enabled: false` gösterir.
-    if (!this.enabled()) throw new NotFoundException('Değer ayarları kapalı');
+    if (!this.enabled()) throw fail(NotFoundException, 'F-ERR-VITAL-SETTINGS-OFF');
     if (typeof body !== 'object' || body === null || Array.isArray(body))
-      throw new BadRequestException('Nesne bekleniyor');
+      throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
     const b = body as Record<string, unknown>;
     const allowed = [
       'lowHr',
@@ -983,25 +984,26 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
       'doctorNoteRef',
     ];
     const unknownKeys = Object.keys(b).filter((k) => !allowed.includes(k));
-    if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
+    if (unknownKeys.length) throw fail(BadRequestException, 'A-ERR-UNKNOWN-FIELD', { fields: unknownKeys.join(', ') });
     const int = (k: string, min: number, max: number): number | null | undefined => {
       const x = b[k];
       if (x === undefined || x === null) return x as null | undefined;
       if (!Number.isInteger(x) || (x as number) < min || (x as number) > max)
-        throw new BadRequestException(`${k} ${min}–${max} arası tam sayı olmalı`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: k, min, max });
       return x as number;
     };
     const lowHr = int('lowHr', 25, 80);
     const highHr = int('highHr', 90, 220);
     const spo2Low = int('spo2Low', 70, 96);
     for (const k of ['copd', 'trendsMuted', 'familyConsent', 'doctorNote'])
-      if (b[k] !== undefined && typeof b[k] !== 'boolean') throw new BadRequestException(`${k} boolean olmalı`);
+      if (b[k] !== undefined && typeof b[k] !== 'boolean')
+        throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: k });
     if (b.doctorNoteRef !== undefined && b.doctorNoteRef !== null)
       if (typeof b.doctorNoteRef !== 'string' || b.doctorNoteRef.length < 1 || b.doctorNoteRef.length > 200)
-        throw new BadRequestException('doctorNoteRef 1–200 karakter olmalı');
+        throw fail(BadRequestException, 'A-ERR-FIELD-LENGTH', { field: 'doctorNoteRef', min: 1, max: 200 });
     const personal = [lowHr, highHr, spo2Low].some((x) => typeof x === 'number') || b.copd === true;
     if (personal && !(b.familyConsent === true && b.doctorNote === true))
-      throw new BadRequestException('Kişiye özel eşik aile onayı (familyConsent) ve doktor notu (doctorNote) ister');
+      throw fail(BadRequestException, 'F-ERR-VITAL-CUSTOM-CONSENT');
     const cur = await this.settings(person);
     const next = {
       lowHr: lowHr === undefined ? cur.lowHr : lowHr,
@@ -1077,15 +1079,15 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
   }
 
   async resolveReview(id: string, supervisor: string, body: unknown, now = this.clock()) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new NotFoundException('İnceleme bulunamadı');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw fail(NotFoundException, 'O-ERR-REVIEW-NOT-FOUND');
     const note = (body as { note?: unknown } | null)?.note;
     if (note !== undefined && (typeof note !== 'string' || note.length > 500))
-      throw new BadRequestException('note ≤ 500 karakter');
+      throw fail(BadRequestException, 'A-ERR-FIELD-MAX', { field: 'note', max: 500 });
     const r = (await this.db.execute(sql`
       UPDATE health.vital_review SET resolved_at = coalesce(resolved_at, ${iso(now)}::timestamptz),
         resolved_by = coalesce(resolved_by, ${supervisor}), note = coalesce(${(note as string | undefined) ?? null}, note)
       WHERE id = ${id}::uuid RETURNING id`)) as unknown as Rows<{ id: string }>;
-    if (!r.rows.length) throw new NotFoundException('İnceleme bulunamadı');
+    if (!r.rows.length) throw fail(NotFoundException, 'O-ERR-REVIEW-NOT-FOUND');
     await this.db.insert(auditLog).values({
       actorKind: 'OPERATOR',
       actorId: supervisor,

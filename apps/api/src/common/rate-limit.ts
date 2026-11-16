@@ -2,7 +2,6 @@ import {
   applyDecorators,
   type CallHandler,
   type ExecutionContext,
-  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -16,6 +15,7 @@ import type Redis from 'ioredis';
 import type { Observable } from 'rxjs';
 
 import { REDIS } from '../modules/signal/idempotency.store';
+import { fail } from './catalog-error';
 import { safeError } from './safe-error';
 
 /**
@@ -89,7 +89,7 @@ export function rateLimitInterceptor(limiter: RateLimiter, o: RateLimitOptions) 
           http
             .getResponse<{ setHeader(k: string, v: string): void }>()
             .setHeader('Retry-After', String(r.retryAfterSec));
-          throw new HttpException('Çok fazla istek, daha sonra yeniden deneyin', HttpStatus.TOO_MANY_REQUESTS);
+          throw fail(HttpStatus.TOO_MANY_REQUESTS, 'A-ERR-RATE-LIMIT');
         }
       }
       return next.handle();

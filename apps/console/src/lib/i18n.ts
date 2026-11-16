@@ -26,3 +26,5 @@ export function action(code: string): string {
 }
 
 export const has = (code: string) => code in messages;
+/** Katalog metni `{alan}` yer tutucusu taşıyor mu (sunucu hatasında dolu `detail` tercih edilir). */
+export const hasVars = (code: string) => /\{\w+\}/.test(messages[code]?.text ?? '');

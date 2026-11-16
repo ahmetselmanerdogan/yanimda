@@ -13,6 +13,7 @@ import {
 import type { PartnerRejectReason, PartnerWebhookResult, Signal } from '@yanimda/contracts';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog, device, partnerDelivery, partnerLatency, vendorLink } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
@@ -93,16 +94,16 @@ export class PartnerWebhookService {
     const now = this.clock();
     const adapter = PARTNER.test(partner) ? this.devices.partnerAdapter(partner) : null;
     const secret = adapter ? this.secrets(partner) : null;
-    if (!adapter || !secret) throw new NotFoundException('Ortak bulunamadı');
+    if (!adapter || !secret) throw fail(NotFoundException, 'O-ERR-PARTNER-NOT-FOUND');
 
     const ts = Number(header(input.headers, TIMESTAMP_HEADER));
     const nonce = header(input.headers, NONCE_HEADER) ?? '';
-    if (!Number.isInteger(ts) || !NONCE.test(nonce)) throw new UnauthorizedException('İmza başlıkları eksik');
+    if (!Number.isInteger(ts) || !NONCE.test(nonce)) throw fail(UnauthorizedException, 'A-ERR-SIGNATURE-HEADERS');
     if (Math.abs(now.getTime() / 1000 - ts) > SIGNATURE_TOLERANCE_SEC)
-      throw new UnauthorizedException('İmza zaman damgası pencere dışında');
+      throw fail(UnauthorizedException, 'A-ERR-SIGNATURE-STALE');
     if (!signatureValid(secret, ts, nonce, input.rawBody, header(input.headers, SIGNATURE_HEADER))) {
       this.log.warn(`${partner}: imza geçersiz`);
-      throw new UnauthorizedException('İmza geçersiz');
+      throw fail(UnauthorizedException, 'A-ERR-SIGNATURE');
     }
 
     const fresh = await this.db
@@ -112,7 +113,7 @@ export class PartnerWebhookService {
       .returning({ nonce: partnerDelivery.nonce });
     if (!fresh.length) {
       await this.audit(partner, 'partner.webhook_replay', {});
-      throw new ConflictException('Teslim daha önce alındı (nonce)');
+      throw fail(ConflictException, 'A-ERR-REPLAY');
     }
     try {
       return await this.process(adapter, input.rawBody, now);
@@ -132,10 +133,10 @@ export class PartnerWebhookService {
     try {
       body = JSON.parse(rawBody.toString('utf8'));
     } catch {
-      throw new BadRequestException('Gövde JSON değil');
+      throw fail(BadRequestException, 'A-ERR-BODY-NOT-JSON');
     }
     const parsed = adapter.parse(body);
-    if (!parsed.length) throw new BadRequestException('Olay listesi boş veya okunamadı');
+    if (!parsed.length) throw fail(BadRequestException, 'A-ERR-EVENTS-EMPTY');
 
     const links = await this.linksOf(
       partner,

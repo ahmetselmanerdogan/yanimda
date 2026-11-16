@@ -12,6 +12,7 @@ import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
@@ -83,12 +84,14 @@ export class CompanionService {
     body: unknown,
     now = new Date(),
   ): Promise<{ created: boolean; body: TokenResponse }> {
-    if (!PHONE_KINDS.includes(p.kind)) throw new ForbiddenException('Yalnız eşlikçi telefon saat kaydedebilir');
+    if (!PHONE_KINDS.includes(p.kind)) throw fail(ForbiddenException, 'P-ERR-PHONE-ONLY-WATCH');
     const b = (body ?? {}) as Record<string, unknown>;
-    if (typeof b.deviceId !== 'string' || !UUID.test(b.deviceId)) throw new BadRequestException('deviceId UUID olmalı');
-    if ((b.kind ?? 'WEAROS_WATCH') !== 'WEAROS_WATCH') throw new BadRequestException('kind WEAROS_WATCH olmalı');
+    if (typeof b.deviceId !== 'string' || !UUID.test(b.deviceId))
+      throw fail(BadRequestException, 'A-ERR-FIELD-UUID', { field: 'deviceId' });
+    if ((b.kind ?? 'WEAROS_WATCH') !== 'WEAROS_WATCH')
+      throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'kind', values: 'WEAROS_WATCH' });
     const id = b.deviceId.toLowerCase();
-    if (id === p.deviceId) throw new BadRequestException('Telefon kendini saat olarak kaydedemez');
+    if (id === p.deviceId) throw fail(BadRequestException, 'P-ERR-SELF-AS-WATCH');
     const base = {
       protectedPersonId: p.protectedPersonId,
       kind: 'WEAROS_WATCH',
@@ -128,7 +131,7 @@ export class CompanionService {
           return true;
         }
         if (row.personId !== p.protectedPersonId || row.kind !== 'WEAROS_WATCH')
-          throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
+          throw fail(ConflictException, 'P-ERR-DEVICE-EXISTS');
         // Aynı kişinin etkin saati: yeniden deneme (yanıt yolda kayboldu) veya telefon yeniden kuruldu → yeni token.
         await tx
           .update(device)
@@ -204,14 +207,18 @@ export class CompanionService {
   async setSetupState(p: DevicePrincipal, body: unknown, now = new Date()): Promise<void> {
     const b = (body ?? {}) as Record<string, unknown>;
     const step = str(b.step, 40);
-    if (!step || !/^[A-Z_]+$/.test(step)) throw new BadRequestException('step zorunlu (BÜYÜK_HARF)');
-    if (typeof b.completed !== 'boolean') throw new BadRequestException('completed boolean olmalı');
+    if (!step || !/^[A-Z_]+$/.test(step)) throw fail(BadRequestException, 'P-ERR-STEP-REQUIRED');
+    if (typeof b.completed !== 'boolean')
+      throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'completed' });
     const rawMissing = b.missing ?? [];
     if (!Array.isArray(rawMissing) || rawMissing.length > SETUP_REQUIREMENTS.length)
-      throw new BadRequestException('missing dizi olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-ARRAY', { field: 'missing' });
     for (const m of rawMissing)
       if (!SETUP_REQUIREMENTS.includes(m as (typeof SETUP_REQUIREMENTS)[number]))
-        throw new BadRequestException(`missing şunlardan olmalı: ${SETUP_REQUIREMENTS.join(', ')}`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', {
+          field: 'missing',
+          values: SETUP_REQUIREMENTS.join(', '),
+        });
     const missing = [...new Set(rawMissing as string[])].sort();
     const view: SetupStateView = {
       deviceId: p.deviceId,

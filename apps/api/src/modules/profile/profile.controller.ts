@@ -20,6 +20,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit } from '../../common/rate-limit';
 import { authenticate, type UserRequest } from '../identity/oidc.guard';
@@ -46,7 +47,8 @@ export class ProfileGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<ActorRequest>();
     if (!req.headers.authorization) {
-      if (!adminTokenEnabled() || !req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled() || !req.headers['x-admin-token'])
+        throw fail(UnauthorizedException, 'A-ERR-LOGIN-REQUIRED');
       const ok = this.shared.canActivate(ctx);
       req.actor = { kind: 'ADMIN' };
       return ok;
@@ -55,7 +57,7 @@ export class ProfileGuard implements CanActivate {
     req.user = user;
     if (user.roles.includes('ADMIN')) req.actor = { kind: 'ADMIN', id: user.sub };
     else if (user.realm === 'consumers' && user.roles.includes('FAMILY')) req.actor = { kind: 'FAMILY', id: user.sub };
-    else throw new ForbiddenException('Yetki yok');
+    else throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
     return true;
   }
 }

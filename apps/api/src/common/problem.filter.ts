@@ -1,4 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { t } from '@yanimda/messages';
 
 import { sanitizeRejected } from '../modules/signal/signal-reject';
 import { safeError } from './safe-error';
@@ -46,11 +47,13 @@ export class ProblemFilter implements ExceptionFilter {
     } else if (isTransient(exception)) {
       log.warn(`[geçici] ${safeError(exception)}`);
       status = HttpStatus.SERVICE_UNAVAILABLE;
-      detail = 'Hizmet geçici olarak kullanılamıyor, yeniden deneyin';
+      code = 'A-ERR-UNAVAILABLE';
+      detail = t(code, 'tr');
     } else {
       log.error(`[unhandled] ${safeError(exception)}`);
       status = HttpStatus.INTERNAL_SERVER_ERROR;
-      detail = 'Internal error';
+      code = 'A-ERR-INTERNAL';
+      detail = t(code, 'tr');
     }
     if (status === HttpStatus.SERVICE_UNAVAILABLE) res.setHeader('Retry-After', '2');
     // T-081: 400/401/403/422/429 güvenlik olayı (rota şablonu + istek kimliği; PII yok).

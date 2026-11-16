@@ -15,6 +15,7 @@ import { eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, event, falseAlarm, familyFeedback } from '../../db/schema';
@@ -144,10 +145,10 @@ export class FalseAlarmService implements OnModuleInit, OnModuleDestroy {
 
   /** C-12 POST /v1/events/{id}/feedback — aile "Gerçek miydi?" cevabı ({ real }). Yalnız kapanmış olay. */
   async feedback(actor: Actor, eventId: string, body: unknown, now = new Date()): Promise<FeedbackResult> {
-    if (actor.kind !== 'FAMILY' || !actor.id) throw new ForbiddenException('Yalnız aile üyesi geri bildirim verir');
+    if (actor.kind !== 'FAMILY' || !actor.id) throw fail(ForbiddenException, 'F-ERR-FEEDBACK-FAMILY-ONLY');
     const real = (body as { real?: unknown } | null)?.real;
-    if (typeof real !== 'boolean') throw new BadRequestException('real (true/false) gerekli');
-    if (!UUID.test(eventId)) throw new NotFoundException('Olay yok');
+    if (typeof real !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'real' });
+    if (!UUID.test(eventId)) throw fail(NotFoundException, 'F-ERR-EVENT-NOT-FOUND');
     const [ev] = await this.db
       .select({
         id: event.id,
@@ -159,11 +160,11 @@ export class FalseAlarmService implements OnModuleInit, OnModuleDestroy {
       })
       .from(event)
       .where(eq(event.id, eventId));
-    if (!ev) throw new NotFoundException('Olay yok');
+    if (!ev) throw fail(NotFoundException, 'F-ERR-EVENT-NOT-FOUND');
     await this.authorize(actor, ev.protectedPersonId); // başka ailenin olayı: 404
-    if (ev.state !== 'CLOSED') throw new ConflictException('Olay henüz kapanmadı');
+    if (ev.state !== 'CLOSED') throw fail(ConflictException, 'F-ERR-EVENT-NOT-CLOSED');
     // Bulgu 11: operatörün acil olarak teyit ettiği (112 / sevk) olay aile görüşüyle yanlış alarm sayılmaz.
-    if (ev.confirmedOutcome === 'EMERGENCY') throw new ConflictException('Acil olarak teyit edilmiş olay');
+    if (ev.confirmedOutcome === 'EMERGENCY') throw fail(ConflictException, 'F-ERR-EVENT-EMERGENCY');
     await this.db.transaction(async (tx) => {
       await tx
         .insert(familyFeedback)

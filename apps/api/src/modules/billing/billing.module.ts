@@ -1,5 +1,6 @@
 import { Logger, Module, ServiceUnavailableException } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { ProfileModule } from '../profile/profile.module';
 import { ProfileService } from '../profile/profile.service';
 import type { CpaasProvider } from '../telephony/cpaas';
@@ -42,7 +43,7 @@ function accountsFromEnv(env: NodeJS.ProcessEnv = process.env): ConsumerAccounts
   const log = new Logger('Billing');
   if (env.NODE_ENV === 'production') {
     log.error('KEYCLOAK_SIGNUP_CLIENT_SECRET yok: web kaydı kapalı');
-    const off = () => Promise.reject(new ServiceUnavailableException('Kayıt geçici olarak kapalı'));
+    const off = () => Promise.reject(fail(ServiceUnavailableException, 'F-ERR-SIGNUP-OFF'));
     return { create: off, sendSetupEmail: off, markPhoneVerified: off, contactOf: off, remove: off };
   }
   log.warn('KEYCLOAK_SIGNUP_CLIENT_SECRET yok: kayıt hesapları bellekte (sahte Keycloak)');

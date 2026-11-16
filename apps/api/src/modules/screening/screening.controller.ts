@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { validate as isUuid } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles } from '../identity/oidc.guard';
 import { TelephonyService } from '../telephony/telephony.service';
@@ -55,7 +56,7 @@ export class ScreeningWebhookController {
       Object.entries(body ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
     );
     if (!provider.verify(`${this.telephony.webhookBase()}${req.originalUrl}`, params, signature))
-      throw new ForbiddenException('İmza geçersiz');
+      throw fail(ForbiddenException, 'A-ERR-SIGNATURE');
     if (!isUuid(id ?? '')) throw new NotFoundException();
     res.setHeader('content-type', 'text/xml; charset=utf-8');
     return this.screening.webhook(kind as ScreeningWebhookKind, id, params);
@@ -73,7 +74,8 @@ export class ScreeningController {
   @Get('stats')
   stats(@Query('days') days?: string): Promise<ScreeningStats> {
     const n = days === undefined ? 30 : Number(days);
-    if (!Number.isInteger(n) || n < 1 || n > 90) throw new BadRequestException('days 1–90 olmalı');
+    if (!Number.isInteger(n) || n < 1 || n > 90)
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'days', min: 1, max: 90 });
     return this.screening.stats(new Date(Date.now() - n * 86_400_000));
   }
 }

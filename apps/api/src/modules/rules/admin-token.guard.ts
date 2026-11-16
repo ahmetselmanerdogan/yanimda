@@ -2,6 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { type CanActivate, type ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
+
 /**
  * Paylaşılan yönetici anahtarı (`x-admin-token` = ADMIN_TOKEN) yalnız geliştirme, test ve CI betikleri içindir.
  * T-081 (G-4; ASVS 1.2.4, 2.5.4, 3.5.2, 4.3.1): üretimde (NODE_ENV=production) bu yol tamamen kapalıdır — MFA'sız,
@@ -25,10 +27,10 @@ export class AdminTokenGuard implements CanActivate {
     const given = ctx.switchToHttp().getRequest<{ headers: Record<string, string | undefined> }>().headers[
       'x-admin-token'
     ];
-    if (!adminTokenEnabled() || !expected || !given) throw new ForbiddenException('Yönetici yetkisi gerekli');
+    if (!adminTokenEnabled() || !expected || !given) throw fail(ForbiddenException, 'A-ERR-ADMIN-REQUIRED');
     const a = Buffer.from(given);
     const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new ForbiddenException('Yönetici yetkisi gerekli');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw fail(ForbiddenException, 'A-ERR-ADMIN-REQUIRED');
     return true;
   }
 }

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { fail } from '../../common/catalog-error';
 import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import { OidcVerifier, type Role, TokenError, type UserPrincipal } from './oidc-verifier';
 
@@ -46,18 +47,19 @@ export class OidcGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<UserRequest>();
     req.user = await authenticate(this.verifier, req);
     const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [ctx.getHandler(), ctx.getClass()]);
-    if (roles?.length && !roles.some((r) => req.user!.roles.includes(r))) throw new ForbiddenException('Yetki yok');
+    if (roles?.length && !roles.some((r) => req.user!.roles.includes(r)))
+      throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
     return true;
   }
 }
 
 export async function authenticate(verifier: OidcVerifier, req: UserRequest): Promise<UserPrincipal> {
   const token = bearer(req);
-  if (!token || !verifier.enabled) throw new UnauthorizedException('Giriş gerekli');
+  if (!token || !verifier.enabled) throw fail(UnauthorizedException, 'A-ERR-LOGIN-REQUIRED');
   try {
     return await verifier.verify(token);
   } catch (e) {
-    if (e instanceof TokenError) throw new UnauthorizedException('Giriş gerekli');
+    if (e instanceof TokenError) throw fail(UnauthorizedException, 'A-ERR-LOGIN-REQUIRED');
     throw e;
   }
 }
@@ -75,11 +77,11 @@ export class AdminGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<UserRequest>();
     if (!req.headers.authorization) {
-      if (!adminTokenEnabled()) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled()) throw fail(UnauthorizedException, 'A-ERR-LOGIN-REQUIRED');
       return this.shared.canActivate(ctx);
     }
     req.user = await authenticate(this.verifier, req);
-    if (!req.user.roles.includes('ADMIN')) throw new ForbiddenException('Yönetici yetkisi gerekli');
+    if (!req.user.roles.includes('ADMIN')) throw fail(ForbiddenException, 'A-ERR-ADMIN-REQUIRED');
     return true;
   }
 }

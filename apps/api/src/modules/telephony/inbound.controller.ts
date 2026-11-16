@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { validate as isUuid } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { SupervisorService } from '../metrics/supervisor.service';
@@ -64,7 +65,7 @@ export class InboundWebhookController {
       Object.entries(body ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
     );
     if (!provider.verify(`${this.telephony.webhookBase()}${req.originalUrl}`, params, signature))
-      throw new ForbiddenException('İmza geçersiz');
+      throw fail(ForbiddenException, 'A-ERR-SIGNATURE');
     const bySid = BY_CALL_SID.includes(kind as InboundKind);
     if (!bySid && !isUuid(callId ?? '')) throw new NotFoundException();
     res.setHeader('content-type', 'text/xml; charset=utf-8');
@@ -112,7 +113,7 @@ export class OperatorsController {
   async setMine(@Body() body: { status?: unknown } | null, @Req() req: UserRequest) {
     const status = body?.status;
     if (!SELF_STATUSES.includes(status as (typeof SELF_STATUSES)[number]))
-      throw new BadRequestException(`status: ${SELF_STATUSES.join(' | ')}`);
+      throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'status', values: SELF_STATUSES.join(' | ') });
     const sub = userOf(req).sub;
     return this.supervisor.setStatus(sub, status, sub);
   }

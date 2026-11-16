@@ -5,7 +5,7 @@ import type { EventState } from '@yanimda/contracts';
 import catalog from '@yanimda/messages/tr.json';
 import { describe, expect, it } from 'vitest';
 
-import type { EventRecord, QueueItem } from './api';
+import { ApiError, type EventRecord, type QueueItem } from './api';
 import { t } from './i18n';
 import { commandFor, type KeyInput } from './keys';
 import { deadline112LeftSec, isDeviceStep, resultCode, systemReason } from './ladder';
@@ -234,6 +234,20 @@ describe('katalog', () => {
     const literal = [...src.matchAll(/new ApiError\(\d+, '([^']*)'/g)].map((m) => m[1]);
     expect(literal).toEqual([]);
     expect(src).toMatch(/new ApiError\(\d+, t\('O-TRAIN-/);
+  });
+});
+
+describe('API hatası (M-2)', () => {
+  it('katalog kodu varsa metin konsol kataloğundan; yer tutuculu veya bilinmeyen kodda sunucu detail', () => {
+    const e = new ApiError(404, 'Kişi bulunamadı', 'F-ERR-PERSON-NOT-FOUND');
+    expect(e.message).toBe(t('F-ERR-PERSON-NOT-FOUND'));
+    expect(e.detail).toBe('Kişi bulunamadı');
+    expect(e.code).toBe('F-ERR-PERSON-NOT-FOUND');
+    expect(new ApiError(400, 'days 1–30 arası tam sayı olmalı', 'A-ERR-FIELD-RANGE').message).toBe(
+      'days 1–30 arası tam sayı olmalı',
+    );
+    expect(new ApiError(500, 'x', 'Z-YOK').message).toBe('x');
+    expect(new ApiError(409, 'Başka operatör üstlendi').message).toBe('Başka operatör üstlendi');
   });
 });
 

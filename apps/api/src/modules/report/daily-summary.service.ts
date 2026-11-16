@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
 import { dailySummary, protectedPerson } from '../../db/schema';
@@ -165,7 +166,8 @@ export class DailySummaryService implements OnModuleInit, OnModuleDestroy {
 
   /** Son `days` gün (bugün kısmi, canlı hesap). Aile ekranı ve telefon ana ekranı. */
   async recent(personId: string, days: number, now = new Date()): Promise<SummaryView[]> {
-    if (!Number.isInteger(days) || days < 1 || days > 31) throw new BadRequestException('days 1–31');
+    if (!Number.isInteger(days) || days < 1 || days > 31)
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'days', min: 1, max: 31 });
     const [p] = await this.db
       .select({ tz: protectedPerson.timezone })
       .from(protectedPerson)

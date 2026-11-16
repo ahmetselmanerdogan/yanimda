@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { NotifyService } from './notify.service';
@@ -68,7 +69,7 @@ export class NotifyWebhookController {
     );
     const base = (process.env.CPAAS_WEBHOOK_BASE ?? '').replace(/\/+$/, '');
     if (!this.notify.verifyWebhook(`${base}${req.originalUrl}`, params, signature))
-      throw new ForbiddenException('İmza geçersiz');
+      throw fail(ForbiddenException, 'A-ERR-SIGNATURE');
     await this.notify.smsStatus(id ?? '', params);
     res.setHeader('content-type', 'text/xml; charset=utf-8');
     return '<Response/>';
