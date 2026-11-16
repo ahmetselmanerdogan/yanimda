@@ -22,7 +22,7 @@ import {
 import type { Backend } from './lib/backend';
 import { promptPending, welfareReasonCode } from './lib/devices';
 import { t } from './lib/i18n';
-import { commandFor, isEditing,type Mode } from './lib/keys';
+import { commandFor, isEditing, type Mode } from './lib/keys';
 import { isDeviceStep } from './lib/ladder';
 import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';

@@ -33,6 +33,7 @@ jobs:
       - name: Kural paketi doğrulaması (zorunlu)
         run: pnpm --filter @yanimda/rules test
       - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
