@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
 import { configureHttpSecurity } from './common/http-security';
+import { configureServerTimeouts } from './common/http-server';
 import { ProblemFilter } from './common/problem.filter';
 import { assertAdminTokenPolicy } from './modules/rules/admin-token.guard';
 
@@ -20,6 +21,7 @@ async function bootstrap() {
   app.useGlobalFilters(new ProblemFilter());
   app.enableShutdownHooks();
   const port = Number(process.env.PORT ?? 3000);
+  configureServerTimeouts(app.getHttpServer()); // T-080: vekil arkasında boştaki bağlantı EOF'u
   await app.listen(port);
   new Logger('Bootstrap').log(`Yanımda API :${port}/v1 (country=${process.env.COUNTRY_CODE ?? 'TR'})`);
 }

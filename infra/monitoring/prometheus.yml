@@ -83,11 +83,11 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # API kimliksiz isteğe 401 döner (ayrık /health ucu yok): 401 = ayakta.
+  # API hazırlık ucu (T-083, kimliksiz): 200 = süreç + veritabanı ayakta; 503 = veritabanı yok.
   - job_name: blackbox-api
     metrics_path: /probe
     params:
-      module: [http_401]
+      module: [http_2xx]
     file_sd_configs:
       - files: ['/etc/prometheus/targets/blackbox-api*.yml']
     relabel_configs: *blackbox_relabel

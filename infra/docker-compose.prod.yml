@@ -26,15 +26,15 @@ x-api: &api
   logging: &logging
     driver: json-file
     options: { max-size: 20m, max-file: '5' }
-  # Ayrık /health ucu yok (bkz. README "Takip"): kimlik isteyen ucuz bir uç 401 döner = süreç ve yönlendirme ayakta.
-  # 5xx/bağlantı hatası = sağlıksız. Metrik portu (9464) yalnız iç ağda; Caddy'de yayınlanmaz.
+  # Hazırlık ucu (T-083): 200 = süreç ve veritabanı ayakta (Redis yoksa da 200 "degraded"); 503/bağlantı hatası =
+  # sağlıksız. Metrik portu (9464) yalnız iç ağda; Caddy'de yayınlanmaz.
   healthcheck:
     test:
       [
         'CMD',
         'node',
         '-e',
-        "fetch('http://127.0.0.1:3000/v1/queue').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        "fetch('http://127.0.0.1:3000/v1/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
       ]
     interval: 15s
     timeout: 5s

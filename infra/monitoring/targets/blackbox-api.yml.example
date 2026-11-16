@@ -1,5 +1,5 @@
-# cp blackbox-api.yml.example blackbox-api.yml (kimliksiz istek → 401 beklenir).
+# cp blackbox-api.yml.example blackbox-api.yml (kimliksiz hazırlık ucu → 200 beklenir).
 - targets:
-    - https://api.staging.yanimda.example/v1/queue
+    - https://api.staging.yanimda.example/v1/ready
   labels:
     env: staging
