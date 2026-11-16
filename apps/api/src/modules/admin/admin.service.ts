@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, Optional } 
 import type { AdminCoverageMetrics } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
 
+import { redactPii } from '../../common/pii';
 import { DB, type Db } from '../../db/client';
 import { auditLog } from '../../db/schema';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -191,7 +192,7 @@ export class AdminService {
       action: 'recording.played',
       entityType: 'call',
       entityId: callId,
-      data: { role: actor.role, eventId: r.event_id, reason: why.slice(0, 200) },
+      data: { role: actor.role, eventId: r.event_id, reason: redactPii(why).slice(0, 200) },
     });
     return obj;
   }

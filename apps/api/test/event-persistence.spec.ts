@@ -118,6 +118,27 @@ describe('Tek transaction: durum + geçiş + audit + outbox', () => {
     expect(audit.map((a) => a.data.to)).toEqual(['CREATED', 'ESCALATED', 'OPERATOR_QUEUE', 'OPERATOR_ASSIGNED']);
     expect(audit[3]).toMatchObject({ actor_kind: 'OPERATOR', actor_id: 'op-9', action: 'event.transition' });
   });
+
+  it("serbest not audit.log'a kopyalanmaz: geçişte kalır (anonimleştirilebilir), audit yalnız varlığını tutar", async () => {
+    const events = h.events();
+    await deliver(sig('SOS'));
+    const [{ id }] = await h.rows<{ id: string }>('SELECT id FROM event.event');
+    await events.claim(id, 'op-9');
+    const note = 'Ayşe Hanım 0532 111 22 33, insülin';
+    await events.closeByOperator(id, 'op-9', 'FALSE_ALARM', note);
+    const [t] = await h.rows<{ note: string }>(
+      "SELECT note FROM event.transition WHERE event_id = $1 AND to_state = 'CLOSED'",
+      [id],
+    );
+    expect(t!.note).toBe(note);
+    const audit = await h.rows<{ data: Record<string, unknown> }>(
+      "SELECT data FROM audit.log WHERE entity_type = 'event' AND entity_id = $1 ORDER BY id",
+      [id],
+    );
+    expect(JSON.stringify(audit)).not.toMatch(/Ayşe|0532|insülin/);
+    expect(audit.at(-1)!.data).toMatchObject({ to: 'CLOSED', noted: true });
+    expect(audit[0]!.data).toMatchObject({ to: 'CREATED', noted: false });
+  });
 });
 
 describe('audit.log append-only', () => {
