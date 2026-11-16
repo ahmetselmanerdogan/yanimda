@@ -44,7 +44,8 @@ saat debug `DEV_CONFIG` ile kendi token'ıyla doğrudan (LTE yolu) gönderdi. An
   anda "süre aşıldı" görünür. Alarm saatlerinin yükseltme anından başlaması ürün kararı.
 - Telefon kurulumunda "Kontrol et": saat bulunamaz ve Wear OS eşlikçi uygulaması yoksa ekranda geri bildirim yok.
 - Konsol değer özelliği kapalıyken her yenilemede `/events/{id}/vitals` çağırıp 404 alıyor (zararsız gürültü).
-- Yerelde `packages/contracts/dist` eski kalırsa `ladder.spec.ts` (SILENT) kırılır; CI derlediği için etkilenmez. Depoda
-  `packages/contracts/src/index.js` / `.d.ts` derleme çıktısı izleniyor (eski, SILENT yok).
+- ~~Yerelde `packages/contracts/dist` eski kalırsa `ladder.spec.ts` (SILENT) kırılır; CI derlediği için etkilenmez. Depoda
+  `packages/contracts/src/index.js` / `.d.ts` derleme çıktısı izleniyor (eski, SILENT yok).~~ — düzeltildi
+  (2026-11-16): src altındaki derleme çıktısı silindi ve yok sayılıyor.
 - Yapılmadı: gerçek Data Layer eşleşmesi, gerçek arama (CPaaS), FCM/APNs push, aile uygulaması/web arayüzü (aile tarafı
   API ve bildirim kayıtlarıyla doğrulandı), iOS.

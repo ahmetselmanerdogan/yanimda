@@ -212,7 +212,7 @@ describe('Idempotency', () => {
   });
 });
 
-describe('Cihaz durumu (geçici olarak signal içinde; device modülü gelince taşınır)', () => {
+describe('Cihaz durumu (sinyalle aynı transaction)', () => {
   beforeEach(async () => {
     await h.pg.exec(`
       INSERT INTO profile.protected_person (id, display_name) VALUES ('00000000-0000-0000-0000-000000000001', 'demo');
