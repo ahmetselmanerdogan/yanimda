@@ -103,6 +103,18 @@ describe('yönetim paneli', () => {
       "SELECT actor_id, actor_kind, data FROM audit.log WHERE action = 'recording.played' AND entity_id = '01960000-0000-7000-8000-0000000000c1'",
     );
     expect(a).toMatchObject({ actor_id: 'sup-1', actor_kind: 'SUPERVISOR', data: { reason: 'kalite kontrol' } });
+    // Denetim kaydı silinemez (append-only): gerekçedeki kişisel veri yazılmadan maskelenir.
+    await admin.recording(
+      '01960000-0000-7000-8000-0000000000c1',
+      { id: 'sup-1', role: 'SUPERVISOR' },
+      'şikayet: 0532 111 22 33 numaralı yakın, a@b.co',
+    );
+    const reasons = (
+      await h.rows<{ data: { reason: string } }>(
+        "SELECT data FROM audit.log WHERE action = 'recording.played' ORDER BY id",
+      )
+    ).map((r) => r.data.reason);
+    expect(reasons[1]).toBe('şikayet: [gizli] numaralı yakın, [gizli]');
     await expect(
       admin.recording('01960000-0000-7000-8000-0000000000c2', { id: 'sup-1', role: 'SUPERVISOR' }, 'kalite kontrol'),
     ).rejects.toMatchObject({ status: 404 });

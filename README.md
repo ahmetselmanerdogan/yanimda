@@ -8,13 +8,13 @@ Pronet'in ev için yaptığını insan için yapar: saat → olay motoru → Sa�
 ```bash
 corepack enable     # pnpm 9.12 (package.json packageManager)
 pnpm install        # Husky git hook'larını da kurar
-docker compose -f infra/docker-compose.yml up -d
-pnpm --filter @yanimda/api db:seed   # migration + demo kişi/cihaz (API açılışta da migration uygular)
+scripts/dev-up.sh   # docker compose up (Keycloak realm içe aktarımı dahil) + migration + demo kişi/cihaz
 pnpm dev            # api :3000, console :5173
 pnpm test
 pnpm --filter @yanimda/api test:e2e   # uçtan uca + kaos (redis-server gerekir, Docker gerekmez)
 pnpm --filter @yanimda/api stack:local # Redis + PGlite sunucusu + API (Docker'sız yerel yığın)
 scripts/load-smoke.sh -e DURATION=2m    # k6 duman testi (k6 gerekir)
+scripts/dev-up.sh --smoke               # Docker'sız: yerel yığın + simülatör fall → kuyrukta (T-008 kabulü)
 pnpm --filter @yanimda/simulator start -- fall --person pp_demo --no-cancel
 ```
 

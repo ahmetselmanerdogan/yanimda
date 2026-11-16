@@ -253,7 +253,9 @@ export class EventRepository {
         action: 'event.transition',
         entityType: 'event',
         entityId: eventId,
-        data: { from: t.from ?? null, to: t.to, note: t.note ?? null },
+        // Serbest not (ad, telefon, sağlık bilgisi içerebilir) yalnız event.transition'da kalır: o kayıt saklama
+        // kararıyla anonimleştirilebilir, audit.log append-only'dir (docs/security/saklama.md). Burada yalnız varlığı.
+        data: { from: t.from ?? null, to: t.to, noted: Boolean(t.note) },
       })),
     );
   }

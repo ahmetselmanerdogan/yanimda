@@ -169,6 +169,22 @@ describe('Idempotency', () => {
     expect(await count('event.outbox')).toBe(1);
   });
 
+  it('Redis erişilemezken aynı key farklı occurredAt ile gelirse de tekrar sayılır (24 saat penceresi)', async () => {
+    const s = sig('SOS');
+    h.redis.set = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
+    h.redis.get = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
+    h.redis.del = (() => Promise.reject(new Error('ECONNREFUSED'))) as never;
+    expect(await h.signals.accept([s])).toEqual({ accepted: 1, duplicates: 0, rejected: [] });
+    const later = { ...s, occurredAt: new Date(Date.parse(s.occurredAt) + 5_000).toISOString() };
+    expect(await h.signals.accept([later])).toEqual({ accepted: 0, duplicates: 1, rejected: [] });
+    // eş zamanlı iki farklı zamanlı tekrar da tek satır kalır
+    const a = { ...s, occurredAt: new Date(Date.parse(s.occurredAt) + 7_000).toISOString() };
+    const b = { ...s, occurredAt: new Date(Date.parse(s.occurredAt) + 9_000).toISOString() };
+    await Promise.all([h.signals.accept([a]), h.signals.accept([b])]);
+    expect(await count('signal.signal')).toBe(1);
+    expect(await count('event.outbox')).toBe(1);
+  });
+
   it('anahtar 24 saat tutulur', async () => {
     const s = sig('HEARTBEAT');
     await h.signals.accept([s]);

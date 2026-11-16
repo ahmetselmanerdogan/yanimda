@@ -14,6 +14,7 @@ Claude Code'a görev verirken 06'daki istem şablonunu kullan.
 - [x] T-005 packages/messages: tr.json + t()
 - [x] T-006 packages/simulator: fall/sos/heartbeat/offbody/onbody/battery/inactivity/cancel/scenario
 - [x] T-007 CI: kural doğrulama, lint, typecheck, test, build; API imajı (<250 MB), duman testi, Trivy (ilk CI koşusunda doğrulanacak)
+- [x] T-008 Yerel geliştirme: `scripts/dev-up.sh` (compose + seed), `--smoke` Docker'sız kabul (simülatör fall → kuyruk; CI e2e işi). `scripts/seed.ts` yerine `pnpm --filter @yanimda/api db:seed`
 
 ## Epik 1 · Olay motoru (S1)
 - [x] T-010 signal: Postgres/Timescale yazımı + transactional outbox + OutboxWorker (DLQ), Redis idempotency (D-01). Testler PGlite ile; Testcontainers T-016
