@@ -1,7 +1,8 @@
 /**
  * Yerel tam yığın (Redis + PGlite sunucusu + API), gerçek kural süreleriyle; yük testi ve elle deneme için.
  *   pnpm --filter @yanimda/api stack:local      → API adresini yazar, Ctrl+C ile kapanır
- * KEYCLOAK_URL verilirse gerçek Keycloak kullanılır (T-020); verilmezse sahte OIDC (token: STACK_PRINT_TOKEN=1).
+ * KEYCLOAK_URL verilirse gerçek Keycloak kullanılır (T-020); verilmezse sahte OIDC (STACK_PRINT_TOKEN=1 → ikinci
+ * satırda "Bearer …" operatör token'ı, süresi STACK_TOKEN_TTL sn).
  * STACK_API_PORT: sabit API portu (konsol proxy'si ve Playwright için); STACK_TIME_SCALE: kural sürelerini ölçekler.
  */
 import { startStack } from './infra';
@@ -16,7 +17,11 @@ async function main() {
       : {},
   });
   console.log(JSON.stringify({ api: st.api.base, dir: st.dir, oidc: kc ?? st.oidc.base }));
-  if (!kc && process.env.STACK_PRINT_TOKEN) console.log(st.op().authorization);
+  // Yük testi (k6) token'ı tüm koşu boyunca kullanır: süresi STACK_TOKEN_TTL sn (varsayılan 1 sa).
+  if (!kc && process.env.STACK_PRINT_TOKEN)
+    console.log(
+      `Bearer ${st.oidc.token({ sub: 'op-local', roles: ['OPERATOR'], expInSec: Number(process.env.STACK_TOKEN_TTL ?? 3600) })}`,
+    );
   const stop = async () => {
     await st.close();
     process.exit(0);

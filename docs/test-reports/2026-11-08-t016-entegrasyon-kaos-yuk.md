@@ -79,6 +79,11 @@ kuyruğa düşene kadar `GET /status` yoklaması).
 20 operatörlük yük testi T-080'dedir. k6 doğrulaması HTTP düzeyindedir (202 cevapları). Kayıpsızlık sayımı kaos
 testinde veritabanı üzerinden yapıldı.
 
+**2026-11-16:** Gece koşusu (`load-smoke`) 2026-11-10'dan beri kırmızıydı: T-020 ile `GET /protected-persons/{id}/status`
+OIDC ister oldu, k6 yoklaması token'sız 401 alıyordu (HTTP hata %83, "sos kuyrukta" 0/14). Sinyaller etkilenmedi.
+Düzeltme: `load-smoke.sh` yerel yığından sahte OIDC operatör token'ı alır (`STACK_PRINT_TOKEN`, süre
+`STACK_TOKEN_TTL`) ve k6'ya `OP_AUTH` olarak verir; token yoksa k6 başlamadan durur.
+
 ## Testler sırasında bulunan ve düzeltilen hatalar (T-015 commit'i)
 
 - Boştaki Postgres bağlantısı kopunca API süreci çöküyordu (havuzda `error` dinleyicisi yoktu).
