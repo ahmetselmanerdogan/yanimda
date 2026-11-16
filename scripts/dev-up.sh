@@ -31,7 +31,11 @@ trap 'kill $STACK_PID 2>/dev/null; wait $STACK_PID 2>/dev/null || true' EXIT
 for _ in $(seq 1 120); do grep -q '^Bearer ' "$LOG" && break; sleep 1; done
 API=$(sed -n 's/.*"api":"\([^"]*\)".*/\1/p' "$LOG")
 AUTH=$(grep -m1 '^Bearer ' "$LOG" || true)
-[ -n "$API" ] && [ -n "$AUTH" ] || { grep -v '^Bearer ' "$LOG"; echo "yerel yığın açılmadı"; exit 1; }
+if [ -z "$API" ] || [ -z "$AUTH" ]; then
+  grep -v '^Bearer ' "$LOG"
+  echo "yerel yığın açılmadı"
+  exit 1
+fi
 
 (cd "$ROOT/packages/simulator" && API_URL="$API" node src/index.mjs fall --person pp_demo --no-cancel)
 for _ in $(seq 1 30); do

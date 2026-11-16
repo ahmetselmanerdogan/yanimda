@@ -21,6 +21,8 @@ const CHANNEL: Record<string, string> = {
   K: 'auth',
   V: 'voice',
   S: 'sms',
+  // İstemciden bağımsız API hata metinleri (Problem `code`, A-ERR-*).
+  A: 'api',
 };
 
 /**
