@@ -32,7 +32,7 @@ jobs:
     env:
       ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:2.15.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: API imajı (üretim)
         run: docker build -f apps/api/Dockerfile -t yanimda-api:zap .
       - run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
