@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, NotFoundException, Param, Req, UseGuards } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { ProtectionService } from './protection.service';
 
@@ -20,7 +21,7 @@ export class ProtectionController {
     const ops = u.realm === 'operations' && u.roles.some((r) => r !== 'FAMILY');
     if (ops) return this.protection.status(id);
     if (u.realm !== 'consumers' || !(await this.protection.canFamilySee(u.sub, id)))
-      throw new NotFoundException('Kişi bulunamadı');
+      throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     return { ...(await this.protection.status(id)), location: await this.protection.locationOf(id) };
   }
 }

@@ -15,6 +15,7 @@ import addFormats from 'ajv-formats';
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -75,7 +76,7 @@ export class SignalService {
     denied: ReadonlyMap<number, SignalRejectReason> = new Map(),
     opts: { onAccepted?: (s: Signal) => void } = {},
   ): Promise<AcceptResult> {
-    if (!Array.isArray(batch) || batch.length === 0) throw new BadRequestException('Boş sinyal listesi');
+    if (!Array.isArray(batch) || batch.length === 0) throw fail(BadRequestException, 'P-ERR-SIGNAL-BATCH-EMPTY');
     const rejected: RejectedSignal[] = [];
     const candidates: { index: number; signal: Signal }[] = [];
     batch.forEach((raw, index) => {
@@ -101,10 +102,8 @@ export class SignalService {
     if (rejected.length)
       this.log.warn(`Partide ${rejected.length}/${batch.length} sinyal reddedildi (${summary(rejected)})`);
     if (!prepared.length) {
-      const body = { message: 'Partide kabul edilebilir sinyal yok', rejected };
-      throw rejected.some((r) => AUTH_REJECT_REASONS.has(r.reason))
-        ? new ForbiddenException(body)
-        : new BadRequestException(body);
+      const Ex = rejected.some((r) => AUTH_REJECT_REASONS.has(r.reason)) ? ForbiddenException : BadRequestException;
+      throw fail(Ex, 'P-ERR-SIGNAL-BATCH-REJECTED', undefined, { rejected });
     }
 
     let accepted = 0;
@@ -119,7 +118,7 @@ export class SignalService {
       if (claim === 'pending') {
         // Aynı sinyal şu an başka bir istekte yazılıyor; sonucu belli değil → cihaz yeniden denesin.
         if (accepted) this.outbox.notifyCommitted();
-        throw new ServiceUnavailableException('Sinyal işleniyor, yeniden deneyin');
+        throw fail(ServiceUnavailableException, 'P-ERR-SIGNAL-PENDING');
       }
 
       let inserted: boolean;
@@ -129,7 +128,7 @@ export class SignalService {
         await this.idem.release(s.idempotencyKey);
         this.log.error(`Sinyal yazılamadı (kind=${s.kind}): ${safeError(e)}`);
         if (accepted) this.outbox.notifyCommitted();
-        throw new ServiceUnavailableException('Sinyal kaydedilemedi, yeniden deneyin');
+        throw fail(ServiceUnavailableException, 'P-ERR-SIGNAL-WRITE-FAILED');
       }
       await this.idem.complete(s.idempotencyKey);
       if (inserted) {

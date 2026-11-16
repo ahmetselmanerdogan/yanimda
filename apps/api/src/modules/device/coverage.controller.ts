@@ -27,6 +27,7 @@ import type { DeviceSummary, EventType } from '@yanimda/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog, device, devicePrompt } from '../../db/schema';
 import { isBodyLocation } from '../event/coverage.service';
@@ -72,7 +73,8 @@ export class CoverageAccessGuard implements CanActivate {
     const h = req.headers.authorization;
     const auth = Array.isArray(h) ? h[0] : h;
     if (!auth) {
-      if (!adminTokenEnabled() || !req.headers['x-admin-token']) throw new UnauthorizedException('Giriş gerekli');
+      if (!adminTokenEnabled() || !req.headers['x-admin-token'])
+        throw fail(UnauthorizedException, 'A-ERR-LOGIN-REQUIRED');
       this.shared.canActivate(ctx);
       req.coverageActor = { kind: 'ADMIN' };
       return true;
@@ -90,7 +92,7 @@ export class CoverageAccessGuard implements CanActivate {
     else if (u.realm === 'operations' && u.roles.some((r) => r === 'OPERATOR' || r === 'SUPERVISOR'))
       req.coverageActor = { kind: 'OPS', sub: u.sub, supervisor: u.roles.includes('SUPERVISOR') };
     else if (u.realm === 'consumers' && u.roles.includes('FAMILY')) req.coverageActor = { kind: 'FAMILY', sub: u.sub };
-    else throw new ForbiddenException('Yetki yok');
+    else throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
     return true;
   }
 }
@@ -111,41 +113,43 @@ export class CoverageAccess {
       case 'ADMIN':
         return;
       case 'OPS':
-        if (op === 'plan') throw new ForbiddenException('Şarj planını aile değiştirir');
+        if (op === 'plan') throw fail(ForbiddenException, 'O-ERR-PLAN-FAMILY-ONLY');
         return;
       case 'DEVICE':
-        if (a.personId !== personId) throw new NotFoundException('Kişi bulunamadı');
-        if (op === 'plan') throw new ForbiddenException('Şarj planını aile değiştirir');
+        if (a.personId !== personId) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
+        if (op === 'plan') throw fail(ForbiddenException, 'O-ERR-PLAN-FAMILY-ONLY');
         return;
       case 'FAMILY':
-        if (!(await this.protection.canFamilySee(a.sub, personId))) throw new NotFoundException('Kişi bulunamadı');
+        if (!(await this.protection.canFamilySee(a.sub, personId)))
+          throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     }
   }
 
   /** Cihazın kişisi (etkin cihaz; kaldırma için kaldırılmış da bulunur). */
   async device(a: CoverageActor, deviceId: string, op: DeviceOp): Promise<string> {
-    if (!UUID.test(deviceId)) throw new NotFoundException('Cihaz bulunamadı');
+    if (!UUID.test(deviceId)) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     const [d] = await this.db
       .select({ personId: device.protectedPersonId })
       .from(device)
       .where(op === 'delete' ? eq(device.id, deviceId) : and(eq(device.id, deviceId), isNull(device.revokedAt)));
-    if (!d) throw new NotFoundException('Cihaz bulunamadı');
+    if (!d) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     switch (a.kind) {
       case 'ADMIN':
         // Cihaz komutu denetime operatör kimliğiyle yazılır: paylaşılan x-admin-token komut gönderemez.
-        if (op === 'command' && !a.sub) throw new ForbiddenException('Cihaz komutu operatör kimliği ister');
+        if (op === 'command' && !a.sub) throw fail(ForbiddenException, 'O-ERR-COMMAND-NEEDS-OPERATOR');
         break;
       case 'OPS':
-        if (op === 'intent') throw new ForbiddenException('Yetki yok');
-        if (op === 'delete' && !a.supervisor) throw new ForbiddenException('Cihazı aile veya amir kaldırır');
+        if (op === 'intent') throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
+        if (op === 'delete' && !a.supervisor) throw fail(ForbiddenException, 'O-ERR-DELETE-FAMILY-OR-SUPERVISOR');
         break;
       case 'DEVICE':
-        if (a.personId !== d.personId) throw new NotFoundException('Cihaz bulunamadı');
-        if (op !== 'intent') throw new ForbiddenException('Yetki yok');
+        if (a.personId !== d.personId) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
+        if (op !== 'intent') throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
         break;
       case 'FAMILY':
-        if (!(await this.protection.canFamilySee(a.sub, d.personId))) throw new NotFoundException('Cihaz bulunamadı');
-        if (op === 'command') throw new ForbiddenException('Cihaz komutunu operatör gönderir');
+        if (!(await this.protection.canFamilySee(a.sub, d.personId)))
+          throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
+        if (op === 'command') throw fail(ForbiddenException, 'F-ERR-COMMAND-OPERATOR-ONLY');
     }
     return d.personId;
   }
@@ -231,7 +235,7 @@ export class DeviceManageController {
     const personId = await this.access.device(actorOf(req), id, 'patch');
     const set = parsePatch(body);
     if (set.voiceNumber !== undefined && actorOf(req).kind === 'FAMILY')
-      throw new ForbiddenException('Cihaz numarasını operasyon girer');
+      throw fail(ForbiddenException, 'F-ERR-VOICE-NUMBER-OPS');
     await this.db.transaction(async (tx) => {
       await tx.update(device).set(set).where(eq(device.id, id));
       await tx.insert(auditLog).values({
@@ -244,7 +248,7 @@ export class DeviceManageController {
       });
     });
     const s = (await this.protection.coverage.devices(personId)).find((d) => d.id === id.toLowerCase());
-    if (!s) throw new NotFoundException('Cihaz bulunamadı');
+    if (!s) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     return s;
   }
 
@@ -281,7 +285,8 @@ export class DeviceManageController {
     const a = actorOf(req);
     const personId = await this.access.device(a, id, 'intent');
     const b = (body ?? {}) as { minutes?: unknown };
-    if (b.minutes !== undefined && typeof b.minutes !== 'number') throw new BadRequestException('minutes sayı olmalı');
+    if (b.minutes !== undefined && typeof b.minutes !== 'number')
+      throw fail(BadRequestException, 'A-ERR-FIELD-NUMBER', { field: 'minutes' });
     const r = await this.protection.coverage.chargingIntent(personId, b.minutes as number | undefined, a.kind);
     return { until: r.until };
   }
@@ -305,8 +310,8 @@ export class DeviceManageController {
         WHERE protected_person_id = ${personId} AND state <> 'CLOSED'
         ORDER BY created_at DESC LIMIT 1`)) as unknown as { rows: { id: string; type: string }[] }
     ).rows;
-    if (type !== 'TEST' && !open) throw new ConflictException('Kişinin açık olayı yok');
-    if (asked !== undefined && asked !== open?.id) throw new ConflictException('Olay kişinin açık olayı değil');
+    if (type !== 'TEST' && !open) throw fail(ConflictException, 'O-ERR-NO-OPEN-EVENT');
+    if (asked !== undefined && asked !== open?.id) throw fail(ConflictException, 'O-ERR-EVENT-NOT-PERSONS-OPEN');
     const deviceId = id.toLowerCase();
     const sentAt = new Date();
     let outcome: PushOutcome;
@@ -364,13 +369,14 @@ const COMMANDS = ['RING', 'PROMPT', 'LOCATE', 'TEST'] as const;
 type CommandType = (typeof COMMANDS)[number];
 function parseCommand(body: unknown): { type: CommandType; eventId?: string } {
   if (typeof body !== 'object' || body === null || Array.isArray(body))
-    throw new BadRequestException('Nesne bekleniyor');
+    throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   const b = body as Record<string, unknown>;
   const unknownKeys = Object.keys(b).filter((k) => k !== 'type' && k !== 'eventId');
-  if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
-  if (!COMMANDS.includes(b.type as CommandType)) throw new BadRequestException(`type: ${COMMANDS.join(' | ')}`);
+  if (unknownKeys.length) throw fail(BadRequestException, 'A-ERR-UNKNOWN-FIELD', { fields: unknownKeys.join(', ') });
+  if (!COMMANDS.includes(b.type as CommandType))
+    throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'type', values: COMMANDS.join(' | ') });
   if (b.eventId !== undefined && (typeof b.eventId !== 'string' || !UUID.test(b.eventId)))
-    throw new BadRequestException('eventId geçersiz');
+    throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'eventId' });
   return {
     type: b.type as CommandType,
     ...(b.eventId !== undefined ? { eventId: (b.eventId as string).toLowerCase() } : {}),
@@ -383,36 +389,36 @@ const subOf = (a: CoverageActor) => (a.kind === 'DEVICE' ? a.deviceId : 'sub' in
 /** PATCH gövdesi: en az bir alan; null alanı temizler. */
 function parsePatch(body: unknown): Partial<typeof device.$inferInsert> {
   if (typeof body !== 'object' || body === null || Array.isArray(body))
-    throw new BadRequestException('Nesne bekleniyor');
+    throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   const b = body as Record<string, unknown>;
   const set: Partial<typeof device.$inferInsert> = {};
   const unknownKeys = Object.keys(b).filter(
     (k) => !['bodyLocation', 'nickname', 'voiceOrder', 'voiceNumber'].includes(k),
   );
-  if (unknownKeys.length) throw new BadRequestException(`Bilinmeyen alan: ${unknownKeys.join(', ')}`);
+  if (unknownKeys.length) throw fail(BadRequestException, 'A-ERR-UNKNOWN-FIELD', { fields: unknownKeys.join(', ') });
   if (b.bodyLocation !== undefined) {
     if (b.bodyLocation !== null && !isBodyLocation(b.bodyLocation))
-      throw new BadRequestException('bodyLocation geçersiz');
+      throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'bodyLocation' });
     set.bodyLocation = b.bodyLocation as string | null;
   }
   if (b.nickname !== undefined) {
     const n = typeof b.nickname === 'string' ? b.nickname.trim() : b.nickname;
     if (n !== null && (typeof n !== 'string' || n.length < 1 || n.length > 40))
-      throw new BadRequestException('nickname 1–40 karakter olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-LENGTH', { field: 'nickname', min: 1, max: 40 });
     set.nickname = n as string | null;
   }
   if (b.voiceOrder !== undefined) {
     const v = b.voiceOrder;
     if (v !== null && (!Number.isInteger(v) || (v as number) < 1 || (v as number) > 6))
-      throw new BadRequestException('voiceOrder 1–6 arası tam sayı olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'voiceOrder', min: 1, max: 6 });
     set.voiceOrder = v as number | null;
   }
   if (b.voiceNumber !== undefined) {
     const v = b.voiceNumber;
     if (v !== null && (typeof v !== 'string' || !/^\+[1-9]\d{6,14}$/.test(v)))
-      throw new BadRequestException('voiceNumber E.164 olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-E164', { field: 'voiceNumber' });
     set.voiceNumber = v as string | null;
   }
-  if (!Object.keys(set).length) throw new BadRequestException('Değiştirilecek alan yok');
+  if (!Object.keys(set).length) throw fail(BadRequestException, 'A-ERR-NO-CHANGES');
   return set;
 }

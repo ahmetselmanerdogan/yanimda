@@ -12,6 +12,7 @@ import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus as globalBus, type LocalBus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -143,29 +144,35 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
     const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     const set: Partial<typeof checkPlan.$inferInsert> = {};
     if (b.enabled !== undefined) {
-      if (typeof b.enabled !== 'boolean') throw new BadRequestException('enabled true/false');
+      if (typeof b.enabled !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'enabled' });
       set.enabled = b.enabled;
     }
     if (b.frequency !== undefined) {
-      if (!['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(b.frequency as string)) throw new BadRequestException('frequency');
+      if (!['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(b.frequency as string))
+        throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', {
+          field: 'frequency',
+          values: 'DAILY | WEEKLY | BIWEEKLY',
+        });
       set.frequency = b.frequency as Frequency;
     }
     if (b.weekday !== undefined) {
       if (!Number.isInteger(b.weekday) || (b.weekday as number) < 1 || (b.weekday as number) > 7)
-        throw new BadRequestException('weekday 1–7');
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'weekday', min: 1, max: 7 });
       set.weekday = b.weekday as number;
     }
     if (b.localTime !== undefined) {
-      if (typeof b.localTime !== 'string' || !HHMM.test(b.localTime)) throw new BadRequestException('localTime SS:DD');
+      if (typeof b.localTime !== 'string' || !HHMM.test(b.localTime))
+        throw fail(BadRequestException, 'A-ERR-FIELD-TIME', { field: 'localTime' });
       set.localTime = b.localTime;
     }
     if (b.channel !== undefined) {
-      if (!['CALL', 'NOTIFY', 'BOTH'].includes(b.channel as string)) throw new BadRequestException('channel');
+      if (!['CALL', 'NOTIFY', 'BOTH'].includes(b.channel as string))
+        throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'channel', values: 'CALL | NOTIFY | BOTH' });
       set.channel = b.channel as Channel;
     }
     if (b.windowMin !== undefined) {
       if (!Number.isInteger(b.windowMin) || (b.windowMin as number) < 15 || (b.windowMin as number) > 1440)
-        throw new BadRequestException('windowMin 15–1440');
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'windowMin', min: 15, max: 1440 });
       set.windowMin = b.windowMin as number;
     }
     await this.db.transaction(async (tx) => {
@@ -556,7 +563,7 @@ export class WellnessService implements OnModuleInit, OnModuleDestroy {
 
   /** Aile: okuma üye, yazma yalnız sahip; operasyon rolleri (ADMIN olarak gelir) her kişi. */
   private async authorize(actor: Actor, personId: string, write: boolean) {
-    if (!UUID.test(personId)) throw new BadRequestException('Kişi kimliği');
+    if (!UUID.test(personId)) throw fail(BadRequestException, 'A-ERR-FIELD-UUID', { field: 'personId' });
     if (actor.kind === 'ADMIN' || !this.profile) return;
     if (write) await this.profile.authorizeOwner(actor, personId);
     else await this.profile.authorize(actor, personId);

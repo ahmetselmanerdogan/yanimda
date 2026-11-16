@@ -3454,8 +3454,9 @@ components:
           type: string
           pattern: '^[A-Z]-[A-Z0-9-]{2,60}$'
           description: |
-            Varsa packages/messages katalog kodu (örn. F-MEMBER-CODE-USED); istemci metni kendi kataloğundan gösterir.
-            `detail` aynı kodun Türkçe metnidir.
+            packages/messages katalog kodu (örn. F-MEMBER-CODE-USED, A-ERR-RATE-LIMIT); istemci metni kendi
+            kataloğundan gösterir. Sunucunun ürettiği her hata kod taşır (A-ERR-* her istemci, O-ERR-* konsol,
+            F-ERR-* aile, P-ERR-* cihaz uygulamaları); `detail` aynı kodun Türkçe metnidir (log ve curl için).
     CoverageLevel: { enum: [FULL, BASIC, PHONE_ONLY, NIGHT, NONE] }
     CoverageReason:
       description: |

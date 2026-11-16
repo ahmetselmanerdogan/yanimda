@@ -119,17 +119,29 @@ describe('POST /devices/bridged (S7.5)', () => {
   });
 
   it('ham MAC 400; bozuk özet / model / alan 400; telefon olmayan token 403; adres başka modelle kayıtlı 409', async () => {
-    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: MAC_A }))).toBe(400);
-    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: 'c0ffee00000a' }))).toBe(400);
-    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: addr(MAC_A).toUpperCase() }))).toBe(
-      400,
+    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: MAC_A }))).toBe(
+      '400:P-ERR-RAW-BLE-ADDRESS',
     );
-    expect(await status(bridged.register(phone, { model: 'RING', addressHash: addr(MAC_A) }))).toBe(400);
-    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: addr(MAC_A), mac: MAC_A }))).toBe(400);
+    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: 'c0ffee00000a' }))).toBe(
+      '400:P-ERR-RAW-BLE-ADDRESS',
+    );
+    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: addr(MAC_A).toUpperCase() }))).toBe(
+      '400:P-ERR-ADDRESS-HASH-FORMAT',
+    );
+    expect(await status(bridged.register(phone, { model: 'RING', addressHash: addr(MAC_A) }))).toBe(
+      '400:A-ERR-FIELD-ENUM',
+    );
+    expect(await status(bridged.register(phone, { model: 'BLE_HR', addressHash: addr(MAC_A), mac: MAC_A }))).toBe(
+      '400:A-ERR-UNKNOWN-FIELD',
+    );
     const watch: DevicePrincipal = { deviceId: PHONE, protectedPersonId: PERSON, kind: 'WEAROS_WATCH' };
-    expect(await status(bridged.register(watch, { model: 'BLE_HR', addressHash: addr(MAC_A) }))).toBe(403);
+    expect(await status(bridged.register(watch, { model: 'BLE_HR', addressHash: addr(MAC_A) }))).toBe(
+      '403:P-ERR-BRIDGED-PHONE-ONLY',
+    );
     await bridged.register(phone, { model: 'BLE_HR', addressHash: addr(MAC_A) });
-    expect(await status(bridged.register(phone, { model: 'BLE_PULSE_OX', addressHash: addr(MAC_A) }))).toBe(409);
+    expect(await status(bridged.register(phone, { model: 'BLE_PULSE_OX', addressHash: addr(MAC_A) }))).toBe(
+      '409:P-ERR-ADDRESS-OTHER-MODEL',
+    );
   });
 
   it('kişi başına sınırlar geçerli (S1.7): 6 etkin cihazdan fazlası 409 F-DEVICE-LIMIT', async () => {
@@ -200,8 +212,8 @@ describe('köprü kaldırma', () => {
     await forward(phone, sig('ON_BODY', { deviceId: hr, protectedPersonId: PERSON, occurredAt: at(-1) }));
     await bridged.unbridge(phone, hr);
     expect(await status(bridged.unbridge(phone, hr))).toBe('ok');
-    expect(await status(bridged.unbridge(phone, theirs))).toBe(404);
-    expect(await status(bridged.unbridge(phone, 'yok'))).toBe(404);
+    expect(await status(bridged.unbridge(phone, theirs))).toBe('404:F-ERR-DEVICE-NOT-FOUND');
+    expect(await status(bridged.unbridge(phone, 'yok'))).toBe('404:F-ERR-DEVICE-NOT-FOUND');
     const [row] = await h.rows<{ revoked_at: Date | null; retired_at: Date | null }>(
       'SELECT revoked_at, retired_at FROM device.device WHERE id = $1',
       [hr],

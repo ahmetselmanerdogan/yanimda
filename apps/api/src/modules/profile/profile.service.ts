@@ -11,6 +11,7 @@ import { t } from '@yanimda/messages';
 import { and, asc, count, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { FieldCipher } from '../../common/field-cipher';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -133,7 +134,7 @@ export class ProfileService {
   async create(actor: Actor, body: unknown, now = new Date()): Promise<PersonView> {
     const b = obj(body);
     const displayName = str(b.displayName, 'displayName', 100);
-    if (!displayName) throw new BadRequestException('displayName gerekli');
+    if (!displayName) throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'displayName' });
     const patch = await this.patchOf(b, now);
     const id = uuidv7();
     const doorAccessNoteEnc = this.door(id, b.doorAccessNote);
@@ -238,7 +239,7 @@ export class ProfileService {
     const patch = await this.patchOf(b, now);
     if (b.displayName !== undefined) {
       const n = str(b.displayName, 'displayName', 100);
-      if (!n) throw new BadRequestException('displayName boş olamaz');
+      if (!n) throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'displayName' });
       patch.displayName = n;
     }
     if ('doorAccessNote' in b) patch.doorAccessNoteEnc = this.door(id, b.doorAccessNote);
@@ -265,7 +266,7 @@ export class ProfileService {
     const b = obj(body);
     const consentAt = typeof b.consentAt === 'string' ? new Date(b.consentAt) : null;
     if (!consentAt || Number.isNaN(consentAt.getTime()) || consentAt.getTime() > now.getTime() + CONSENT_SKEW_MS)
-      throw new BadRequestException('consentAt (rıza zamanı) gerekli');
+      throw fail(BadRequestException, 'F-ERR-CONSENT-AT-REQUIRED');
     const medical: Medical = {
       conditions: list(b.conditions, 'conditions'),
       medications: list(b.medications, 'medications'),
@@ -335,8 +336,7 @@ export class ProfileService {
   /** POST /v1/protected-persons/{id}/members/invite — yalnız OWNER (veya yönetici); MEMBER 403, erişimsiz 404. */
   async createMemberInvite(actor: Actor, id: string, body: unknown, now = new Date()) {
     const { role } = await this.access(actor, id);
-    if (actor.kind === 'FAMILY' && role !== 'OWNER')
-      throw new ForbiddenException({ message: t('F-MEMBER-OWNER-ONLY', 'tr'), code: 'F-MEMBER-OWNER-ONLY' });
+    if (actor.kind === 'FAMILY' && role !== 'OWNER') throw fail(ForbiddenException, 'F-MEMBER-OWNER-ONLY');
     return createMemberInvite(this.db, actor, id, body, now);
   }
 
@@ -379,7 +379,7 @@ export class ProfileService {
   /** Aile uygulamasında ilerleme: durum, sonuç ve operatör notu (yalnız bu kişinin TEST olayları). */
   async testStatus(actor: Actor, id: string, eventId: string) {
     await this.access(actor, id);
-    if (!UUID.test(eventId)) throw new NotFoundException('Test bulunamadı');
+    if (!UUID.test(eventId)) throw fail(NotFoundException, 'F-ERR-TEST-NOT-FOUND');
     const [e] = await this.db
       .select({
         id: event.id,
@@ -391,7 +391,7 @@ export class ProfileService {
       })
       .from(event)
       .where(and(eq(event.id, eventId), eq(event.protectedPersonId, id), eq(event.isTest, true)));
-    if (!e) throw new NotFoundException('Test bulunamadı');
+    if (!e) throw fail(NotFoundException, 'F-ERR-TEST-NOT-FOUND');
     return {
       eventId: e.id,
       state: e.state,
@@ -492,13 +492,12 @@ export class ProfileService {
    */
   async authorizeOwner(actor: Actor, id: string): Promise<void> {
     const { role } = await this.access(actor, id);
-    if (actor.kind === 'FAMILY' && role !== 'OWNER')
-      throw new ForbiddenException({ message: t('F-MEMBER-OWNER-ONLY', 'tr'), code: 'F-MEMBER-OWNER-ONLY' });
+    if (actor.kind === 'FAMILY' && role !== 'OWNER') throw fail(ForbiddenException, 'F-MEMBER-OWNER-ONLY');
   }
 
   /** Erişim: ADMIN her kişiyi; FAMILY yalnız üyesi olduğu kişiyi. Diğer her durum 404. */
   private async access(actor: Actor, id: string): Promise<{ row: Row; role: 'OWNER' | 'MEMBER' | null }> {
-    if (!UUID.test(id)) throw new NotFoundException('Kişi bulunamadı');
+    if (!UUID.test(id)) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     const [r] = await this.db
       .select({ row: protectedPerson, role: familyMember.role })
       .from(protectedPerson)
@@ -507,7 +506,7 @@ export class ProfileService {
         and(eq(familyMember.protectedPersonId, protectedPerson.id), eq(familyMember.subject, actor.id ?? '')),
       )
       .where(eq(protectedPerson.id, id));
-    if (!r || (actor.kind === 'FAMILY' && !r.role)) throw new NotFoundException('Kişi bulunamadı');
+    if (!r || (actor.kind === 'FAMILY' && !r.role)) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     return { row: r.row, role: (r.role as 'OWNER' | 'MEMBER' | null) ?? null };
   }
 
@@ -522,20 +521,22 @@ export class ProfileService {
     if (b.birthYear !== undefined) {
       const y = b.birthYear;
       if (y !== null && (!Number.isInteger(y) || (y as number) < 1900 || (y as number) > now.getUTCFullYear()))
-        throw new BadRequestException('birthYear geçersiz');
+        throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'birthYear' });
       p.birthYear = y as number | null;
     }
     if (b.dailySummary !== undefined) {
-      if (typeof b.dailySummary !== 'boolean') throw new BadRequestException('dailySummary true/false');
+      if (typeof b.dailySummary !== 'boolean')
+        throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'dailySummary' });
       p.dailySummaryEnabled = b.dailySummary;
     }
     if (b.locationSharing !== undefined) {
-      if (typeof b.locationSharing !== 'boolean') throw new BadRequestException('locationSharing true/false');
+      if (typeof b.locationSharing !== 'boolean')
+        throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'locationSharing' });
       p.locationSharing = b.locationSharing;
     }
     if (b.hearingSpeechImpaired !== undefined) {
       if (typeof b.hearingSpeechImpaired !== 'boolean')
-        throw new BadRequestException('hearingSpeechImpaired true/false');
+        throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'hearingSpeechImpaired' });
       p.hearingSpeechImpaired = b.hearingSpeechImpaired;
     }
     if (b.holdMode !== undefined) {
@@ -549,14 +550,18 @@ export class ProfileService {
           until <= now ||
           until.getTime() - now.getTime() > HOLD_MAX_DAYS * 86_400_000
         )
-          throw new BadRequestException(`holdMode.until gelecekte ve en çok ${HOLD_MAX_DAYS} gün olmalı`);
+          throw fail(BadRequestException, 'F-ERR-HOLD-UNTIL', { days: HOLD_MAX_DAYS });
         Object.assign(p, { holdMode: oneOf(h.kind, HOLD_KINDS, 'holdMode.kind'), holdUntil: until });
       }
     }
     if (b.coverageToleranceMin !== undefined) {
       const v = b.coverageToleranceMin;
       if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > TOLERANCE_MAX_MIN)
-        throw new BadRequestException(`coverageToleranceMin 0–${TOLERANCE_MAX_MIN} arası tam sayı (dk) olmalı`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', {
+          field: 'coverageToleranceMin',
+          min: 0,
+          max: TOLERANCE_MAX_MIN,
+        });
       p.coverageToleranceMin = v as number;
     }
     if (b.language !== undefined) p.language = oneOf(b.language, ['tr'] as const, 'language');
@@ -565,7 +570,7 @@ export class ProfileService {
       try {
         new Intl.DateTimeFormat('tr', { timeZone: tz });
       } catch {
-        throw new BadRequestException('timezone geçersiz');
+        throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'timezone' });
       }
       p.timezone = tz;
     }
@@ -584,7 +589,7 @@ export class ProfileService {
         const a = obj(b.address);
         const line = str(a.line, 'address.line', 200);
         const city = str(a.city, 'address.city', 60);
-        if (!line || !city) throw new BadRequestException('address.line ve address.city gerekli');
+        if (!line || !city) throw fail(BadRequestException, 'F-ERR-ADDRESS-REQUIRED');
         const district = optStr(a.district, 'address.district', 60);
         Object.assign(p, {
           addressLine: line,
@@ -625,13 +630,13 @@ export class ProfileService {
 // ---- doğrulama yardımcıları ----
 
 function obj(v: unknown): Record<string, unknown> {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new BadRequestException('Nesne bekleniyor');
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
   return v as Record<string, unknown>;
 }
 function str(v: unknown, name: string, max: number): string {
-  if (typeof v !== 'string') throw new BadRequestException(`${name} metin olmalı`);
+  if (typeof v !== 'string') throw fail(BadRequestException, 'A-ERR-FIELD-TEXT', { field: name });
   const s = v.trim();
-  if (s.length > max) throw new BadRequestException(`${name} en fazla ${max} karakter`);
+  if (s.length > max) throw fail(BadRequestException, 'A-ERR-FIELD-MAX', { field: name, max });
   return s;
 }
 function optStr(v: unknown, name: string, max: number): string | null {
@@ -639,17 +644,18 @@ function optStr(v: unknown, name: string, max: number): string | null {
   return str(v, name, max) || null;
 }
 function oneOf<T extends string>(v: unknown, values: readonly T[], name: string): T {
-  if (!values.includes(v as T)) throw new BadRequestException(`${name} geçersiz`);
+  if (!values.includes(v as T)) throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: name });
   return v as T;
 }
 function list(v: unknown, name: string): string[] {
   if (v === undefined || v === null) return [];
-  if (!Array.isArray(v) || v.length > 20) throw new BadRequestException(`${name} en fazla 20 öğe`);
+  if (!Array.isArray(v) || v.length > 20)
+    throw fail(BadRequestException, 'A-ERR-FIELD-MAX-ITEMS', { field: name, max: 20 });
   return v.map((x) => str(x, name, 200)).filter(Boolean);
 }
 function coord(lat: unknown, lng: unknown) {
   if (lat === undefined && lng === undefined) return null;
   if (typeof lat !== 'number' || typeof lng !== 'number' || Math.abs(lat) > 90 || Math.abs(lng) > 180)
-    throw new BadRequestException('address.lat/lng geçersiz');
+    throw fail(BadRequestException, 'F-ERR-ADDRESS-LATLNG');
   return { lat, lng };
 }

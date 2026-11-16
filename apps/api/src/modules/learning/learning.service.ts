@@ -11,6 +11,7 @@ import { type KafkaEnvelope, type NotifyRequest, TOPICS } from '@yanimda/contrac
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -294,12 +295,12 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
     else if (b.sleepWindow !== undefined) {
       const w = b.sleepWindow as Record<string, unknown>;
       if (typeof w !== 'object' || typeof w.start !== 'string' || typeof w.end !== 'string')
-        throw new BadRequestException('sleepWindow {start, end} gerekli');
+        throw fail(BadRequestException, 'F-ERR-SLEEP-WINDOW-REQUIRED');
       if (!HHMM.test(w.start) || !HHMM.test(w.end) || w.start === w.end)
-        throw new BadRequestException('sleepWindow saatleri SS:DD olmalı ve farklı olmalı');
+        throw fail(BadRequestException, 'F-ERR-SLEEP-WINDOW-TIMES');
       // Bulgu 10: uyku penceresinde hareketsizlik/bağlantı uyarısı bastırılır; günü kaplayan pencere korumayı kapatır.
       if (windowMinutes(w.start, w.end) > MAX_SLEEP_WINDOW_MIN)
-        throw new BadRequestException(`sleepWindow en çok ${MAX_SLEEP_WINDOW_MIN / 60} saat olabilir`);
+        throw fail(BadRequestException, 'F-ERR-SLEEP-WINDOW-MAX', { hours: MAX_SLEEP_WINDOW_MIN / 60 });
       Object.assign(set, { sleepStart: w.start, sleepEnd: w.end, sleepSource: 'FAMILY' satisfies ThresholdSource });
     }
     if (b.inactivityMin === null) Object.assign(set, { inactivityMin: null, inactivitySource: 'DEFAULT' });
@@ -309,18 +310,21 @@ export class LearningService implements OnApplicationBootstrap, OnModuleDestroy 
       const lo = t?.min ?? 1;
       const hi = t?.max ?? 1440;
       if (!Number.isInteger(v) || (v as number) < lo || (v as number) > hi)
-        throw new BadRequestException(`inactivityMin ${lo}–${hi} dk arası tam sayı olmalı`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'inactivityMin', min: lo, max: hi });
       Object.assign(set, { inactivityMin: v as number, inactivitySource: 'FAMILY' satisfies ThresholdSource });
     }
     if (b.fallPromptSec === null) set.fallPromptSec = null;
     else if (b.fallPromptSec !== undefined) {
       const v = b.fallPromptSec;
       if (!Number.isInteger(v) || (v as number) < FALL_PROMPT_MIN || (v as number) > FALL_PROMPT_MAX)
-        throw new BadRequestException(`fallPromptSec ${FALL_PROMPT_MIN}–${FALL_PROMPT_MAX} sn arası tam sayı olmalı`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', {
+          field: 'fallPromptSec',
+          min: FALL_PROMPT_MIN,
+          max: FALL_PROMPT_MAX,
+        });
       set.fallPromptSec = v as number;
     }
-    if (Object.keys(set).length === 1)
-      throw new BadRequestException('sleepWindow, inactivityMin veya fallPromptSec gerekli');
+    if (Object.keys(set).length === 1) throw fail(BadRequestException, 'F-ERR-LEARNING-FIELD-REQUIRED');
     await this.db.transaction(async (tx) => {
       await this.lockRow(tx, id);
       await tx.update(threshold).set(set).where(eq(threshold.protectedPersonId, id));

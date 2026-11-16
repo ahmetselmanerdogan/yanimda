@@ -5,7 +5,11 @@ import { isTransient, ProblemFilter } from '../src/common/problem.filter';
 
 /** RFC 7807; altyapı yokken 503 + Retry-After (T-016: Postgres kapalı → 503, cihaz yeniden dener). */
 function run(e: unknown) {
-  const out: { status?: number; headers: Record<string, string>; body?: { status: number; detail: string } } = {
+  const out: {
+    status?: number;
+    headers: Record<string, string>;
+    body?: { status: number; detail: string; code?: string };
+  } = {
     headers: {},
   };
   const res = {
@@ -34,6 +38,7 @@ describe('ProblemFilter', () => {
     const r = run(e);
     expect(r.status).toBe(503);
     expect(r.headers['Retry-After']).toBe('2');
+    expect(r.body).toMatchObject({ code: 'A-ERR-UNAVAILABLE' });
     expect(isTransient(e)).toBe(true);
   });
 
@@ -41,6 +46,7 @@ describe('ProblemFilter', () => {
     const r = run(new Error('Failed query: ... params: konum 41.01'));
     expect(r.status).toBe(500);
     expect(r.body!.detail).toBe('Internal error');
+    expect(r.body).toMatchObject({ code: 'A-ERR-INTERNAL' });
   });
 
   it('HttpException kendi durumunu korur', () => {

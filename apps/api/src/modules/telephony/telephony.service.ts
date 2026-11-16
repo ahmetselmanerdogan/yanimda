@@ -16,6 +16,7 @@ import { t } from '@yanimda/messages';
 import { and, asc, desc, eq, inArray, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -264,7 +265,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
 
   /** `GET /v1/telephony/token`: kısa ömürlü Voice token'ı (kimlik `client:<sub>`). Kapalıysa 503. */
   voiceToken(operatorId: string, now: Date = new Date()): VoiceToken {
-    if (!this.softphone) throw new ServiceUnavailableException('Yazılım telefonu kapalı');
+    if (!this.softphone) throw fail(ServiceUnavailableException, 'O-ERR-SOFTPHONE-OFF');
     const identity = clientIdentity(operatorId);
     if (this.provider!.name === 'fake') {
       const ttlSec = 3600;
@@ -290,16 +291,16 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
 
   /** Yalnız aramayı başlatan operatör; yoksa 404, başkası 403. */
   private async own(callId: string, operatorId: string) {
-    if (!this.provider) throw new ServiceUnavailableException('Telefoni kapalı');
+    if (!this.provider) throw fail(ServiceUnavailableException, 'O-ERR-TELEPHONY-OFF');
     const [r] = await this.db.select().from(call).where(eq(call.id, callId));
-    if (!r) throw new NotFoundException('Arama yok');
-    if (r.operatorId !== operatorId) throw new ForbiddenException('Arama başka operatörde');
+    if (!r) throw fail(NotFoundException, 'O-ERR-CALL-NOT-FOUND');
+    if (r.operatorId !== operatorId) throw fail(ForbiddenException, 'O-ERR-CALL-OTHER-OPERATOR');
     return r;
   }
 
   private talking(r: typeof call.$inferSelect) {
     if (r.status !== 'in-progress' || !r.providerLegId || !r.providerCallId)
-      throw new ConflictException('Görüşme sürmüyor');
+      throw fail(ConflictException, 'O-ERR-CALL-ENDED');
   }
 
   /** Köprüyü konferansa çevir (bir kez). Önce işaretlenir: taşıma sonrası gelen dial webhook'u odaya katılır. */
@@ -316,7 +317,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
     } catch (e) {
       await this.db.update(call).set({ conference: false }).where(eq(call.id, r.id));
       this.log.warn(`Konferansa taşınamadı (call=${r.id}): ${safeError(e)}`);
-      throw new BadGatewayException('Konferans kurulamadı');
+      throw fail(BadGatewayException, 'O-ERR-CONFERENCE-FAILED');
     }
     await this.audit(r, 'telephony.conference.started', {});
   }
@@ -338,7 +339,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
             ),
           )
       : [];
-    if (!c) throw new ConflictException('Yakın kayıtlı değil');
+    if (!c) throw fail(ConflictException, 'O-ERR-CONTACT-NOT-SET');
     await this.ensureConference(r);
     try {
       await this.provider!.conference({
@@ -350,7 +351,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (e) {
       this.log.warn(`Yakın konferansa aranamadı (call=${r.id}): ${safeError(e)}`);
-      throw new BadGatewayException('Yakın aranamadı');
+      throw fail(BadGatewayException, 'O-ERR-CONTACT-CALL-FAILED');
     }
     await this.db
       .update(call)
@@ -370,7 +371,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
       await this.provider!.conference({ kind: 'hold', room: this.room(r.id), legCallId: r.providerLegId!, hold: on });
     } catch (e) {
       this.log.warn(`Bekletme başarısız (call=${r.id}): ${safeError(e)}`);
-      throw new BadGatewayException('Bekletilemedi');
+      throw fail(BadGatewayException, 'O-ERR-HOLD-FAILED');
     }
     await this.db.update(call).set({ held: on, updatedAt: new Date() }).where(eq(call.id, r.id));
     await this.audit(r, 'telephony.call.hold', { on }, operatorId);
@@ -385,7 +386,7 @@ export class TelephonyService implements OnModuleInit, OnModuleDestroy {
       await this.provider!.hangup(r.providerCallId);
     } catch (e) {
       this.log.warn(`Arama kapatılamadı (call=${r.id}): ${safeError(e)}`);
-      throw new BadGatewayException('Arama kapatılamadı');
+      throw fail(BadGatewayException, 'O-ERR-HANGUP-FAILED');
     }
     await this.audit(r, 'telephony.call.hangup', {}, operatorId);
     return this.view(r.id);

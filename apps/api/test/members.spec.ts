@@ -78,8 +78,8 @@ describe('davet kodu (OWNER)', () => {
 
   it('erişimi olmayan 404; MEMBER 403; yönetici üretebilir', async () => {
     const p = await person();
-    expect(await outcome(profile.createMemberInvite(BOB, p.id, {}))).toBe(404);
-    expect(await outcome(profile.createMemberInvite(BOB, 'olmayan-id', {}))).toBe(404);
+    expect(await outcome(profile.createMemberInvite(BOB, p.id, {}))).toBe('404 F-ERR-PERSON-NOT-FOUND');
+    expect(await outcome(profile.createMemberInvite(BOB, 'olmayan-id', {}))).toBe('404 F-ERR-PERSON-NOT-FOUND');
     const inv = await profile.createMemberInvite(ALICE, p.id, {});
     await profile.acceptMemberInvite(BOB, { code: inv.code });
     expect(await outcome(profile.createMemberInvite(BOB, p.id, {}))).toBe('403 F-MEMBER-OWNER-ONLY');
@@ -96,7 +96,9 @@ describe('davet kodu (OWNER)', () => {
 
   it('relation 50 karakteri aşarsa 400', async () => {
     const p = await person();
-    expect(await outcome(profile.createMemberInvite(ALICE, p.id, { relation: 'x'.repeat(51) }))).toBe(400);
+    expect(await outcome(profile.createMemberInvite(ALICE, p.id, { relation: 'x'.repeat(51) }))).toBe(
+      '400 A-ERR-FIELD-MAX',
+    );
   });
 });
 
@@ -133,7 +135,7 @@ describe('daveti kabul (FAMILY)', () => {
     expect(await outcome(profile.acceptMemberInvite(BOB, { code: 'ABCDE-FGHJK' }))).toBe('400 F-MEMBER-CODE-INVALID');
     expect(await outcome(profile.acceptMemberInvite(BOB, { code: '12' }))).toBe('400 F-MEMBER-CODE-INVALID');
     expect(await outcome(profile.acceptMemberInvite(BOB, {}))).toBe('400 F-MEMBER-CODE-INVALID');
-    expect(await outcome(profile.acceptMemberInvite(BOB, null))).toBe(400);
+    expect(await outcome(profile.acceptMemberInvite(BOB, null))).toBe('400 A-ERR-OBJECT-EXPECTED');
   });
 
   it('72 saat sonra süresi dolmuş (400); tekrar kullanılamaz (400); aynı kişi tekrar → 409', async () => {
@@ -161,7 +163,7 @@ describe('daveti kabul (FAMILY)', () => {
   it('yalnız aile hesabı kabul eder (yönetici 403)', async () => {
     const p = await person();
     const inv = await profile.createMemberInvite(ALICE, p.id, {});
-    expect(await outcome(profile.acceptMemberInvite(ADMIN, { code: inv.code }))).toBe(403);
+    expect(await outcome(profile.acceptMemberInvite(ADMIN, { code: inv.code }))).toBe('403 F-ERR-FAMILY-ONLY');
   });
 
   it(`aile üyesi en çok ${MAX_FAMILY_MEMBERS}: dolunca davet de kabul de 409`, async () => {
@@ -194,7 +196,7 @@ describe('üye listesi', () => {
     ]);
     expect(Object.keys(member.items[0]).sort()).toEqual(['createdAt', 'id', 'isMe', 'relation', 'role']);
     expect(JSON.stringify(member)).not.toContain('fam-alice');
-    expect(await outcome(profile.members(CAROL, p.id))).toBe(404);
+    expect(await outcome(profile.members(CAROL, p.id))).toBe('404 F-ERR-PERSON-NOT-FOUND');
     expect((await profile.members(ADMIN, p.id)).items).toHaveLength(2);
   });
 });
@@ -213,7 +215,7 @@ describe('üye çıkarma', () => {
   it('OWNER üyeyi çıkarır: kişiye erişimi biter; audit yalnız kimlik', async () => {
     const { p, bob } = await setup();
     expect(await outcome(profile.removeMember(ALICE, p.id, bob))).toBe('ok');
-    expect(await outcome(profile.get(BOB, p.id))).toBe(404);
+    expect(await outcome(profile.get(BOB, p.id))).toBe('404 F-ERR-PERSON-NOT-FOUND');
     const audit = await h.rows<{ data: Record<string, unknown> }>(
       "SELECT data FROM audit.log WHERE entity_id = $1 AND action = 'profile.member_removed'",
       [p.id],
@@ -226,7 +228,7 @@ describe('üye çıkarma', () => {
     expect(await outcome(profile.removeMember(BOB, p.id, carol))).toBe('403 F-MEMBER-OWNER-ONLY');
     expect(await outcome(profile.removeMember(BOB, p.id, ownerId))).toBe('403 F-MEMBER-OWNER-ONLY');
     expect(await outcome(profile.removeMember(BOB, p.id, bob))).toBe('ok');
-    expect(await outcome(profile.members(BOB, p.id))).toBe(404);
+    expect(await outcome(profile.members(BOB, p.id))).toBe('404 F-ERR-PERSON-NOT-FOUND');
     expect((await profile.members(ALICE, p.id)).items).toHaveLength(2);
     const [a] = await h.rows<{ data: Record<string, unknown> }>(
       "SELECT data FROM audit.log WHERE entity_id = $1 AND action = 'profile.member_removed'",
@@ -249,11 +251,15 @@ describe('üye çıkarma', () => {
 
   it('erişimi olmayan 404; başka kişinin üyesi veya bilinmeyen kimlik 404', async () => {
     const { p, bob } = await setup();
-    expect(await outcome(profile.removeMember({ kind: 'FAMILY', id: 'fam-x' }, p.id, bob))).toBe(404);
+    expect(await outcome(profile.removeMember({ kind: 'FAMILY', id: 'fam-x' }, p.id, bob))).toBe(
+      '404 F-ERR-PERSON-NOT-FOUND',
+    );
     const other = await profile.create(CAROL, { displayName: 'Başka' });
-    expect(await outcome(profile.removeMember(CAROL, other.id, bob))).toBe(404);
-    expect(await outcome(profile.removeMember(ALICE, p.id, '01960000-0000-7000-8000-000000000099'))).toBe(404);
-    expect(await outcome(profile.removeMember(ALICE, p.id, 'bozuk'))).toBe(404);
+    expect(await outcome(profile.removeMember(CAROL, other.id, bob))).toBe('404 F-ERR-MEMBER-NOT-FOUND');
+    expect(await outcome(profile.removeMember(ALICE, p.id, '01960000-0000-7000-8000-000000000099'))).toBe(
+      '404 F-ERR-MEMBER-NOT-FOUND',
+    );
+    expect(await outcome(profile.removeMember(ALICE, p.id, 'bozuk'))).toBe('404 F-ERR-MEMBER-NOT-FOUND');
   });
 });
 

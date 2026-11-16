@@ -4,7 +4,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -19,6 +18,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { DB, type Db } from '../../db/client';
@@ -152,9 +152,10 @@ export class EnrollmentService {
   // MARK: Davet (T-040 parçası)
 
   async createInvite(protectedPersonId: string, now = new Date()): Promise<{ code: string; expiresAt: string }> {
-    if (!UUID.test(protectedPersonId)) throw new NotFoundException('Kişi bulunamadı');
+    if (!UUID.test(protectedPersonId)) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     const person = await this.db.execute(sql`SELECT 1 FROM profile.protected_person WHERE id = ${protectedPersonId}`);
-    if (!(person as unknown as { rows: unknown[] }).rows.length) throw new NotFoundException('Kişi bulunamadı');
+    if (!(person as unknown as { rows: unknown[] }).rows.length)
+      throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
@@ -168,7 +169,7 @@ export class EnrollmentService {
       await this.db.insert(invite).values({ id: uuidv4(), protectedPersonId, codeHash, expiresAt, createdAt: now });
       return { code, expiresAt: expiresAt.toISOString() };
     }
-    throw new HttpException('Kod üretilemedi, yeniden deneyin', HttpStatus.SERVICE_UNAVAILABLE);
+    throw fail(HttpStatus.SERVICE_UNAVAILABLE, 'F-ERR-INVITE-CODE-FAILED');
   }
 
   // MARK: Kayıt
@@ -188,9 +189,9 @@ export class EnrollmentService {
     });
 
     if ('error' in result) {
-      if (result.error === 'exists') throw new ConflictException('Bu cihaz kimliği zaten kayıtlı');
+      if (result.error === 'exists') throw fail(ConflictException, 'P-ERR-DEVICE-EXISTS');
       await this.recordFailure(ip);
-      throw new BadRequestException('Davet kodu geçersiz veya süresi dolmuş');
+      throw fail(BadRequestException, 'P-ERR-INVITE-INVALID');
     }
     this.log.log(`Cihaz kaydedildi: ${req.kind}${result.created ? '' : ' (yeniden deneme)'}`);
     return {
@@ -254,10 +255,11 @@ export class EnrollmentService {
   private parse(body: unknown): EnrollRequest & { kind: EnrollableKind } {
     const b = (body ?? {}) as Record<string, unknown>;
     const inviteCode = typeof b.inviteCode === 'string' ? b.inviteCode.trim() : '';
-    if (!CODE.test(inviteCode)) throw new BadRequestException('Davet kodu 6 haneli olmalı');
-    if (typeof b.deviceId !== 'string' || !UUID.test(b.deviceId)) throw new BadRequestException('deviceId UUID olmalı');
+    if (!CODE.test(inviteCode)) throw fail(BadRequestException, 'P-ERR-INVITE-FORMAT');
+    if (typeof b.deviceId !== 'string' || !UUID.test(b.deviceId))
+      throw fail(BadRequestException, 'A-ERR-FIELD-UUID', { field: 'deviceId' });
     if (!ENROLLABLE_KINDS.includes(b.kind as EnrollableKind))
-      throw new BadRequestException(`kind şunlardan biri olmalı: ${ENROLLABLE_KINDS.join(', ')}`);
+      throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'kind', values: ENROLLABLE_KINDS.join(', ') });
     return {
       inviteCode,
       deviceId: b.deviceId.toLowerCase(),
@@ -275,8 +277,7 @@ export class EnrollmentService {
     } catch (e) {
       this.log.warn(`Kayıt hız sınırı okunamadı: ${safeError(e)}`); // Redis yoksa kayıt kapanmasın
     }
-    if (n >= ENROLL_MAX_FAILURES)
-      throw new HttpException('Çok fazla hatalı deneme, 15 dakika sonra yeniden deneyin', HttpStatus.TOO_MANY_REQUESTS);
+    if (n >= ENROLL_MAX_FAILURES) throw fail(HttpStatus.TOO_MANY_REQUESTS, 'P-ERR-TOO-MANY-ATTEMPTS');
   }
 
   private async recordFailure(ip: string) {
@@ -310,7 +311,7 @@ export class EnrollmentService {
   async authenticate(authorization: string, now = new Date()): Promise<DevicePrincipal> {
     const m = /^Bearer\s+(\S+)$/i.exec(authorization);
     const claims = m ? verifyDeviceToken(m[1]!, this.secret, now) : null;
-    if (!claims) throw new UnauthorizedException('Cihaz token geçersiz');
+    if (!claims) throw fail(UnauthorizedException, 'P-ERR-TOKEN-INVALID');
     const [row] = await this.db
       .select({
         personId: device.protectedPersonId,
@@ -320,10 +321,10 @@ export class EnrollmentService {
       })
       .from(device)
       .where(eq(device.id, claims.sub));
-    if (!row || row.revokedAt || row.personId !== claims.pp) throw new UnauthorizedException('Cihaz token geçersiz');
+    if (!row || row.revokedAt || row.personId !== claims.pp) throw fail(UnauthorizedException, 'P-ERR-TOKEN-INVALID');
     // Yeniden eşleşmeden önce verilmiş token (iptal edilmiş eşleşmeden kalma) geçersiz.
     if (row.enrolledAt && claims.iat < Math.floor(row.enrolledAt.getTime() / 1000))
-      throw new UnauthorizedException('Cihaz token geçersiz');
+      throw fail(UnauthorizedException, 'P-ERR-TOKEN-INVALID');
     return { deviceId: claims.sub, protectedPersonId: claims.pp, kind: row.kind };
   }
 
@@ -347,7 +348,7 @@ export class EnrollmentService {
       .from(device)
       .where(and(inArray(sql`${device.id}::text`, ids), or(isNotNull(device.enrolledAt), isNotNull(device.revokedAt))))
       .limit(1);
-    if (rows.length) throw new UnauthorizedException('Cihaz token gerekli');
+    if (rows.length) throw fail(UnauthorizedException, 'P-ERR-TOKEN-REQUIRED');
   }
 
   /** SIMULATOR_KNOWN_PERSONS_ONLY: token'sız sinyaldeki her kişi kayıtlı olmalı; değilse 422 (kimlik yanıtta yok). */
@@ -357,12 +358,12 @@ export class EnrollmentService {
     ];
     if (!ids.length) return;
     if (ids.some((p) => typeof p !== 'string' || !UUID.test(p)))
-      throw new UnprocessableEntityException('Kayıtsız kişi');
+      throw fail(UnprocessableEntityException, 'P-ERR-PERSON-UNREGISTERED');
     const rows = await this.db
       .select({ id: protectedPerson.id })
       .from(protectedPerson)
       .where(inArray(protectedPerson.id, ids as string[]));
-    if (rows.length !== ids.length) throw new UnprocessableEntityException('Kayıtsız kişi');
+    if (rows.length !== ids.length) throw fail(UnprocessableEntityException, 'P-ERR-PERSON-UNREGISTERED');
   }
 
   refresh(p: DevicePrincipal, now = new Date()): TokenResponse {
@@ -374,7 +375,7 @@ export class EnrollmentService {
    * (geçmiş silinmez, sınırlara sayılmaz). Kişinin kimliğini döner (kapsama hemen yeniden hesaplanır — çağıran).
    */
   async revoke(deviceId: string, now = new Date()): Promise<{ protectedPersonId: string }> {
-    if (!UUID.test(deviceId)) throw new NotFoundException('Cihaz bulunamadı');
+    if (!UUID.test(deviceId)) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     const rows = await this.db
       .update(device)
       .set({ revokedAt: now, retiredAt: now, pushToken: null })
@@ -390,23 +391,24 @@ export class EnrollmentService {
       .select({ id: device.id, personId: device.protectedPersonId })
       .from(device)
       .where(eq(device.id, deviceId));
-    if (!exists) throw new NotFoundException('Cihaz bulunamadı');
+    if (!exists) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     return { protectedPersonId: exists.personId };
   }
 
   /** Yol parametresi token'ın cihazı olmalı (başka cihazın yapılandırması/push token'ı değiştirilemez). */
   static assertSelf(p: DevicePrincipal, deviceId: string) {
-    if (p.deviceId !== deviceId.toLowerCase()) throw new ForbiddenException('Başka cihaz');
+    if (p.deviceId !== deviceId.toLowerCase()) throw fail(ForbiddenException, 'P-ERR-OTHER-DEVICE');
   }
 
   // MARK: Push token (T-053 kullanır)
 
   async setPushToken(p: DevicePrincipal, body: unknown, now = new Date()): Promise<void> {
     const b = (body ?? {}) as Record<string, unknown>;
-    if (b.provider !== 'APNS' && b.provider !== 'FCM') throw new BadRequestException('provider APNS veya FCM olmalı');
+    if (b.provider !== 'APNS' && b.provider !== 'FCM')
+      throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'provider', values: 'APNS | FCM' });
     const token = str(b.token, 4096);
-    if (!token) throw new BadRequestException('token zorunlu');
-    if (b.provider === 'APNS' && p.kind !== 'IOS_PHONE') throw new BadRequestException('APNS yalnız iOS cihazlar için');
+    if (!token) throw fail(BadRequestException, 'A-ERR-FIELD-REQUIRED', { field: 'token' });
+    if (b.provider === 'APNS' && p.kind !== 'IOS_PHONE') throw fail(BadRequestException, 'P-ERR-APNS-IOS-ONLY');
     await this.db
       .update(device)
       .set({

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import type { Db } from '../../db/client';
 import { auditLog, contact } from '../../db/schema';
 
@@ -45,26 +46,27 @@ export const MAX_CONTACTS = 5;
  * NEIGHBOR en çok birer. Liste bütün olarak değişir. Numara log'a ve denetim kaydına yazılmaz (yalnız sayılar).
  */
 export function parseContacts(input: unknown): Omit<typeof contact.$inferInsert, 'id' | 'protectedPersonId'>[] {
-  if (!Array.isArray(input)) throw new BadRequestException('Liste bekleniyor');
+  if (!Array.isArray(input)) throw fail(BadRequestException, 'A-ERR-LIST-EXPECTED');
   let order = 0;
   const rows = input.map((x: Partial<ContactInput> | null, i) => {
-    if (!x || !ROLES.includes(x.role as ContactRole)) throw new BadRequestException(`#${i}: rol geçersiz`);
-    if (typeof x.phone !== 'string' || !E164.test(x.phone)) throw new BadRequestException(`#${i}: numara E.164 olmalı`);
+    if (!x || !ROLES.includes(x.role as ContactRole)) throw fail(BadRequestException, 'F-ERR-CONTACT-ROLE', { i });
+    if (typeof x.phone !== 'string' || !E164.test(x.phone))
+      throw fail(BadRequestException, 'F-ERR-CONTACT-PHONE', { i });
     const priority = x.priority ?? (x.role === 'CONTACT' ? ++order : 1);
     if (!Number.isInteger(priority) || priority < 1 || priority > MAX_CONTACTS)
-      throw new BadRequestException(`#${i}: öncelik 1–${MAX_CONTACTS}`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-PRIORITY', { i, max: MAX_CONTACTS });
     if (x.displayName !== undefined && typeof x.displayName !== 'string')
-      throw new BadRequestException(`#${i}: ad geçersiz`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-NAME', { i });
     if (x.hasKey !== undefined && typeof x.hasKey !== 'boolean')
-      throw new BadRequestException(`#${i}: hasKey true/false`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-HAS-KEY', { i });
     if (x.hasKey && !KEY_ROLES.includes(x.role as ContactRole))
-      throw new BadRequestException(`#${i}: anahtar sahibi yalnız yakın veya komşu olabilir`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-KEY-HOLDER', { i });
     const arrivalMin = x.arrivalMin ?? null;
     if (arrivalMin !== null && (!Number.isInteger(arrivalMin) || arrivalMin < 1 || arrivalMin > 600))
-      throw new BadRequestException(`#${i}: arrivalMin 1–600`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-ARRIVAL', { i });
     const reachableHours = x.reachableHours ?? null;
     if (reachableHours !== null && (typeof reachableHours !== 'string' || !HOURS.test(reachableHours)))
-      throw new BadRequestException(`#${i}: reachableHours SS:DD-SS:DD`);
+      throw fail(BadRequestException, 'F-ERR-CONTACT-HOURS', { i });
     return {
       role: x.role as ContactRole,
       priority,
@@ -76,11 +78,11 @@ export function parseContacts(input: unknown): Omit<typeof contact.$inferInsert,
     };
   });
   const count = (r: ContactRole) => rows.filter((x) => x.role === r).length;
-  if (count('CONTACT') > MAX_CONTACTS) throw new BadRequestException(`En fazla ${MAX_CONTACTS} yakın`);
+  if (count('CONTACT') > MAX_CONTACTS) throw fail(BadRequestException, 'F-ERR-CONTACT-MAX', { max: MAX_CONTACTS });
   for (const r of ['ELDER', 'WATCH', 'NEIGHBOR'] as const)
-    if (count(r) > 1) throw new BadRequestException(`${r} en fazla bir numara`);
+    if (count(r) > 1) throw fail(BadRequestException, 'F-ERR-CONTACT-ROLE-SINGLE', { role: r });
   const seen = new Set(rows.map((x) => `${x.role}:${x.priority}`));
-  if (seen.size !== rows.length) throw new BadRequestException('Aynı rolde aynı öncelik iki kez');
+  if (seen.size !== rows.length) throw fail(BadRequestException, 'F-ERR-CONTACT-PRIORITY-DUP');
   return rows;
 }
 

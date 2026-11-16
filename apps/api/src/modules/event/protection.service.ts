@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import type { ProtectionState, Signal } from '@yanimda/contracts';
 import { and, eq, ne, sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { DB, type Db } from '../../db/client';
 import { event, protectionState } from '../../db/schema';
@@ -135,7 +136,7 @@ export class ProtectionService {
       .select()
       .from(protectionState)
       .where(eq(protectionState.protectedPersonId, protectedPersonId));
-    if (!row) throw new NotFoundException('Kişi bulunamadı veya henüz sinyal yok');
+    if (!row) throw fail(NotFoundException, 'F-ERR-PERSON-NO-SIGNAL');
     const pack = this.rules.current();
     const [open] = await this.db
       .select({ id: event.id, type: event.type, state: event.state, priority: event.priority })

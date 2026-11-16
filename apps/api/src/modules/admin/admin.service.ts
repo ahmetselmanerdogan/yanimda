@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, Optional } 
 import type { AdminCoverageMetrics } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { auditLog } from '../../db/schema';
 import { loadRulePack, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
@@ -175,16 +176,16 @@ export class AdminService {
 
   /** Ses kaydı (yetkili rol): her dinleme audit.log'a yazılır (kim, hangi çağrı, neden). */
   async recording(callId: string, actor: { id: string; role: string }, reason: string | undefined) {
-    if (!UUID.test(callId)) throw new NotFoundException('Kayıt yok');
+    if (!UUID.test(callId)) throw fail(NotFoundException, 'O-ERR-RECORDING-NOT-FOUND');
     const why = (reason ?? '').trim();
-    if (why.length < 5) throw new BadRequestException('Dinleme gerekçesi zorunlu (en az 5 karakter)');
+    if (why.length < 5) throw fail(BadRequestException, 'O-ERR-LISTEN-REASON');
     const [r] = await this.q<{ ref: string | null; event_id: string | null }>(sql`
       SELECT recording_ref AS ref, event_id::text FROM telephony.call WHERE id = ${callId}::uuid
       UNION ALL
       SELECT recording_ref, event_id::text FROM telephony.inbound_call WHERE id = ${callId}::uuid`);
-    if (!r?.ref || !this.recordings) throw new NotFoundException('Kayıt yok');
+    if (!r?.ref || !this.recordings) throw fail(NotFoundException, 'O-ERR-RECORDING-NOT-FOUND');
     const obj = await this.recordings.get(r.ref);
-    if (!obj) throw new NotFoundException('Kayıt yok');
+    if (!obj) throw fail(NotFoundException, 'O-ERR-RECORDING-NOT-FOUND');
     await this.db.insert(auditLog).values({
       actorKind: actor.role,
       actorId: actor.id,
@@ -402,7 +403,7 @@ export class AdminService {
    * düzenli arama bağı, amir uyarıları (gördü mü), denetim kaydı. Numara, adres ve sağlık verisi yok.
    */
   async caseFile(eventId: string) {
-    if (!UUID.test(eventId)) throw new NotFoundException('Olay yok');
+    if (!UUID.test(eventId)) throw fail(NotFoundException, 'O-ERR-EVENT-NOT-FOUND');
     const [ev] = await this.q<{
       id: string;
       type: string;
@@ -423,7 +424,7 @@ export class AdminService {
              e.source_signal_ids AS sources
       FROM event.event e LEFT JOIN profile.protected_person p ON p.id::text = e.protected_person_id
       WHERE e.id = ${eventId}::uuid`);
-    if (!ev) throw new NotFoundException('Olay yok');
+    if (!ev) throw fail(NotFoundException, 'O-ERR-EVENT-NOT-FOUND');
     const iso = (d: Date | string | null) => (d ? new Date(d).toISOString() : null);
     const transitions = await this.q<{
       from_state: string | null;

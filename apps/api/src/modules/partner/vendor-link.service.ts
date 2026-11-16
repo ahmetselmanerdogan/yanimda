@@ -3,6 +3,7 @@ import type { BodyLocation, VendorLinkView } from '@yanimda/contracts';
 import { and, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import type { FieldCipher } from '../../common/field-cipher';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
@@ -53,26 +54,28 @@ export class VendorLinkService {
   ) {}
 
   async create(body: unknown, actorId: string, now = new Date()): Promise<VendorLinkView> {
-    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Nesne bekleniyor');
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
     const b = body as Record<string, unknown>;
     const personId =
       typeof b.protectedPersonId === 'string' && UUID.test(b.protectedPersonId) ? b.protectedPersonId : '';
-    if (!personId) throw new BadRequestException('protectedPersonId (uuid) gerekli');
+    if (!personId) throw fail(BadRequestException, 'A-ERR-FIELD-UUID', { field: 'protectedPersonId' });
     const partner = typeof b.partner === 'string' ? b.partner : '';
     const adapter = this.devices.partnerAdapter(partner);
-    if (!adapter) throw new NotFoundException('Ortak bulunamadı');
+    if (!adapter) throw fail(NotFoundException, 'O-ERR-PARTNER-NOT-FOUND');
     const profile = adapter.profile(typeof b.model === 'string' ? b.model : null);
-    if (!profile) throw new BadRequestException('model bu ortağın profillerinden biri olmalı');
+    if (!profile) throw fail(BadRequestException, 'O-ERR-VENDOR-MODEL');
     const vendorDeviceId =
       typeof b.vendorDeviceId === 'string' && VENDOR_ID.test(b.vendorDeviceId) ? b.vendorDeviceId : '';
-    if (!vendorDeviceId) throw new BadRequestException('vendorDeviceId gerekli (1–200 yazdırılabilir karakter)');
+    if (!vendorDeviceId)
+      throw fail(BadRequestException, 'A-ERR-FIELD-LENGTH', { field: 'vendorDeviceId', min: 1, max: 200 });
     if (
       b.vendorAccountId !== undefined &&
       (typeof b.vendorAccountId !== 'string' || !VENDOR_ID.test(b.vendorAccountId))
     )
-      throw new BadRequestException('vendorAccountId 1–200 yazdırılabilir karakter');
+      throw fail(BadRequestException, 'A-ERR-FIELD-LENGTH', { field: 'vendorAccountId', min: 1, max: 200 });
     if (b.bodyLocation !== undefined && b.bodyLocation !== null && !isBodyLocation(b.bodyLocation))
-      throw new BadRequestException('bodyLocation geçersiz');
+      throw fail(BadRequestException, 'A-ERR-FIELD-INVALID', { field: 'bodyLocation' });
     const bodyLocation =
       (b.bodyLocation as BodyLocation | undefined) ?? (profile.category === 'PENDANT' ? 'NECK' : 'HOME');
 
@@ -83,20 +86,18 @@ export class VendorLinkService {
     let consentAt: Date | null = null;
     if (consent !== null) {
       if (typeof consent !== 'object' || !BASES.includes(consent.basis as (typeof BASES)[number]))
-        throw new BadRequestException(`consent.basis ${BASES.join(' | ')}`);
+        throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'consent.basis', values: BASES.join(' | ') });
       const at = typeof consent.at === 'string' ? new Date(consent.at) : null;
-      if (!at || Number.isNaN(at.getTime()) || at > now)
-        throw new BadRequestException('consent.at geçmiş bir an olmalı');
+      if (!at || Number.isNaN(at.getTime()) || at > now) throw fail(BadRequestException, 'O-ERR-CONSENT-AT-PAST');
       basis = consent.basis as Basis;
       consentAt = at;
     }
-    if (region !== 'TR' && !consentAt)
-      throw new BadRequestException('Yurt dışı veri bölgesi: açık rıza / aktarım dayanağı (consent) gerekli');
+    if (region !== 'TR' && !consentAt) throw fail(BadRequestException, 'O-ERR-CONSENT-REQUIRED');
 
     const exists = (await this.db.execute(
       sql`SELECT 1 FROM profile.protected_person WHERE id = ${personId}::uuid`,
     )) as unknown as { rows: unknown[] };
-    if (!exists.rows.length) throw new NotFoundException('Kişi bulunamadı');
+    if (!exists.rows.length) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
 
     const id = uuidv7();
     const deviceId = uuidv7();
@@ -112,7 +113,7 @@ export class VendorLinkService {
               eq(vendorLink.status, 'ACTIVE'),
             ),
           );
-        if (dup) throw new ConflictException('Bu üretici cihazı zaten bağlı');
+        if (dup) throw fail(ConflictException, 'O-ERR-VENDOR-DEVICE-LINKED');
         await assertDeviceLimits(
           tx,
           personId,
@@ -169,7 +170,7 @@ export class VendorLinkService {
 
   /** Kişinin üretici bağlantıları (üretici kimlikleri dönmez). */
   async list(protectedPersonId: string): Promise<VendorLinkView[]> {
-    if (!UUID.test(protectedPersonId)) throw new NotFoundException('Kişi bulunamadı');
+    if (!UUID.test(protectedPersonId)) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
     const rows = await this.db
       .select()
       .from(vendorLink)

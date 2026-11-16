@@ -13,6 +13,7 @@ import {
 import { t } from '@yanimda/messages';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db, type Tx } from '../../db/client';
 import { auditLog, contact, devicePrompt } from '../../db/schema';
 import { deviceSummaries } from '../event/coverage.service';
@@ -82,9 +83,9 @@ const CALL_112 = 'CALL_112';
 
 const text = (v: unknown, max: number, field: string): string | undefined => {
   if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v !== 'string') throw new BadRequestException(`${field} metin olmalı`);
+  if (typeof v !== 'string') throw fail(BadRequestException, 'A-ERR-FIELD-TEXT', { field });
   const s = v.trim();
-  if (s.length > max) throw new BadRequestException(`${field} en fazla ${max} karakter`);
+  if (s.length > max) throw fail(BadRequestException, 'A-ERR-FIELD-MAX', { field, max });
   return s || undefined;
 };
 
@@ -201,7 +202,7 @@ export class ChainService {
       async (c) => {
         const run = await this.ensureRun(c);
         const step = run.steps.find((s) => s.n === n);
-        if (!step) throw new ConflictException('Adım yok');
+        if (!step) throw fail(ConflictException, 'O-ERR-STEP-NONE');
         step.scriptReadAt = c.now.toISOString();
         await this.repo.updateStep(c.tx, run.id, step);
         return this.result(c, run);
@@ -220,8 +221,7 @@ export class ChainService {
         const run = await this.ensureRun(c);
         const step = this.current(run, n, c);
         // T-087 (S5.1): "bağlandı, ses yok" yalnız sesli cihaz aramasında (otomatik cevap) anlamlıdır.
-        if (b.result === 'SILENT' && !isDeviceStep(step))
-          throw new BadRequestException('Sessiz sonuç yalnız cihaz aramasında');
+        if (b.result === 'SILENT' && !isDeviceStep(step)) throw fail(BadRequestException, 'O-ERR-SILENT-DEVICE-ONLY');
         Object.assign(step, {
           result: b.result,
           assessment: b.assessment,
@@ -281,7 +281,7 @@ export class ChainService {
   /** Ctrl+1: gerekçeyle doğrudan 112. Kalan adımlar SKIPPED(reason=escalate) olur, olay CONFIRMED_EMERGENCY. */
   async escalate112(id: string, operatorId: string, body: unknown, now?: Date): Promise<EventWithChain> {
     const reason = text((body as { reason?: unknown } | null)?.reason, REASON_MAX, 'reason');
-    if (!reason) throw new BadRequestException('Gerekçe zorunlu');
+    if (!reason) throw fail(BadRequestException, 'O-ERR-REASON-REQUIRED');
     return this.events.operate(
       id,
       operatorId,
@@ -289,7 +289,7 @@ export class ChainService {
         const run = await this.ensureRun(c);
         if (c.ev.state === 'OPERATOR_ASSIGNED' || c.ev.state === 'CONTACT_CHAIN')
           c.transition('CONFIRMED_EMERGENCY', reason);
-        else if (c.ev.state !== 'CONFIRMED_EMERGENCY') throw new ConflictException('Bu durumda 112 kısayolu yok');
+        else if (c.ev.state !== 'CONFIRMED_EMERGENCY') throw fail(ConflictException, 'O-ERR-NO-112-SHORTCUT');
         await this.toEmergency(c, run, operatorId, 'escalate', reason);
         await this.repo.audit(c.tx, c.ev.id, operatorId, 'chain.escalate_112', {});
         return this.result(c, run);
@@ -307,13 +307,13 @@ export class ChainService {
       notified112?: unknown;
     };
     const note = text(b.note, NOTE_MAX, 'note');
-    if (typeof b.outcome !== 'string') throw new BadRequestException('Sonuç zorunlu');
+    if (typeof b.outcome !== 'string') throw fail(BadRequestException, 'O-ERR-OUTCOME-REQUIRED');
     const outcome = b.outcome;
     if (b.followUpAfterHours !== undefined && b.followUpAfterHours !== null && typeof b.followUpAfterHours !== 'number')
-      throw new BadRequestException('followUpAfterHours sayı olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-NUMBER', { field: 'followUpAfterHours' });
     const hours = typeof b.followUpAfterHours === 'number' ? b.followUpAfterHours : undefined;
     if (b.notified112 !== undefined && typeof b.notified112 !== 'boolean')
-      throw new BadRequestException('notified112 true/false');
+      throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'notified112' });
     const notified112 = b.notified112 === true;
     return this.events.operate(
       id,
@@ -335,7 +335,7 @@ export class ChainService {
    * adres yoksa olay konumu (enlem, boylam).
    */
   async dispatchScript(id: string, operatorId: string, kind: unknown, now?: Date): Promise<DispatchScript> {
-    if (kind !== 'dispatch112') throw new BadRequestException('Bilinmeyen şablon');
+    if (kind !== 'dispatch112') throw fail(BadRequestException, 'O-ERR-UNKNOWN-TEMPLATE');
     return this.events.operate(
       id,
       operatorId,
@@ -569,12 +569,12 @@ export class ChainService {
 
   private current(run: Run, n: number, c: OperatorCtx): ChainStep {
     const step = currentStep(run.steps);
-    if (!step || step.n !== n) throw new ConflictException('Sıra dışı adım');
+    if (!step || step.n !== n) throw fail(ConflictException, 'O-ERR-STEP-ORDER');
     const ok =
       c.ev.state === 'OPERATOR_ASSIGNED' ||
       c.ev.state === 'CONTACT_CHAIN' ||
       (c.ev.state === 'CONFIRMED_EMERGENCY' && step.kind === CALL_112);
-    if (!ok) throw new ConflictException('Bu durumda adım işlenemez');
+    if (!ok) throw fail(ConflictException, 'O-ERR-STEP-STATE');
     return step;
   }
 
@@ -602,14 +602,14 @@ export class ChainService {
 
   private parseResult(body: unknown): StepResultBody {
     const b = (body ?? {}) as Record<string, unknown>;
-    if (!STEP_RESULTS.includes(b.result as StepResult)) throw new BadRequestException('Geçersiz sonuç');
+    if (!STEP_RESULTS.includes(b.result as StepResult)) throw fail(BadRequestException, 'O-ERR-RESULT-INVALID');
     const result = b.result as StepResult;
     if (b.assessment !== undefined && b.assessment !== 'OK' && b.assessment !== 'EMERGENCY')
-      throw new BadRequestException('Geçersiz değerlendirme');
+      throw fail(BadRequestException, 'O-ERR-ASSESSMENT-INVALID');
     if (b.assessment !== undefined && result !== 'REACHED')
-      throw new BadRequestException('Değerlendirme yalnız ulaşılınca');
+      throw fail(BadRequestException, 'O-ERR-ASSESSMENT-REACHED-ONLY');
     const reason = text(b.reason, REASON_MAX, 'reason');
-    if (result === 'SKIPPED' && !reason) throw new BadRequestException('Atlama gerekçe ister');
+    if (result === 'SKIPPED' && !reason) throw fail(BadRequestException, 'O-ERR-SKIP-REASON');
     return {
       result,
       ...(b.assessment ? { assessment: b.assessment as StepAssessment } : {}),

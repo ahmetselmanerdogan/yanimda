@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { validate as isUuid } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { type CallView, TelephonyService, type VoiceToken, WEBHOOK_KINDS, type WebhookKind } from './telephony.service';
@@ -50,7 +51,7 @@ export class CpaasWebhookController {
       Object.entries(body ?? {}).filter((e): e is [string, string] => typeof e[1] === 'string'),
     );
     if (!provider.verify(`${this.telephony.webhookBase()}${req.originalUrl}`, params, signature))
-      throw new ForbiddenException('İmza geçersiz');
+      throw fail(ForbiddenException, 'A-ERR-SIGNATURE');
     if (!isUuid(callId ?? '')) throw new NotFoundException();
     res.setHeader('content-type', 'text/xml; charset=utf-8');
     return this.telephony.webhook(kind as WebhookKind, callId, params);
@@ -58,7 +59,7 @@ export class CpaasWebhookController {
 }
 
 const callId = (id: string) => {
-  if (!isUuid(id ?? '')) throw new NotFoundException('Arama yok');
+  if (!isUuid(id ?? '')) throw fail(NotFoundException, 'O-ERR-CALL-NOT-FOUND');
   return id;
 };
 
@@ -83,7 +84,7 @@ export class TelephonyController {
   @HttpCode(200)
   hold(@Param('callId') id: string, @Body() body: unknown, @Req() req: UserRequest): Promise<CallView> {
     const on = (body as { on?: unknown } | null)?.on;
-    if (typeof on !== 'boolean') throw new BadRequestException('on: boolean gerekli');
+    if (typeof on !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'on' });
     return this.telephony.hold(callId(id), userOf(req).sub, on);
   }
 
@@ -93,7 +94,7 @@ export class TelephonyController {
   conference(@Param('callId') id: string, @Body() body: unknown, @Req() req: UserRequest): Promise<CallView> {
     const n = (body as { contactIndex?: unknown } | null)?.contactIndex ?? 1;
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 5)
-      throw new BadRequestException('contactIndex 1–5 olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'contactIndex', min: 1, max: 5 });
     return this.telephony.addFamily(callId(id), userOf(req).sub, n);
   }
 

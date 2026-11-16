@@ -4651,5 +4651,737 @@
   "K-PWD-BLACKLISTED": {
     "channel": "auth",
     "text": "Bu parola çok yaygın veya sızdırılmış parolalar listesinde. Lütfen başka bir parola seçin."
+  },
+  "A-ERR-INTERNAL": {
+    "channel": "api",
+    "text": "Internal error"
+  },
+  "A-ERR-UNAVAILABLE": {
+    "channel": "api",
+    "text": "Hizmet geçici olarak kullanılamıyor, yeniden deneyin"
+  },
+  "A-ERR-CONTENT-TYPE": {
+    "channel": "api",
+    "text": "Desteklenmeyen içerik türü"
+  },
+  "A-ERR-RATE-LIMIT": {
+    "channel": "api",
+    "text": "Çok fazla istek, daha sonra yeniden deneyin"
+  },
+  "A-ERR-BODY-SCHEMA": {
+    "channel": "api",
+    "text": "Gövde şemaya uymuyor: {errors}"
+  },
+  "A-ERR-BODY-NOT-JSON": {
+    "channel": "api",
+    "text": "Gövde JSON değil"
+  },
+  "A-ERR-EVENTS-EMPTY": {
+    "channel": "api",
+    "text": "Olay listesi boş veya okunamadı"
+  },
+  "A-ERR-LOGIN-REQUIRED": {
+    "channel": "api",
+    "text": "Giriş gerekli"
+  },
+  "A-ERR-FORBIDDEN": {
+    "channel": "api",
+    "text": "Yetki yok"
+  },
+  "A-ERR-ADMIN-REQUIRED": {
+    "channel": "api",
+    "text": "Yönetici yetkisi gerekli"
+  },
+  "A-ERR-SIGNATURE": {
+    "channel": "api",
+    "text": "İmza geçersiz"
+  },
+  "A-ERR-SIGNATURE-MISSING": {
+    "channel": "api",
+    "text": "Sağlayıcı imzası yok"
+  },
+  "A-ERR-SIGNATURE-HEADERS": {
+    "channel": "api",
+    "text": "İmza başlıkları eksik"
+  },
+  "A-ERR-SIGNATURE-STALE": {
+    "channel": "api",
+    "text": "İmza zaman damgası pencere dışında"
+  },
+  "A-ERR-REPLAY": {
+    "channel": "api",
+    "text": "Teslim daha önce alındı (nonce)"
+  },
+  "A-ERR-OBJECT-EXPECTED": {
+    "channel": "api",
+    "text": "Nesne bekleniyor"
+  },
+  "A-ERR-LIST-EXPECTED": {
+    "channel": "api",
+    "text": "Liste bekleniyor"
+  },
+  "A-ERR-UNKNOWN-FIELD": {
+    "channel": "api",
+    "text": "Bilinmeyen alan: {fields}"
+  },
+  "A-ERR-NO-CHANGES": {
+    "channel": "api",
+    "text": "Değiştirilecek alan yok"
+  },
+  "A-ERR-FIELD-REQUIRED": {
+    "channel": "api",
+    "text": "{field} gerekli"
+  },
+  "A-ERR-FIELD-INVALID": {
+    "channel": "api",
+    "text": "{field} geçersiz"
+  },
+  "A-ERR-FIELD-TEXT": {
+    "channel": "api",
+    "text": "{field} metin olmalı"
+  },
+  "A-ERR-FIELD-NUMBER": {
+    "channel": "api",
+    "text": "{field} sayı olmalı"
+  },
+  "A-ERR-FIELD-BOOLEAN": {
+    "channel": "api",
+    "text": "{field} true/false olmalı"
+  },
+  "A-ERR-FIELD-ARRAY": {
+    "channel": "api",
+    "text": "{field} dizi olmalı"
+  },
+  "A-ERR-FIELD-UUID": {
+    "channel": "api",
+    "text": "{field} UUID olmalı"
+  },
+  "A-ERR-FIELD-E164": {
+    "channel": "api",
+    "text": "{field} E.164 olmalı"
+  },
+  "A-ERR-FIELD-TIME": {
+    "channel": "api",
+    "text": "{field} SS:DD olmalı"
+  },
+  "A-ERR-FIELD-TIME-RANGE": {
+    "channel": "api",
+    "text": "{field} SS:DD-SS:DD olmalı"
+  },
+  "A-ERR-FIELD-ENUM": {
+    "channel": "api",
+    "text": "{field}: {values}"
+  },
+  "A-ERR-FIELD-RANGE": {
+    "channel": "api",
+    "text": "{field} {min}–{max} arası tam sayı olmalı"
+  },
+  "A-ERR-FIELD-LENGTH": {
+    "channel": "api",
+    "text": "{field} {min}–{max} karakter olmalı"
+  },
+  "A-ERR-FIELD-MAX": {
+    "channel": "api",
+    "text": "{field} en fazla {max} karakter"
+  },
+  "A-ERR-FIELD-MAX-ITEMS": {
+    "channel": "api",
+    "text": "{field} en fazla {max} öğe"
+  },
+  "O-ERR-EVENT-NOT-FOUND": {
+    "channel": "console",
+    "text": "Olay yok"
+  },
+  "O-ERR-UNDO-STATE": {
+    "channel": "console",
+    "text": "Bu durumda geri alınamaz"
+  },
+  "O-ERR-TAKEN": {
+    "channel": "console",
+    "text": "Başka operatör üstlendi"
+  },
+  "O-ERR-NOT-QUEUED": {
+    "channel": "console",
+    "text": "Olay kuyrukta değil"
+  },
+  "O-ERR-NOT-YOURS": {
+    "channel": "console",
+    "text": "Olay sizde değil"
+  },
+  "O-ERR-RESULT-INVALID": {
+    "channel": "console",
+    "text": "Geçersiz sonuç"
+  },
+  "O-ERR-FOLLOW-UP-RANGE": {
+    "channel": "console",
+    "text": "Takip 1–{max} saat arası olmalı"
+  },
+  "O-ERR-CLOSE-CONFIRMED-OK": {
+    "channel": "console",
+    "text": "Olay iyi olarak teyit edildi; acil kapatılamaz"
+  },
+  "O-ERR-CLOSE-EMERGENCY-ONLY": {
+    "channel": "console",
+    "text": "Acil teyitli olay yalnız EMERGENCY ile kapanır"
+  },
+  "O-ERR-CLOSE-STATE": {
+    "channel": "console",
+    "text": "Olay kapatılamaz"
+  },
+  "O-ERR-STEP-NONE": {
+    "channel": "console",
+    "text": "Adım yok"
+  },
+  "O-ERR-STEP-ORDER": {
+    "channel": "console",
+    "text": "Sıra dışı adım"
+  },
+  "O-ERR-STEP-STATE": {
+    "channel": "console",
+    "text": "Bu durumda adım işlenemez"
+  },
+  "O-ERR-SILENT-DEVICE-ONLY": {
+    "channel": "console",
+    "text": "Sessiz sonuç yalnız cihaz aramasında"
+  },
+  "O-ERR-REASON-REQUIRED": {
+    "channel": "console",
+    "text": "Gerekçe zorunlu"
+  },
+  "O-ERR-OUTCOME-REQUIRED": {
+    "channel": "console",
+    "text": "Sonuç zorunlu"
+  },
+  "O-ERR-NO-112-SHORTCUT": {
+    "channel": "console",
+    "text": "Bu durumda 112 kısayolu yok"
+  },
+  "O-ERR-UNKNOWN-TEMPLATE": {
+    "channel": "console",
+    "text": "Bilinmeyen şablon"
+  },
+  "O-ERR-ASSESSMENT-INVALID": {
+    "channel": "console",
+    "text": "Geçersiz değerlendirme"
+  },
+  "O-ERR-ASSESSMENT-REACHED-ONLY": {
+    "channel": "console",
+    "text": "Değerlendirme yalnız ulaşılınca"
+  },
+  "O-ERR-SKIP-REASON": {
+    "channel": "console",
+    "text": "Atlama gerekçe ister"
+  },
+  "O-ERR-DISPATCH-NOT-FOUND": {
+    "channel": "console",
+    "text": "Süreç yok"
+  },
+  "O-ERR-DISPATCH-STAGE": {
+    "channel": "console",
+    "text": "Geçersiz aşama"
+  },
+  "O-ERR-DISPATCH-SOURCE": {
+    "channel": "console",
+    "text": "Geçersiz kaynak"
+  },
+  "O-ERR-DISPATCH-CLOSED": {
+    "channel": "console",
+    "text": "Süreç kapandı"
+  },
+  "O-ERR-DISPATCH-NO-ROLLBACK": {
+    "channel": "console",
+    "text": "Aşama geri alınamaz"
+  },
+  "O-ERR-SOFTPHONE-OFF": {
+    "channel": "console",
+    "text": "Yazılım telefonu kapalı"
+  },
+  "O-ERR-TELEPHONY-OFF": {
+    "channel": "console",
+    "text": "Telefoni kapalı"
+  },
+  "O-ERR-CALL-NOT-FOUND": {
+    "channel": "console",
+    "text": "Arama yok"
+  },
+  "O-ERR-CALL-OTHER-OPERATOR": {
+    "channel": "console",
+    "text": "Arama başka operatörde"
+  },
+  "O-ERR-CALL-ENDED": {
+    "channel": "console",
+    "text": "Görüşme sürmüyor"
+  },
+  "O-ERR-CONFERENCE-FAILED": {
+    "channel": "console",
+    "text": "Konferans kurulamadı"
+  },
+  "O-ERR-CONTACT-NOT-SET": {
+    "channel": "console",
+    "text": "Yakın kayıtlı değil"
+  },
+  "O-ERR-CONTACT-CALL-FAILED": {
+    "channel": "console",
+    "text": "Yakın aranamadı"
+  },
+  "O-ERR-HOLD-FAILED": {
+    "channel": "console",
+    "text": "Bekletilemedi"
+  },
+  "O-ERR-HANGUP-FAILED": {
+    "channel": "console",
+    "text": "Arama kapatılamadı"
+  },
+  "O-ERR-ALERT-NOT-FOUND": {
+    "channel": "console",
+    "text": "Uyarı yok"
+  },
+  "O-ERR-ALERT-ACKED": {
+    "channel": "console",
+    "text": "Uyarı zaten görüldü"
+  },
+  "O-ERR-OPERATOR-NOT-FOUND": {
+    "channel": "console",
+    "text": "Operatör yok"
+  },
+  "O-ERR-RECORDING-NOT-FOUND": {
+    "channel": "console",
+    "text": "Kayıt yok"
+  },
+  "O-ERR-LISTEN-REASON": {
+    "channel": "console",
+    "text": "Dinleme gerekçesi zorunlu (en az 5 karakter)"
+  },
+  "O-ERR-RULES-VERSION-CONFLICT": {
+    "channel": "console",
+    "text": "Sürüm {version} farklı içerikle zaten yüklü; sürümü artırın"
+  },
+  "O-ERR-RULES-VERSION-OLDER": {
+    "channel": "console",
+    "text": "Sürüm {version} < yüklü sürüm {latest}; geri dönüş için yeni sürüm verin"
+  },
+  "O-ERR-RULES-UNREADABLE": {
+    "channel": "console",
+    "text": "Kural paketi okunamadı: {error}"
+  },
+  "O-ERR-RULES-COUNTRY": {
+    "channel": "console",
+    "text": "Paket ülkesi {country}, beklenen {expected}"
+  },
+  "O-ERR-RULES-SCHEMA": {
+    "channel": "console",
+    "text": "Kural paketi şemaya uymuyor: {path} {error}"
+  },
+  "O-ERR-RULES-DUPLICATE": {
+    "channel": "console",
+    "text": "Kural tekrarı: {type}"
+  },
+  "O-ERR-RULES-TTS-MISSING": {
+    "channel": "console",
+    "text": "TTS kodu mesaj kataloğunda yok: {code}"
+  },
+  "O-ERR-RULES-SCRIPT-MISSING": {
+    "channel": "console",
+    "text": "Operatör metni mesaj kataloğunda yok: {code}"
+  },
+  "O-ERR-RULES-SCREEN-MISSING": {
+    "channel": "console",
+    "text": "Ön eleme sorusu mesaj kataloğunda (voice) yok: {code}"
+  },
+  "O-ERR-RULES-PROMPT-MISSING": {
+    "channel": "console",
+    "text": "Operatör sorusu mesaj kataloğunda (watch) yok: {code}"
+  },
+  "O-ERR-WORK-ORDER-NOT-FOUND": {
+    "channel": "console",
+    "text": "İş emri yok"
+  },
+  "O-ERR-WORK-ORDER-CLOSED": {
+    "channel": "console",
+    "text": "İş emri zaten kapalı"
+  },
+  "O-ERR-PARTNER-NOT-FOUND": {
+    "channel": "console",
+    "text": "Ortak bulunamadı"
+  },
+  "O-ERR-VENDOR-MODEL": {
+    "channel": "console",
+    "text": "model bu ortağın profillerinden biri olmalı"
+  },
+  "O-ERR-VENDOR-DEVICE-LINKED": {
+    "channel": "console",
+    "text": "Bu üretici cihazı zaten bağlı"
+  },
+  "O-ERR-CONSENT-AT-PAST": {
+    "channel": "console",
+    "text": "consent.at geçmiş bir an olmalı"
+  },
+  "O-ERR-CONSENT-REQUIRED": {
+    "channel": "console",
+    "text": "Yurt dışı veri bölgesi: açık rıza / aktarım dayanağı (consent) gerekli"
+  },
+  "O-ERR-VITALS-OFF": {
+    "channel": "console",
+    "text": "Değer görünümü kapalı"
+  },
+  "O-ERR-VITALS-NONE": {
+    "channel": "console",
+    "text": "Bu olayda değer yok"
+  },
+  "O-ERR-VITALS-OPEN-ONLY": {
+    "channel": "console",
+    "text": "Değerler yalnız olay açıkken görünür"
+  },
+  "O-ERR-REVIEW-NOT-FOUND": {
+    "channel": "console",
+    "text": "İnceleme bulunamadı"
+  },
+  "O-ERR-PLAN-FAMILY-ONLY": {
+    "channel": "console",
+    "text": "Şarj planını aile değiştirir"
+  },
+  "O-ERR-COMMAND-NEEDS-OPERATOR": {
+    "channel": "console",
+    "text": "Cihaz komutu operatör kimliği ister"
+  },
+  "O-ERR-DELETE-FAMILY-OR-SUPERVISOR": {
+    "channel": "console",
+    "text": "Cihazı aile veya amir kaldırır"
+  },
+  "O-ERR-NO-OPEN-EVENT": {
+    "channel": "console",
+    "text": "Kişinin açık olayı yok"
+  },
+  "O-ERR-EVENT-NOT-PERSONS-OPEN": {
+    "channel": "console",
+    "text": "Olay kişinin açık olayı değil"
+  },
+  "F-ERR-PERSON-NOT-FOUND": {
+    "channel": "family",
+    "text": "Kişi bulunamadı"
+  },
+  "F-ERR-PERSON-NO-SIGNAL": {
+    "channel": "family",
+    "text": "Kişi bulunamadı veya henüz sinyal yok"
+  },
+  "F-ERR-DEVICE-NOT-FOUND": {
+    "channel": "family",
+    "text": "Cihaz bulunamadı"
+  },
+  "F-ERR-EVENT-NOT-FOUND": {
+    "channel": "family",
+    "text": "Olay bulunamadı"
+  },
+  "F-ERR-MEMBER-NOT-FOUND": {
+    "channel": "family",
+    "text": "Üye bulunamadı"
+  },
+  "F-ERR-TEST-NOT-FOUND": {
+    "channel": "family",
+    "text": "Test bulunamadı"
+  },
+  "F-ERR-FAMILY-ONLY": {
+    "channel": "family",
+    "text": "Yalnız aile hesabı"
+  },
+  "F-ERR-FEEDBACK-FAMILY-ONLY": {
+    "channel": "family",
+    "text": "Yalnız aile üyesi geri bildirim verir"
+  },
+  "F-ERR-EVENT-NOT-CLOSED": {
+    "channel": "family",
+    "text": "Olay henüz kapanmadı"
+  },
+  "F-ERR-EVENT-EMERGENCY": {
+    "channel": "family",
+    "text": "Acil olarak teyit edilmiş olay"
+  },
+  "F-ERR-TEST-OPEN-EVENT": {
+    "channel": "family",
+    "text": "Açık olay var; test şimdi başlatılamaz"
+  },
+  "F-ERR-TEST-RECENT": {
+    "channel": "family",
+    "text": "Son 10 dakikada test yapıldı"
+  },
+  "F-ERR-TEST-FAILED": {
+    "channel": "family",
+    "text": "Test olayı açılamadı"
+  },
+  "F-ERR-INVITE-CODE-FAILED": {
+    "channel": "family",
+    "text": "Kod üretilemedi, yeniden deneyin"
+  },
+  "F-ERR-CONSENT-AT-REQUIRED": {
+    "channel": "family",
+    "text": "consentAt (rıza zamanı) gerekli"
+  },
+  "F-ERR-HOLD-UNTIL": {
+    "channel": "family",
+    "text": "holdMode.until gelecekte ve en çok {days} gün olmalı"
+  },
+  "F-ERR-ADDRESS-REQUIRED": {
+    "channel": "family",
+    "text": "address.line ve address.city gerekli"
+  },
+  "F-ERR-ADDRESS-LATLNG": {
+    "channel": "family",
+    "text": "address.lat/lng geçersiz"
+  },
+  "F-ERR-CONTACT-ROLE": {
+    "channel": "family",
+    "text": "#{i}: rol geçersiz"
+  },
+  "F-ERR-CONTACT-PHONE": {
+    "channel": "family",
+    "text": "#{i}: numara E.164 olmalı"
+  },
+  "F-ERR-CONTACT-PRIORITY": {
+    "channel": "family",
+    "text": "#{i}: öncelik 1–{max}"
+  },
+  "F-ERR-CONTACT-NAME": {
+    "channel": "family",
+    "text": "#{i}: ad geçersiz"
+  },
+  "F-ERR-CONTACT-HAS-KEY": {
+    "channel": "family",
+    "text": "#{i}: hasKey true/false"
+  },
+  "F-ERR-CONTACT-KEY-HOLDER": {
+    "channel": "family",
+    "text": "#{i}: anahtar sahibi yalnız yakın veya komşu olabilir"
+  },
+  "F-ERR-CONTACT-ARRIVAL": {
+    "channel": "family",
+    "text": "#{i}: arrivalMin 1–600"
+  },
+  "F-ERR-CONTACT-HOURS": {
+    "channel": "family",
+    "text": "#{i}: reachableHours SS:DD-SS:DD"
+  },
+  "F-ERR-CONTACT-MAX": {
+    "channel": "family",
+    "text": "En fazla {max} yakın"
+  },
+  "F-ERR-CONTACT-ROLE-SINGLE": {
+    "channel": "family",
+    "text": "{role} en fazla bir numara"
+  },
+  "F-ERR-CONTACT-PRIORITY-DUP": {
+    "channel": "family",
+    "text": "Aynı rolde aynı öncelik iki kez"
+  },
+  "F-ERR-SLEEP-WINDOW-REQUIRED": {
+    "channel": "family",
+    "text": "sleepWindow start ve end gerekli"
+  },
+  "F-ERR-SLEEP-WINDOW-TIMES": {
+    "channel": "family",
+    "text": "sleepWindow saatleri SS:DD olmalı ve farklı olmalı"
+  },
+  "F-ERR-SLEEP-WINDOW-MAX": {
+    "channel": "family",
+    "text": "sleepWindow en çok {hours} saat olabilir"
+  },
+  "F-ERR-LEARNING-FIELD-REQUIRED": {
+    "channel": "family",
+    "text": "sleepWindow, inactivityMin veya fallPromptSec gerekli"
+  },
+  "F-ERR-WINDOW-SAME": {
+    "channel": "family",
+    "text": "window başlangıcı ve bitişi farklı olmalı"
+  },
+  "F-ERR-TRENDS-OFF": {
+    "channel": "family",
+    "text": "Sağlık eğilimleri kapalı"
+  },
+  "F-ERR-VITAL-SETTINGS-OFF": {
+    "channel": "family",
+    "text": "Değer ayarları kapalı"
+  },
+  "F-ERR-VITAL-CUSTOM-CONSENT": {
+    "channel": "family",
+    "text": "Kişiye özel eşik aile onayı (familyConsent) ve doktor notu (doctorNote) ister"
+  },
+  "F-ERR-PUSH-ENDPOINT-HTTPS": {
+    "channel": "family",
+    "text": "endpoint https olmalı"
+  },
+  "F-ERR-COMMAND-OPERATOR-ONLY": {
+    "channel": "family",
+    "text": "Cihaz komutunu operatör gönderir"
+  },
+  "F-ERR-VOICE-NUMBER-OPS": {
+    "channel": "family",
+    "text": "Cihaz numarasını operasyon girer"
+  },
+  "F-ERR-KVKK-VERSION": {
+    "channel": "family",
+    "text": "KVKK aydınlatma metni sürümü güncel değil"
+  },
+  "F-ERR-EXPLICIT-CONSENT": {
+    "channel": "family",
+    "text": "Açık rıza gerekli"
+  },
+  "F-ERR-PAYMENT-COUNTRY-OFF": {
+    "channel": "family",
+    "text": "Ödeme bu ülkede kapalı"
+  },
+  "F-ERR-ACCOUNT-NOT-FOUND": {
+    "channel": "family",
+    "text": "Hesap bulunamadı"
+  },
+  "F-ERR-PHONE-ALREADY-VERIFIED": {
+    "channel": "family",
+    "text": "Telefon zaten doğrulandı"
+  },
+  "F-ERR-PHONE-NOT-VERIFIED": {
+    "channel": "family",
+    "text": "Telefon doğrulanmadı"
+  },
+  "F-ERR-CODE-FORMAT": {
+    "channel": "family",
+    "text": "Kod 6 hane olmalı"
+  },
+  "F-ERR-CODE-EXPIRED": {
+    "channel": "family",
+    "text": "Kodun süresi doldu"
+  },
+  "F-ERR-CODE-WRONG": {
+    "channel": "family",
+    "text": "Kod hatalı"
+  },
+  "F-ERR-SUB-CANCELED": {
+    "channel": "family",
+    "text": "Abonelik iptal edilmiş"
+  },
+  "F-ERR-SUB-ACTIVE": {
+    "channel": "family",
+    "text": "Abonelik zaten etkin"
+  },
+  "F-ERR-SUB-NOT-FOUND": {
+    "channel": "family",
+    "text": "Abonelik yok"
+  },
+  "F-ERR-SUB-NONE-OPEN": {
+    "channel": "family",
+    "text": "Açık abonelik yok"
+  },
+  "F-ERR-SUB-OWNER-ONLY": {
+    "channel": "family",
+    "text": "Aboneliği yalnız hesap sahibi yönetir"
+  },
+  "F-ERR-PRICE-NOT-CONFIGURED": {
+    "channel": "family",
+    "text": "Paket fiyatı yapılandırılmamış"
+  },
+  "F-ERR-BILLING-ADDRESS": {
+    "channel": "family",
+    "text": "Fatura adresi gerekli"
+  },
+  "F-ERR-PROVIDER-UNREACHABLE": {
+    "channel": "family",
+    "text": "Ödeme sağlayıcısına ulaşılamadı, tekrar deneyin"
+  },
+  "F-ERR-PAYMENT-NOT-FOUND": {
+    "channel": "family",
+    "text": "Ödeme bulunamadı"
+  },
+  "F-ERR-FAKE-PROVIDER-OFF": {
+    "channel": "family",
+    "text": "Sahte sağlayıcı kapalı"
+  },
+  "F-ERR-SIGNUP-SESSION": {
+    "channel": "family",
+    "text": "Kayıt oturumu geçersiz veya süresi doldu"
+  },
+  "F-ERR-SIGNUP-OFF": {
+    "channel": "family",
+    "text": "Kayıt geçici olarak kapalı"
+  },
+  "P-ERR-DEVICE-EXISTS": {
+    "channel": "phone",
+    "text": "Bu cihaz kimliği zaten kayıtlı"
+  },
+  "P-ERR-INVITE-INVALID": {
+    "channel": "phone",
+    "text": "Davet kodu geçersiz veya süresi dolmuş"
+  },
+  "P-ERR-INVITE-FORMAT": {
+    "channel": "phone",
+    "text": "Davet kodu 6 haneli olmalı"
+  },
+  "P-ERR-TOO-MANY-ATTEMPTS": {
+    "channel": "phone",
+    "text": "Çok fazla hatalı deneme, 15 dakika sonra yeniden deneyin"
+  },
+  "P-ERR-TOKEN-INVALID": {
+    "channel": "phone",
+    "text": "Cihaz token geçersiz"
+  },
+  "P-ERR-TOKEN-REQUIRED": {
+    "channel": "phone",
+    "text": "Cihaz token gerekli"
+  },
+  "P-ERR-PERSON-UNREGISTERED": {
+    "channel": "phone",
+    "text": "Kayıtsız kişi"
+  },
+  "P-ERR-OTHER-DEVICE": {
+    "channel": "phone",
+    "text": "Başka cihaz"
+  },
+  "P-ERR-APNS-IOS-ONLY": {
+    "channel": "phone",
+    "text": "APNS yalnız iOS cihazlar için"
+  },
+  "P-ERR-PHONE-ONLY-WATCH": {
+    "channel": "phone",
+    "text": "Yalnız eşlikçi telefon saat kaydedebilir"
+  },
+  "P-ERR-SELF-AS-WATCH": {
+    "channel": "phone",
+    "text": "Telefon kendini saat olarak kaydedemez"
+  },
+  "P-ERR-STEP-REQUIRED": {
+    "channel": "phone",
+    "text": "step zorunlu (BÜYÜK_HARF)"
+  },
+  "P-ERR-BRIDGED-PHONE-ONLY": {
+    "channel": "phone",
+    "text": "Köprülü cihazı yalnız yaşlının telefonu kaydeder"
+  },
+  "P-ERR-ELDER-PHONE-ONLY": {
+    "channel": "phone",
+    "text": "Yalnız yaşlının telefonu"
+  },
+  "P-ERR-ADDRESS-OTHER-MODEL": {
+    "channel": "phone",
+    "text": "Bu adres başka bir modelle kayıtlı"
+  },
+  "P-ERR-RAW-BLE-ADDRESS": {
+    "channel": "phone",
+    "text": "Ham BLE adresi gönderilmez; SHA-256 özeti gönderin"
+  },
+  "P-ERR-ADDRESS-HASH-FORMAT": {
+    "channel": "phone",
+    "text": "addressHash 64 haneli küçük harf hex olmalı"
+  },
+  "P-ERR-SIGNAL-BATCH-EMPTY": {
+    "channel": "phone",
+    "text": "Boş sinyal listesi"
+  },
+  "P-ERR-SIGNAL-BATCH-REJECTED": {
+    "channel": "phone",
+    "text": "Partide kabul edilebilir sinyal yok"
+  },
+  "P-ERR-SIGNAL-PENDING": {
+    "channel": "phone",
+    "text": "Sinyal işleniyor, yeniden deneyin"
+  },
+  "P-ERR-SIGNAL-WRITE-FAILED": {
+    "channel": "phone",
+    "text": "Sinyal kaydedilemedi, yeniden deneyin"
   }
 }

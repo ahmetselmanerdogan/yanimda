@@ -6,6 +6,8 @@ import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020'
 import addFormats from 'ajv-formats';
 import { parse } from 'yaml';
 
+import { fail } from './catalog-error';
+
 /**
  * T-081 (ASVS 5.1.4, 13.2.2) istek gövdesi OpenAPI şemasıyla doğrulanır: `packages/contracts/openapi.yaml` tek kaynak
  * (`operationId` → `requestBody.content.application/json.schema`, JSON Schema 2020-12 / OpenAPI 3.1). Servisteki
@@ -111,7 +113,7 @@ export class OpenApiBody implements PipeTransform {
   transform(value: unknown): unknown {
     if (value === undefined && !this.op.required) return value;
     if (!this.op.validate(value))
-      throw new BadRequestException(`Gövde şemaya uymuyor: ${describeErrors(this.op.validate.errors)}`);
+      throw fail(BadRequestException, 'A-ERR-BODY-SCHEMA', { errors: describeErrors(this.op.validate.errors) });
     return value;
   }
 }

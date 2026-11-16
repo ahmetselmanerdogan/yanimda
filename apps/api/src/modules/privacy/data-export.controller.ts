@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, Header, Inject, Req, UseGuards } from '@nestjs/common';
 import type { DataExport } from '@yanimda/contracts';
 
+import { fail } from '../../common/catalog-error';
 import { RateLimit } from '../../common/rate-limit';
 import type { Actor } from '../profile/contacts';
 import { ProfileGuard } from '../profile/profile.controller';
@@ -24,7 +25,7 @@ export class DataExportController {
   @Header('Content-Disposition', `attachment; filename="${DATA_EXPORT_FILENAME}"`)
   export(@Req() req: { actor?: Actor }): Promise<DataExport> {
     const actor = req.actor;
-    if (!actor || actor.kind !== 'FAMILY') return Promise.reject(new ForbiddenException('Yalnız aile hesabı'));
+    if (!actor || actor.kind !== 'FAMILY') return Promise.reject(fail(ForbiddenException, 'F-ERR-FAMILY-ONLY'));
     return this.exporter.export(actor);
   }
 }

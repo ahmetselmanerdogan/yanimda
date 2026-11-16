@@ -1,5 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
+
 /**
  * T-060 (4) Keycloak `consumers` hesabı. Parola bizim API'mizden geçmez: hesap gerekli eylemlerle
  * (VERIFY_EMAIL + UPDATE_PASSWORD) açılır, Keycloak e-postadaki bağlantıyla e-posta doğrulatıp parola belirletir.
@@ -96,7 +98,7 @@ export class KeycloakConsumerAccounts implements ConsumerAccounts {
       attributes: { phone_number: [u.phone], phone_number_verified: ['false'] },
       requiredActions: ['VERIFY_EMAIL', 'UPDATE_PASSWORD'],
     });
-    if (r.status === 409) throw new ConflictException('Bu e-posta ile hesap var');
+    if (r.status === 409) throw fail(ConflictException, 'F-WEB-ERROR-EMAIL-TAKEN');
     if (r.status !== 201) throw new Error(`keycloak kullanıcı HTTP ${r.status}`);
     const id = r.headers.get('location')?.split('/').pop();
     if (!id) throw new Error('keycloak kullanıcı kimliği yok');
@@ -152,7 +154,7 @@ export class FakeConsumerAccounts implements ConsumerAccounts {
 
   async create(u: NewConsumer) {
     if ([...this.users.values()].some((x) => x.email.toLowerCase() === u.email.toLowerCase()))
-      throw new ConflictException('Bu e-posta ile hesap var');
+      throw fail(ConflictException, 'F-WEB-ERROR-EMAIL-TAKEN');
     const subject = `fake-consumer-${++this.n}`;
     this.users.set(subject, { ...u, phoneVerified: false, setupEmails: 0 });
     return { subject };

@@ -3,7 +3,6 @@ import { randomInt } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -31,6 +30,7 @@ import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { bus } from '../../common/bus';
+import { fail } from '../../common/catalog-error';
 import { OutboxBus } from '../../common/outbox';
 import { safeError } from '../../common/safe-error';
 import { type TimerJob, type TimerKind, TIMERS, type Timers } from '../../common/timers/timers';
@@ -240,7 +240,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   // ---- Okuma ----
   async get(id: string): Promise<EventRecord> {
     const ev = await this.repo.get(id);
-    if (!ev) throw new NotFoundException('Olay yok');
+    if (!ev) throw fail(NotFoundException, 'O-ERR-EVENT-NOT-FOUND');
     return ev;
   }
   queue(): Promise<EventRecord[]> {
@@ -262,7 +262,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
    */
   async unclaim(id: string, supervisorId: string, reason?: string): Promise<EventRecord> {
     const ev = await this.withEvent(id, async (u) => {
-      if (!OPERATOR_STATES.has(u.ev.state)) throw new ConflictException('Bu durumda geri alınamaz');
+      if (!OPERATOR_STATES.has(u.ev.state)) throw fail(ConflictException, 'O-ERR-UNDO-STATE');
       const previous = u.ev.operatorId ?? null;
       u.ev.operatorId = undefined;
       u.ev.lockUntil = undefined;
@@ -285,7 +285,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       }
       return u.ev;
     });
-    if (!ev) throw new NotFoundException('Olay yok');
+    if (!ev) throw fail(NotFoundException, 'O-ERR-EVENT-NOT-FOUND');
     return ev;
   }
 
@@ -805,11 +805,11 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       rows: { open: number; recent: number }[];
     };
     const { open, recent } = r.rows[0] ?? { open: 0, recent: 0 };
-    if (open) throw new ConflictException('Açık olay var; test şimdi başlatılamaz');
-    if (recent) throw new HttpException('Son 10 dakikada test yapıldı', HttpStatus.TOO_MANY_REQUESTS);
+    if (open) throw fail(ConflictException, 'F-ERR-TEST-OPEN-EVENT');
+    if (recent) throw fail(HttpStatus.TOO_MANY_REQUESTS, 'F-ERR-TEST-RECENT');
     await this.create('TEST', { protectedPersonId, sourceId });
     const id = await find();
-    if (!id) throw new ConflictException('Test olayı açılamadı');
+    if (!id) throw fail(ConflictException, 'F-ERR-TEST-FAILED');
     return { eventId: id };
   }
 
@@ -1234,10 +1234,10 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
             payload: { eventId: u.ev.id, operatorId, previousOperatorId: previous, reason: 'TAKEN_OVER' },
           });
         } else if (u.ev.operatorId !== operatorId || !OPERATOR_STATES.has(u.ev.state)) {
-          throw new ConflictException(u.ev.operatorId ? 'Başka operatör üstlendi' : 'Olay kuyrukta değil');
+          throw fail(ConflictException, u.ev.operatorId ? 'O-ERR-TAKEN' : 'O-ERR-NOT-QUEUED');
         }
       } else if (u.ev.operatorId !== operatorId || !OPERATOR_STATES.has(u.ev.state)) {
-        throw new ConflictException('Olay sizde değil');
+        throw fail(ConflictException, 'O-ERR-NOT-YOURS');
       }
       u.ev.lockUntil = new Date(now.getTime() + operatorLockMs()).toISOString();
       u.dirty = true;
@@ -1259,7 +1259,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
       };
       return { value: await fn(ctx) };
     });
-    if (!found) throw new NotFoundException('Olay yok');
+    if (!found) throw fail(NotFoundException, 'O-ERR-EVENT-NOT-FOUND');
     return found.value;
   }
 
@@ -1338,12 +1338,12 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     followUpAfterHours?: number,
     notified112 = false,
   ) {
-    if (!CLOSE_OUTCOMES.has(outcome)) throw new BadRequestException('Geçersiz sonuç');
+    if (!CLOSE_OUTCOMES.has(outcome)) throw fail(BadRequestException, 'O-ERR-RESULT-INVALID');
     if (
       followUpAfterHours !== undefined &&
       (!Number.isInteger(followUpAfterHours) || followUpAfterHours < 1 || followUpAfterHours > MAX_FOLLOW_UP_HOURS)
     )
-      throw new BadRequestException(`Takip 1–${MAX_FOLLOW_UP_HOURS} saat arası olmalı`);
+      throw fail(BadRequestException, 'O-ERR-FOLLOW-UP-RANGE', { max: MAX_FOLLOW_UP_HOURS });
     const op = (to: EventState, n?: string) => this.transition(u, to, 'OPERATOR', operatorId, n);
     const emergency = outcome === 'EMERGENCY';
     // Denetim bulgu 4: ulaşılamayan gerçek SOS / düşme. 112 arandıysa acil yolu (DISPATCH, ambulans takibi); aranmadıysa
@@ -1359,14 +1359,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         } else op('CONFIRMED_OK', note);
         break;
       case 'CONFIRMED_OK':
-        if (emergency) throw new ConflictException('Olay iyi olarak teyit edildi; acil kapatılamaz');
+        if (emergency) throw fail(ConflictException, 'O-ERR-CLOSE-CONFIRMED-OK');
         break;
       case 'CONFIRMED_EMERGENCY':
       case 'DISPATCH':
-        if (!emergency) throw new ConflictException('Acil teyitli olay yalnız EMERGENCY ile kapanır');
+        if (!emergency) throw fail(ConflictException, 'O-ERR-CLOSE-EMERGENCY-ONLY');
         break;
       default:
-        throw new ConflictException('Olay kapatılamaz');
+        throw fail(ConflictException, 'O-ERR-CLOSE-STATE');
     }
     if (u.ev.state === 'CONFIRMED_EMERGENCY') {
       if (notified112) op('DISPATCH', '112 arandı (zincir dışında)');

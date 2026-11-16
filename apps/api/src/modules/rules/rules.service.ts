@@ -8,6 +8,7 @@ import Ajv2020 from 'ajv/dist/2020';
 import { and, desc, eq } from 'drizzle-orm';
 import YAML from 'yaml';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { procedureTemplate } from '../../db/schema';
 import type { RulePack, RulesProvider } from '../event/rules.loader';
@@ -85,16 +86,14 @@ export class RulesService implements RulesProvider {
         .limit(1)
         .for('update');
       if (latest && pack.version < latest.version)
-        throw new ConflictException(
-          `Sürüm ${pack.version} < yüklü sürüm ${latest.version}; geri dönüş için yeni sürüm verin`,
-        );
+        throw fail(ConflictException, 'O-ERR-RULES-VERSION-OLDER', { version: pack.version, latest: latest.version });
       const [same] = await tx
         .select()
         .from(procedureTemplate)
         .where(and(eq(procedureTemplate.country, pack.country), eq(procedureTemplate.version, pack.version)));
       if (same) {
         if (same.checksum !== checksum)
-          throw new ConflictException(`Sürüm ${pack.version} farklı içerikle zaten yüklü; sürümü artırın`);
+          throw fail(ConflictException, 'O-ERR-RULES-VERSION-CONFLICT', { version: pack.version });
         return false;
       }
       await tx
@@ -126,35 +125,35 @@ export class RulesService implements RulesProvider {
     try {
       doc = YAML.parse(readFileSync(join(this.dir, `${this.country.toLowerCase()}.yaml`), 'utf8'));
     } catch (e) {
-      throw new BadRequestException(`Kural paketi okunamadı: ${(e as Error).message}`);
+      throw fail(BadRequestException, 'O-ERR-RULES-UNREADABLE', { error: (e as Error).message });
     }
     const pack = this.validate(doc);
     if (pack.country.toUpperCase() !== this.country)
-      throw new BadRequestException(`Paket ülkesi ${pack.country}, beklenen ${this.country}`);
+      throw fail(BadRequestException, 'O-ERR-RULES-COUNTRY', { country: pack.country, expected: this.country });
     return pack;
   }
 
   private validate(doc: unknown): RulePack {
     if (!this.validateSchema(doc)) {
       const e = this.validateSchema.errors?.[0];
-      throw new BadRequestException(`Kural paketi şemaya uymuyor: ${e?.instancePath || '/'} ${e?.message ?? ''}`);
+      throw fail(BadRequestException, 'O-ERR-RULES-SCHEMA', { path: e?.instancePath || '/', error: e?.message ?? '' });
     }
     const pack = doc as RulePack;
     const types = new Set<string>();
     for (const r of pack.rules) {
-      if (types.has(r.type)) throw new BadRequestException(`Kural tekrarı: ${r.type}`);
+      if (types.has(r.type)) throw fail(BadRequestException, 'O-ERR-RULES-DUPLICATE', { type: r.type });
       types.add(r.type);
       const tts = r.devicePrompt?.tts;
-      if (tts && !catalogs.tr[tts]) throw new BadRequestException(`TTS kodu mesaj kataloğunda yok: ${tts}`);
+      if (tts && !catalogs.tr[tts]) throw fail(BadRequestException, 'O-ERR-RULES-TTS-MISSING', { code: tts });
       if (r.operatorScript && !catalogs.tr[r.operatorScript])
-        throw new BadRequestException(`Operatör metni mesaj kataloğunda yok: ${r.operatorScript}`);
+        throw fail(BadRequestException, 'O-ERR-RULES-SCRIPT-MISSING', { code: r.operatorScript });
       const phrase = r.autoVoiceScreening?.phrase;
       if (phrase && catalogs.tr[phrase]?.channel !== 'voice')
-        throw new BadRequestException(`Ön eleme sorusu mesaj kataloğunda (voice) yok: ${phrase}`);
+        throw fail(BadRequestException, 'O-ERR-RULES-SCREEN-MISSING', { code: phrase });
     }
     const opPrompt = pack.ladder?.operatorPrompt?.tts;
     if (opPrompt && catalogs.tr[opPrompt]?.channel !== 'watch')
-      throw new BadRequestException(`Operatör sorusu mesaj kataloğunda (watch) yok: ${opPrompt}`);
+      throw fail(BadRequestException, 'O-ERR-RULES-PROMPT-MISSING', { code: opPrompt });
     return pack;
   }
 }

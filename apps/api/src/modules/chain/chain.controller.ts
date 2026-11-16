@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { fail } from '../../common/catalog-error';
 import { OpenApiBody } from '../../common/openapi-body';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { ChainService } from './chain.service';
@@ -38,7 +39,7 @@ export class ChainController {
   @Get(':id/dispatch')
   async dispatchOf(@Param('id') id: string) {
     const v = await this.dispatch.get(id);
-    if (!v) throw new NotFoundException('Süreç yok');
+    if (!v) throw fail(NotFoundException, 'O-ERR-DISPATCH-NOT-FOUND');
     return v;
   }
 

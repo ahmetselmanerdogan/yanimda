@@ -14,10 +14,10 @@ import {
   type SupervisorCoverage,
   TOPICS,
 } from '@yanimda/contracts';
-import { catalogs } from '@yanimda/messages';
 import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { fail } from '../../common/catalog-error';
 import type { OutboxBus } from '../../common/outbox';
 import type { Db, Tx } from '../../db/client';
 import {
@@ -207,7 +207,7 @@ export class CoverageService {
     const max = 240;
     const m = minutes ?? chargingOf(this.pack).intentMin;
     if (!Number.isInteger(m) || m < 1 || m > max)
-      throw new BadRequestException(`minutes 1–${max} arası tam sayı olmalı`);
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'minutes', min: 1, max });
     const ctx = await this.contextOf(protectedPersonId);
     const until = new Date(now.getTime() + m * 60_000);
     const upd = await this.db.transaction(async (tx) => {
@@ -318,7 +318,7 @@ export class CoverageService {
   async history(protectedPersonId: string, days = 7, now = new Date()): Promise<CoverageHistory> {
     await this.assertKnown(protectedPersonId);
     if (!Number.isInteger(days) || days < 1 || days > 30)
-      throw new BadRequestException('days 1–30 arası tam sayı olmalı');
+      throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'days', min: 1, max: 30 });
     const sleep = await this.settings.settingsOf(protectedPersonId);
     const from = windowStart(now, days, sleep.timezone);
     const rows = await historyRows(this.db, [protectedPersonId], from, now);
@@ -553,20 +553,19 @@ export class CoverageService {
     await this.assertKnown(protectedPersonId);
     const b = (body ?? {}) as Record<string, unknown>;
     if (typeof body !== 'object' || body === null || Array.isArray(body))
-      throw new BadRequestException('Nesne bekleniyor');
+      throw fail(BadRequestException, 'A-ERR-OBJECT-EXPECTED');
     const current = await this.planOf(protectedPersonId);
     let [start, end] = [current.start, current.end];
     if (b.window !== undefined) {
       const m = typeof b.window === 'string' ? WINDOW.exec(b.window) : null;
-      if (!m) throw new BadRequestException('window HH:MM-HH:MM olmalı');
+      if (!m) throw fail(BadRequestException, 'A-ERR-FIELD-TIME-RANGE', { field: 'window' });
       [start, end] = [`${m[1]}:${m[2]}`, `${m[3]}:${m[4]}`];
-      if (start === end) throw new BadRequestException('window başlangıcı ve bitişi farklı olmalı');
+      if (start === end) throw fail(BadRequestException, 'F-ERR-WINDOW-SAME');
     }
     if (b.nightChargeAllowed !== undefined && typeof b.nightChargeAllowed !== 'boolean')
-      throw new BadRequestException('nightChargeAllowed true/false');
+      throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'nightChargeAllowed' });
     const night = (b.nightChargeAllowed as boolean | undefined) ?? current.nightChargeAllowed;
-    const warn = () =>
-      new BadRequestException({ message: catalogs.tr['F-UI-NIGHT-CHARGE-WARN']!.text, code: 'F-UI-NIGHT-CHARGE-WARN' });
+    const warn = () => fail(BadRequestException, 'F-UI-NIGHT-CHARGE-WARN');
     if (night && b.nightChargeAllowed === true && b.acknowledgeNoNightFall !== true) throw warn();
     const sleep = await this.settings.settingsOf(protectedPersonId);
     if (!night && overlaps(start, end, sleep.start, sleep.end)) throw warn();
@@ -834,7 +833,7 @@ export class CoverageService {
     const r = UUID.test(personId)
       ? await this.db.execute(sql`SELECT 1 FROM profile.protected_person WHERE id = ${personId}::uuid`)
       : await this.db.execute(sql`SELECT 1 FROM event.coverage_state WHERE protected_person_id = ${personId}`);
-    if (!(r as unknown as { rows: unknown[] }).rows.length) throw new NotFoundException('Kişi bulunamadı');
+    if (!(r as unknown as { rows: unknown[] }).rows.length) throw fail(NotFoundException, 'F-ERR-PERSON-NOT-FOUND');
   }
 }
 

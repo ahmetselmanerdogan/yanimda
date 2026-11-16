@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { EventState, EventType, StepAssessment, StepResult } from '@yanimda/contracts';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
+import { fail } from '../../common/catalog-error';
 import { DB, type Db } from '../../db/client';
 import { chainRun, chainStep, dispatch, event, familyFeedback, familyMember } from '../../db/schema';
 import type { Actor } from '../profile/contacts';
@@ -108,7 +109,7 @@ export class FamilyService {
   async event(actor: Actor, personId: string, eventId: string): Promise<FamilyEventView> {
     await this.profile.authorize(actor, personId);
     const view = UUID.test(eventId) ? await this.view(eventId, actor.kind === 'FAMILY' ? actor.id : undefined) : null;
-    if (!view || view.protectedPersonId !== personId) throw new NotFoundException('Olay bulunamadı');
+    if (!view || view.protectedPersonId !== personId) throw fail(NotFoundException, 'F-ERR-EVENT-NOT-FOUND');
     return view;
   }
 
