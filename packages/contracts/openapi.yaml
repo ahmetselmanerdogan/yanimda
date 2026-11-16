@@ -2332,7 +2332,8 @@ paths:
         Telefon token'ı ile (yol = telefonun kendi kimliği). Saat kendi UUID'sini üretir, Data Layer ile telefona
         iletir; telefon burada aynı kişiye WEAROS_WATCH olarak kaydeder ve saat token'ını Data Layer ile saate verir.
         Aynı kişinin etkin saati yeniden → 200 + yeni token; kaldırılmış saat yeniden etkinleşir (eski token'lar 401);
-        başka kişinin cihazı 409; telefon olmayan token 403.
+        başka kişinin cihazı 409 (telefon yaşlıya P-SETUP-WATCH-OTHER gösterir, saat eşli sayılmaz); telefon olmayan
+        token 403.
       operationId: enrollCompanion
       security: [{ deviceToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
