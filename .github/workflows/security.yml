@@ -80,5 +80,5 @@ jobs:
           docker logs api > zap/api.log 2>&1 || true
           pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../zap/api.log
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with: { name: zap-reports, path: zap/, if-no-files-found: ignore }
