@@ -112,18 +112,22 @@ spec:
             - name: PGSSLMODE
               value: verify-full
             {{- end }}
+          # T-083: /v1/health canlılık (bağımlılığa bakmaz), /v1/ready hazırlık (veritabanı yoksa 503).
           startupProbe:
-            tcpSocket:
+            httpGet:
+              path: /v1/health
               port: http
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /v1/ready
               port: http
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /v1/health
               port: http
             periodSeconds: 20
             failureThreshold: 3

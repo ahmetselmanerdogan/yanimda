@@ -11,6 +11,21 @@ info:
 servers:
   - url: http://localhost:3000/v1
 paths:
+  /health:
+    get:
+      summary: Canlılık (T-083) — süreç HTTP'ye yanıt veriyor; bağımlılıklara bakmaz. Kimliksiz.
+      operationId: health
+      security: []
+      responses:
+        '200': { description: '{ status: ok }' }
+  /ready:
+    get:
+      summary: Hazırlık (T-083) — veritabanı yoksa 503 + Retry-After; Redis yoksa 200 status degraded. Kimliksiz.
+      operationId: ready
+      security: []
+      responses:
+        '200': { description: '{ status: ok | degraded, db: ok, redis: ok | down }' }
+        '503': { description: Veritabanına ulaşılamıyor (problem+json) }
   /signals:
     post:
       summary: Cihazdan sinyal gönderimi (toplu). D-01

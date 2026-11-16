@@ -81,9 +81,10 @@ async function checkIssuer(cfg) {
 }
 
 async function checkApi(cfg) {
-  const r = await http(`${cfg.apiUrl}/v1/queue`);
-  // Kimliksiz istek: 401 = API ayakta ve yönlendirme doğru. 5xx/502 = vekil arkasında kopya yok.
-  if (r.status >= 500) throw new Error(`API HTTP ${r.status}`);
+  const r = await http(`${cfg.apiUrl}/v1/ready`);
+  // Hazırlık ucu (kimliksiz): 200 = API ve veritabanı ayakta, yönlendirme doğru. 503 = veritabanı yok; 502 = vekil
+  // arkasında kopya yok.
+  if (r.status !== 200) throw new Error(`API HTTP ${r.status}`);
 }
 
 async function token(cfg, tokenEndpoint) {

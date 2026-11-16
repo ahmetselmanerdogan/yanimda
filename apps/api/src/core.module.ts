@@ -11,6 +11,7 @@ import { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 
 import { bus } from './common/bus';
+import { HealthController } from './common/health.controller';
 import { OutboxBus } from './common/outbox';
 import { OutboxWorker } from './common/outbox.worker';
 import { BullTimers } from './common/timers/bull-timers';
@@ -47,6 +48,7 @@ class Lifecycle implements OnApplicationBootstrap, OnApplicationShutdown {
 /** Ortak altyapı: Postgres (Drizzle), Redis, outbox yazıcı ve işçi, zamanlayıcılar (BullMQ). */
 @Global()
 @Module({
+  controllers: [HealthController], // T-083: /v1/health, /v1/ready
   providers: [
     {
       provide: PG_POOL,

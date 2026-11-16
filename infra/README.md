@@ -89,8 +89,8 @@ docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
 docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml up -d
 ```
 
-- **Sağlık**: API'de ayrık `/health` yok → kap sağlık kontrolü kimliksiz `GET /v1/queue` (401 = ayakta, 5xx/bağlantı
-  hatası = sağlıksız). Caddy iki API kopyasını Docker DNS'ten dinamik çözer, yanıt vermeyeni 30 sn dışarıda tutar.
+- **Sağlık**: kimliksiz `GET /v1/health` (canlılık, bağımlılığa bakmaz) ve `GET /v1/ready` (veritabanı yoksa 503;
+  Redis yoksa 200 "degraded"). Kap sağlık kontrolü, Helm yoklamaları ve sentetik izleme `/v1/ready` kullanır. Caddy iki API kopyasını Docker DNS'ten dinamik çözer, yanıt vermeyeni 30 sn dışarıda tutar.
 - **Outbox işçisi**: `worker` servisi (`OUTBOX_WORKER=on`); API kopyaları `off`. Sıra garantisi `event.outbox_lease`
   kirasıyla (tek aktif işçi). `API_OUTBOX_WORKER=on` ile kopyalar sıcak yedek olur (işçi ölürse ≤ 30 sn'de devralır).
   `signal_to_screen_seconds` vb. geçiş metrikleri yalnız kirayı tutan süreçte ölçülür (Prometheus `api` ve `worker`'ı
@@ -222,7 +222,7 @@ UPDATE event.outbox_side SET dead_at = NULL, attempts = 0, next_attempt_at = now
 
 Grafana `127.0.0.1:3001` (SSH tüneli), `infra/grafana/konsol.json` otomatik yüklenir. Dış uç hedefleri:
 `monitoring/targets/*.yml.example` → `.yml`. Uptime Kuma (`status.<domain>`): HTTP izleyiciler (konsol, auth
-well-known, API `/v1/queue` 401 kabul) + sentetik için _Push_ izleyici (URL'i `UPTIME_KUMA_PUSH_URL`), herkese açık
+well-known, API `/v1/ready` 200) + sentetik için _Push_ izleyici (URL'i `UPTIME_KUMA_PUSH_URL`), herkese açık
 durum sayfası.
 
 ## Helm (Faz 3)
