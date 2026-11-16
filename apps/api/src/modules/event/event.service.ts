@@ -318,6 +318,9 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     this.timers.on('follow-up', async ({ eventId }) => {
       const src = await this.repo.get(eventId);
       if (!src) return void this.log.warn(`Takip: kaynak olay bulunamadı ${eventId}`);
+      // İş transaction içinde (commit'ten önce) planlanır; kapanış geri alındıysa iş yine de kalır → kaynak kapalı
+      // değilse takip açılmaz. Test olayı gerçek takip doğurmaz (T-063).
+      if (src.state !== 'CLOSED' || src.isTest) return;
       await this.create('FOLLOW_UP', {
         protectedPersonId: src.protectedPersonId,
         sourceId: `follow-up:${eventId}`,
@@ -1412,7 +1415,8 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const hours = emergency
       ? (followUpAfterHours ?? ruleFor(this.pack, u.ev.type)?.followUpAfterHours ?? DEFAULT_FOLLOW_UP_HOURS)
       : followUpAfterHours;
-    if (hours) {
+    // T-063: test olayı gerçek takip araması (FOLLOW_UP, gerçek metrik) doğurmaz.
+    if (hours && !u.ev.isTest) {
       await this.repo.insertAudit(u.tx, {
         actorKind: 'OPERATOR',
         actorId: operatorId,
