@@ -7,5 +7,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.spec.ts', 'test/**/*.spec.ts'],
     globalSetup: ['test/support/redis.global-setup.ts'],
+    // PGlite + Redis + uygulama açılışı (beforeAll) yük altındaki makinede 10 sn'yi aşabiliyor; CI'da ~2 sn.
+    hookTimeout: 60_000,
   },
 });
