@@ -48,14 +48,18 @@ export function restoreSession(): Promise<User | null> {
 async function restore(): Promise<User | null> {
   const params = new URLSearchParams(window.location.search);
   if (params.has('code') && params.has('state')) {
-    const user = await userManager.signinRedirectCallback();
-    params.delete('code');
-    params.delete('state');
-    params.delete('session_state');
-    params.delete('iss');
-    const q = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${q ? `?${q}` : ''}`);
-    return user;
+    try {
+      return await userManager.signinRedirectCallback();
+    } finally {
+      // Başarısız dönüşte de (süresi geçmiş / kullanılmış kod, state uyuşmazlığı) kod adreste kalmaz: yenilemede
+      // aynı kod yeniden denenmez, geçmişte ve paylaşılan adreste görünmez.
+      params.delete('code');
+      params.delete('state');
+      params.delete('session_state');
+      params.delete('iss');
+      const q = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${q ? `?${q}` : ''}`);
+    }
   }
   const user = await userManager.getUser();
   if (user && !user.expired) return user;

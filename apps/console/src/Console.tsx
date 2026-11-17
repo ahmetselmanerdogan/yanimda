@@ -12,6 +12,7 @@ import {
   type CallView,
   type CloseOutcome,
   type DispatchScript,
+  errorText,
   type EventWithChain,
   type OperatorStatus,
   type PersonCard,
@@ -22,7 +23,7 @@ import {
 import type { Backend } from './lib/backend';
 import { promptPending, welfareReasonCode } from './lib/devices';
 import { t } from './lib/i18n';
-import { commandFor, isEditing,type Mode } from './lib/keys';
+import { commandFor, isEditing, type Mode } from './lib/keys';
 import { isDeviceStep } from './lib/ladder';
 import { canTakeOver, keepSelection, newOffer, offerFor, queueReducer } from './lib/queue';
 import { type PhoneSnapshot, startSoftphone } from './lib/softphone';
@@ -171,7 +172,7 @@ export function Console({
         const d = await api.event(id);
         if (id === selectedRef.current) setDetail(d); // geç gelen eski yanıtı yok say
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 404)) setError(t('O-UI-ERROR', { detail: (e as Error).message }));
+        if (!(e instanceof ApiError && e.status === 404)) setError(t('O-UI-ERROR', { detail: errorText(e) }));
       }
     },
     [api],
@@ -268,7 +269,7 @@ export function Console({
     void api
       .setMyStatus(s)
       .then((r) => setMyStatus(r.status))
-      .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message })));
+      .catch((e: unknown) => setError(t('O-UI-ERROR', { detail: errorText(e) })));
 
   const activeCall: CallView | null =
     (mine && detail?.event.id === selected
@@ -288,7 +289,7 @@ export function Console({
         if (e instanceof ApiError && e.status === 409) {
           setError(t('O-UI-CONFLICT'));
           if (selectedRef.current) void load(selectedRef.current);
-        } else setError(t('O-UI-ERROR', { detail: (e as Error).message }));
+        } else setError(t('O-UI-ERROR', { detail: errorText(e) }));
         return false;
       } finally {
         setBusy(false);
@@ -523,7 +524,12 @@ export function Console({
         {item && (ev?.state ?? item.state) === 'DISPATCH' && (
           // Uçtan uca bulgu (2026-11-13): anahtar DevicePanel'inkiyle aynıydı (olay kimliği); DISPATCH'te iki kardeş
           // aynı anahtarla çizilince React cihaz panelini her saniye çoğaltıyor, konsol kilitleniyordu.
-          <DispatchPanel key={`dispatch-${item.eventId}`} api={api} eventId={item.eventId} />
+          <DispatchPanel
+            key={`dispatch-${item.eventId}`}
+            api={api}
+            eventId={item.eventId}
+            personName={item.person?.displayName}
+          />
         )}
         {ev?.type === 'CALLBACK' && ev.sourceSignalIds?.some((s) => s.startsWith('wellness:')) && (
           <section className="script wellness-script" aria-labelledby="wellness-script-title">

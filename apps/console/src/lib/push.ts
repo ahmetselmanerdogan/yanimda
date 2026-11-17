@@ -20,11 +20,16 @@ export async function pushState(api: Api): Promise<PushState> {
   if (!cfg.enabled || !cfg.publicKey) return 'disabled';
   if (Notification.permission === 'denied') return 'denied';
   const reg = await navigator.serviceWorker.getRegistration();
+  // Kayıt henüz yoksa (main.tsx SW'yi `load`da kaydeder) 'off': düğme görünür; enablePush kaydı yeniden denetler.
   return (await reg?.pushManager.getSubscription()) ? 'on' : 'off';
 }
 
-/** Amir uyarıları için bu cihazı abone eder (izin ister). */
+/**
+ * Amir uyarıları için bu cihazı abone eder (izin ister). Service worker kayıtlı değilse (geliştirme sunucusu, SW
+ * engelli tarayıcı) `serviceWorker.ready` hiç çözülmez: önce kayıt aranır, yoksa 'unsupported'.
+ */
 export async function enablePush(api: Api): Promise<PushState> {
+  if (!('serviceWorker' in navigator) || !(await navigator.serviceWorker.getRegistration())) return 'unsupported';
   const cfg = await api.pushConfig();
   if (!cfg.enabled || !cfg.publicKey) return 'disabled';
   if ((await Notification.requestPermission()) !== 'granted') return 'denied';

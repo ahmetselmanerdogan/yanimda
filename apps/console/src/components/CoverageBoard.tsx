@@ -13,6 +13,7 @@ const STEP_CODES: Record<string, string> = {
   CALL_NEIGHBOR: 'O-STEP-NEIGHBOR',
   CALL_KEY_HOLDER: 'O-STEP-KEY-HOLDER',
   CALL_112: 'O-STEP-112',
+  NOTIFY_FAMILY: 'O-STEP-NOTIFY',
 };
 export function stepLabel(step: string): string {
   const [kind, n] = step.split(':');

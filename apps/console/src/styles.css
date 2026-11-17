@@ -44,9 +44,15 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
-[role='option']:focus-visible {
+[role='option']:focus-visible,
+[role='listbox']:focus-visible {
   outline: 2px solid #8ab4ff;
   outline-offset: 1px;
+}
+/* Liste odaktayken etkin seçenek (aria-activedescendant) de çerçevelenir. */
+[role='listbox']:focus-visible [role='option'][aria-selected='true'] {
+  outline: 2px solid #8ab4ff;
+  outline-offset: -2px;
 }
 button.primary {
   background: var(--brand);
