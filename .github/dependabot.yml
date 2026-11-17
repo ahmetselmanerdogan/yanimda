@@ -20,3 +20,20 @@ updates:
     directory: /apps/api
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+  - package-ecosystem: docker
+    directory: /infra/backup
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }
+  - package-ecosystem: docker
+    directory: /infra/console
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }
+  # Compose imaj etiketleri (docker-compose.yml, docker-compose.prod.yml; izleme yığını)
+  - package-ecosystem: docker-compose
+    directory: /infra
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }
+  - package-ecosystem: docker-compose
+    directory: /infra/monitoring
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }

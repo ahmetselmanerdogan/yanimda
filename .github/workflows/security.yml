@@ -1,6 +1,7 @@
 name: security
-# T-081 DAST: OWASP ZAP API taraması (OpenAPI'den) üretim imajına + gerçek TimescaleDB/Redis'e; konsol için ZAP
-# baseline. PR'larda ve haftalık. Uyarılar (WARN) raporlanır ama işi düşürmez (-I); FAIL düşürür.
+# T-081 DAST: OWASP ZAP API taraması (OpenAPI'den) üretim imajına + gerçek TimescaleDB/Redis/Keycloak'a — kimliksiz
+# ve operatör token'ıyla (PKCE + OTP, infra/keycloak/operator-token.mjs; parola/OTP sırrı iş başına rastgele) iki tur;
+# konsol için ZAP baseline. PR'larda ve haftalık. Uyarılar (WARN) raporlanır ama işi düşürmez (-I); FAIL düşürür.
 # SAST (Semgrep), sır taraması (gitleaks) ve imaj taraması (Trivy) ci.yml'de, imza (cosign) release-image.yml'de.
 on:
   pull_request:
@@ -18,7 +19,7 @@ jobs:
   zap:
     name: ZAP (API taraması + konsol baseline)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     services:
       postgres:
         image: timescale/timescaledb:2.17.2-pg16
@@ -32,18 +33,42 @@ jobs:
     env:
       ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:2.15.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with: { version: 9.12.0 }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 26, cache: pnpm }
       - name: API imajı (üretim)
         run: docker build -f apps/api/Dockerfile -t yanimda-api:zap .
       - run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
-      - name: API'yi aç (NODE_ENV=production, sırlar koşuya özel)
+      - name: Keycloak (operations + consumers realm içe aktarımı)
+        run: |
+          docker run -d --name kc -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/infra/keycloak:/opt/keycloak/data/import:ro" \
+            -v "$PWD/infra/keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro" \
+            -v "$PWD/infra/keycloak/password-blacklists:/opt/keycloak/data/password-blacklists:ro" \
+            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+          for _ in $(seq 1 90); do
+            curl -sf http://localhost:8080/realms/operations/.well-known/openid-configuration >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs kc; exit 1
+      - name: Test operatörü (parola ve OTP sırrı iş başına rastgele; depoda yok)
+        run: |
+          P=$(openssl rand -hex 12); S=$(openssl rand -hex 10)
+          echo "::add-mask::$P"; echo "::add-mask::$S"
+          echo "KEYCLOAK_DEV_PASSWORD=$P" >> "$GITHUB_ENV"; echo "KEYCLOAK_DEV_OTP_SECRET=$S" >> "$GITHUB_ENV"
+          KEYCLOAK_DEV_PASSWORD=$P KEYCLOAK_DEV_OTP_SECRET=$S node infra/keycloak/dev-users.mjs > /dev/null
+        env: { KEYCLOAK_URL: http://localhost:8080 }
+      - name: API'yi aç (NODE_ENV=production, OIDC Keycloak'a, sırlar koşuya özel)
         run: |
           echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/device-secret)"
           echo "::add-mask::$(openssl rand -base64 32 | tee /tmp/field-key)"
           echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/signup-secret)"
           docker run -d --name api --network host \
             -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda -e REDIS_URL=redis://localhost:6379 \
-            -e PORT=3000 -e FIELD_ENC_KEYS="zap:$(cat /tmp/field-key)" -e SIGNUP_TOKEN_SECRET="$(cat /tmp/signup-secret)" -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" \
+            -e PORT=3000 -e KEYCLOAK_URL=http://localhost:8080 -e FIELD_ENC_KEYS="zap:$(cat /tmp/field-key)" -e SIGNUP_TOKEN_SECRET="$(cat /tmp/signup-secret)" -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" \
             yanimda-api:zap
           for _ in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/v1/signals -H 'content-type: application/json' -d '[]') || true
@@ -51,16 +76,35 @@ jobs:
             sleep 1
           done
           docker logs api; exit 1
-      - name: ZAP API taraması (OpenAPI)
+      - name: ZAP API taraması (OpenAPI, kimliksiz)
         run: |
           mkdir -p zap && chmod a+rwx zap && cp packages/contracts/openapi.yaml zap/
           docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
             zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -I \
             -r api-report.html -J api-report.json -w api-report.md
-      - uses: pnpm/action-setup@v6
-        with: { version: 9.12.0 }
-      - uses: actions/setup-node@v7
-        with: { node-version: 26, cache: pnpm }
+      - name: ZAP API taraması (OpenAPI, operatör token'ı)
+        # Gerçek konsol akışı (PKCE + parola + TOTP, amr=otp); geçici Keycloak'ta console istemcisinin token ömrü
+        # tarama süresince 1 sa. Authorization başlığı ZAP replacer kuralıyla her isteğe eklenir (ZAP_AUTH_HEADER_*
+        # paketli taramada replacer.full_list kuralını kurar); yalnız API kökenine.
+        run: |
+          T=$(TOKEN_LIFESPAN_SEC=3600 node infra/keycloak/operator-token.mjs operator1)
+          echo "::add-mask::$T"
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/v1/queue -H "authorization: Bearer $T")
+          [ "$code" = 200 ] || { echo "::error::operatör token'ı API'de geçmedi ($code)"; docker logs api | tail -50; exit 1; }
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" \
+            -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $T" -e ZAP_AUTH_HEADER_SITE=localhost:3000 \
+            "$ZAP_IMAGE" zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -I \
+            -r api-auth-report.html -J api-auth-report.json -w api-auth-report.md
+        env: { KEYCLOAK_URL: http://localhost:8080 }
+      - name: ZAP özeti (WARN/FAIL; susturulmaz)
+        if: always()
+        run: |
+          for r in api api-auth; do
+            [ -f "zap/$r-report.json" ] || continue
+            echo "### ZAP $r" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.site[].alerts[] | "- [\(.riskdesc)] \(.pluginid) \(.name) (\(.count))"' "zap/$r-report.json" \
+              | sort -u >> "$GITHUB_STEP_SUMMARY"
+          done
       - run: pnpm install --frozen-lockfile
       - name: Konsol (üretim derlemesi, vite preview)
         run: |
@@ -80,5 +124,5 @@ jobs:
           docker logs api > zap/api.log 2>&1 || true
           pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../zap/api.log
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: zap-reports, path: zap/, if-no-files-found: ignore }
