@@ -1072,14 +1072,20 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
 
   private async upgradeType(u: Uow, type: EventType, sourceId: string) {
     const from = { type: u.ev.type, isTest: u.ev.isTest };
+    // M-20 (sahip kararı): alarm olmayan olay (TEST, geri arama …) gerçek alarma döndüyse SLA saatleri (üstlenme,
+    // 112 son sınırı, karar süresi metriği) alarm anından başlar; eski zaman denetimde kalır. Henüz kuyruğa
+    // girmemiş olayda escalate() zaten şimdiyi yazar. Alarm → alarm (hareketsizlik → düşme) saati değiştirmez.
+    const restart = !ALARM_TYPES.has(from.type) && u.ev.state !== 'CREATED' && u.ev.state !== 'DEVICE_PROMPT';
+    const previousEscalatedAt = u.ev.escalatedAt ?? null;
     await this.repo.insertAudit(u.tx, {
       actorKind: 'SYSTEM',
       action: 'event.type_upgraded',
       entityId: u.ev.id,
-      data: { from: from.type, to: type, wasTest: from.isTest, sourceId },
+      data: { from: from.type, to: type, wasTest: from.isTest, sourceId, ...(restart ? { previousEscalatedAt } : {}) },
     });
     u.ev.type = type;
     u.ev.isTest = false;
+    if (restart) u.ev.escalatedAt = new Date().toISOString();
     u.publishes.push({
       topic: TOPICS.eventUpdated,
       payload: { eventId: u.ev.id, type, previousType: from.type, priority: u.ev.priority, reason: 'UPGRADED' },
