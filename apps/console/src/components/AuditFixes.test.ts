@@ -7,11 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dt, mins, sec } from '../Admin';
 import { type Api, ApiError, type DispatchView, errorText, type QueueItem } from '../lib/api';
-import { t } from '../lib/i18n';
+import { action, t } from '../lib/i18n';
 import { enablePush } from '../lib/push';
 import { DRILL_CHAINS } from '../lib/training';
 import { stepLabel } from './CoverageBoard';
-import { DispatchPanel } from './Dispatch';
+import { DispatchPanel, etaInput } from './Dispatch';
 import { PersonPanel } from './Panels';
 import { optionId, QueueList } from './Queue';
 
@@ -177,5 +177,27 @@ describe('112 takip metni ve tıbbi özet yükleniyor', () => {
     expect(render(undefined)).toContain(t('O-UI-MEDICAL-LOADING'));
     expect(render(undefined)).not.toContain(t('O-UI-MEDICAL-NONE'));
     expect(render(null)).toContain(t('O-UI-MEDICAL-NONE'));
+  });
+  it('kişi kartı yüklenemezse "yükleniyor"da kalmaz: hata ve yeniden dene', () => {
+    const html = text(
+      renderToStaticMarkup(
+        createElement(PersonPanel, {
+          item: null,
+          card: undefined,
+          mine: true,
+          cardFailed: true,
+          onRetryCard: () => {},
+        }),
+      ),
+    );
+    expect(html).toContain(t('O-UI-MEDICAL-FAILED'));
+    expect(html).toContain(action('O-UI-MEDICAL-FAILED'));
+    expect(html).not.toContain(t('O-UI-MEDICAL-LOADING'));
+  });
+  it('112 varış süresi girişi sözleşme sınırında (0–600 dk)', () => {
+    expect(etaInput('45 dk')).toBe('45');
+    expect(etaInput('999')).toBe('600');
+    expect(etaInput('6001')).toBe('600');
+    expect(etaInput('')).toBe('');
   });
 });

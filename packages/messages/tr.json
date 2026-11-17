@@ -1423,6 +1423,11 @@
     "channel": "console",
     "text": "Tıbbi özet yükleniyor…"
   },
+  "O-UI-MEDICAL-FAILED": {
+    "channel": "console",
+    "text": "Tıbbi özet yüklenemedi.",
+    "action": "Yeniden dene"
+  },
   "O-UI-ADDRESS": {
     "channel": "console",
     "text": "Adres"

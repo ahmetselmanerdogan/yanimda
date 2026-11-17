@@ -103,14 +103,17 @@ export function Console({
 
   // T-040 kişi kartı (tıbbi özet): yalnız olay bendeyken, olay başına bir kez.
   const [card, setCard] = useState<{ id: string; card: PersonCard | null } | null>(null);
+  const [cardFailed, setCardFailed] = useState<string | null>(null);
+  const [cardTry, setCardTry] = useState(0);
   const needCard = mine ? selected : null;
   useEffect(() => {
     if (!needCard || card?.id === needCard) return;
+    setCardFailed(null);
     api
       .personCard(needCard)
       .then((c) => selectedRef.current === needCard && setCard({ id: needCard, card: c }))
-      .catch(() => undefined);
-  }, [needCard, card?.id, api]);
+      .catch(() => selectedRef.current === needCard && setCardFailed(needCard));
+  }, [needCard, card?.id, api, cardTry]);
 
   // ---- canlı kuyruk ----
   useEffect(
@@ -552,6 +555,8 @@ export function Console({
       <PersonPanel
         item={item}
         card={card && card.id === selected ? card.card : undefined}
+        cardFailed={cardFailed !== null && cardFailed === selected}
+        onRetryCard={() => setCardTry((n) => n + 1)}
         mine={mine}
         onOpenEvent={setSelected}
       />
