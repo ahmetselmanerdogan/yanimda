@@ -231,7 +231,8 @@ describe('S5.2 / S5.4 süre tablosu (kural paketi)', () => {
       operatorPrompt: { windowSec: 60, tts: 'W-OP-PROMPT' }, // T-089 operatörün "Soru gönder" komutu
     });
     expect(fusionOf(pack)).toMatchObject({ corroborateSec: 90, corroboratedPromptSec: 30, crossCancelFollowUp: true });
-    expect(ruleFor(pack, 'SOS')!.silenceIsEmergencySec).toBe(20);
+    // S5.1 "bağlandı, ses yok" operatörün girdiği sonuçtur (SILENT); pakette süre alanı yok (ölü ayar taşınmaz).
+    expect(ruleFor(pack, 'SOS')).not.toHaveProperty('silenceIsEmergencySec');
     expect(ruleFor(pack, 'FALL')!.devicePrompt).toMatchObject({ windowSec: 60 });
     // S5.4 hareketsizlik: sessiz soru 120 sn → sesli ön eleme 120 sn
     const inact = ruleFor(pack, 'INACTIVITY')!;
