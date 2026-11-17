@@ -145,6 +145,19 @@ spec:
               value: {{ $familyWebUrl | quote }}
             - name: YANIMDA_FAMILY_APP_EXTRA_REDIRECT
               value: {{ $kc.realm.familyAppExtraRedirect | quote }}
+            # consumers realm hizmet hesabı istemci sırları (realm-consumers.json ${YANIMDA_*_CLIENT_SECRET}): API ve
+            # sentetik sonda ile aynı Secret anahtarları. Her zaman verilir, eksikse pod açılmaz: geliştirme varsayılanı
+            # üretim realm'inde sır olarak kalmasın (sonda kapalıysa anahtar keycloak.existingSecret'tan okunur).
+            - name: YANIMDA_SIGNUP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.existingSecret }}
+                  key: KEYCLOAK_SIGNUP_CLIENT_SECRET
+            - name: YANIMDA_SYNTHETIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ternary .Values.synthetic.existingSecret .Values.keycloak.existingSecret .Values.synthetic.enabled }}
+                  key: SYNTHETIC_CLIENT_SECRET
             {{- if $kc.smtp.host }}
             - name: YANIMDA_KC_SMTP_HOST
               value: {{ $kc.smtp.host | quote }}

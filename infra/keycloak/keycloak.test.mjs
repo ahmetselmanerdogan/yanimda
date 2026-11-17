@@ -125,3 +125,67 @@ test('sync-realms: yer tutucular çözülür, var olan istemci/rol atlanır, tü
   assert.ok(body.clients.some((c) => c.clientId === 'family-web'));
   assert.doesNotMatch(JSON.stringify(body), /\$\{YANIMDA_/);
 });
+
+test('consumers hizmet hesapları: gizli istemci, sır ortamdan (prod compose/Helm zorunlu), yalnız service account', () => {
+  const r = realms.consumers;
+  const secrets = {
+    'yanimda-signup': 'YANIMDA_SIGNUP_CLIENT_SECRET',
+    'yanimda-synthetic': 'YANIMDA_SYNTHETIC_CLIENT_SECRET',
+  };
+  for (const [clientId, env] of Object.entries(secrets)) {
+    const c = r.clients.find((x) => x.clientId === clientId);
+    assert.ok(c, clientId);
+    assert.equal(c.publicClient, false, clientId);
+    assert.equal(c.clientAuthenticatorType, 'client-secret', clientId);
+    assert.match(c.secret, new RegExp(`^\\$\\{${env}:dev-only-[a-z-]+\\}$`), clientId);
+    assert.equal(c.serviceAccountsEnabled, true, clientId);
+    assert.equal(c.standardFlowEnabled, false, clientId);
+    assert.equal(c.directAccessGrantsEnabled, false, clientId);
+    assert.ok(!c.implicitFlowEnabled, clientId);
+  }
+  // Üretimde geliştirme varsayılanı kalmaz: prod compose `:?` ile zorunlu, Helm her zaman secretKeyRef.
+  const compose = readFileSync(join(here, '../docker-compose.prod.yml'), 'utf8');
+  const helm = readFileSync(join(here, '../helm/yanimda/templates/keycloak.yaml'), 'utf8');
+  for (const env of Object.values(secrets)) {
+    assert.match(compose, new RegExp(`^\\s+${env}: \\$\\{[A-Z_]+:\\?`, 'm'), `compose ${env}`);
+    assert.match(helm, new RegExp(`- name: ${env}\\n\\s+valueFrom:\\n\\s+secretKeyRef:`), `helm ${env}`);
+    assert.doesNotMatch(helm, new RegExp(`\\{\\{-? if[^}]*\\}\\}\\s*- name: ${env}`), `helm ${env} koşulsuz`);
+  }
+});
+
+test('yanimda-synthetic: yalnız FAMILY rolü, aud=yanimda-api, sub (basic kapsamı) — API OIDC doğrulayıcısının beklediği', () => {
+  const r = realms.consumers;
+  const c = r.clients.find((x) => x.clientId === 'yanimda-synthetic');
+  const aud = c.protocolMappers.find((m) => m.protocolMapper === 'oidc-audience-mapper');
+  assert.equal(aud.config['included.custom.audience'], 'yanimda-api');
+  assert.equal(aud.config['access.token.claim'], 'true');
+  for (const s of ['basic', 'roles']) assert.ok(c.defaultClientScopes.includes(s), s);
+  assert.equal(c.fullScopeAllowed, false);
+  assert.deepEqual(r.scopeMappings.find((m) => m.client === 'yanimda-synthetic').roles, ['FAMILY']);
+  const sa = r.users.find((u) => u.serviceAccountClientId === 'yanimda-synthetic');
+  assert.equal(sa.username, 'service-account-yanimda-synthetic');
+  assert.deepEqual(sa.realmRoles, ['FAMILY']);
+  const signup = r.users.find((u) => u.serviceAccountClientId === 'yanimda-signup');
+  assert.deepEqual(signup.clientRoles['realm-management'].sort(), ['manage-users', 'view-users']);
+});
+
+test('istemci açıklamaları ≤ 255 karakter (Keycloak sütun sınırı; aşılırsa realm içe aktarma çöker)', () => {
+  for (const r of Object.values(realms))
+    for (const c of r.clients) assert.ok([...(c.description ?? '')].length <= 255, c.clientId);
+});
+
+test('operator-token: form adresi çözülür, TOTP RFC 6238 (SHA1) ile uyumlu, PKCE S256', async () => {
+  const { formAction, pkce, totp } = await import('./operator-token.mjs');
+  assert.equal(
+    formAction(
+      '<form id="kc-form-login" action="http://kc/realms/operations/login-actions/authenticate?session_code=a&amp;execution=b" method="post">',
+    ),
+    'http://kc/realms/operations/login-actions/authenticate?session_code=a&execution=b',
+  );
+  assert.equal(formAction('<p>form yok</p>'), undefined);
+  // RFC 6238 Ek B, SHA1 sırrı "12345678901234567890", T=59 sn → 94287082 (son 6 hane)
+  assert.equal(totp('12345678901234567890', 59_000), '287082');
+  const { verifier, challenge } = pkce();
+  assert.match(verifier, /^[A-Za-z0-9_-]{43}$/);
+  assert.match(challenge, /^[A-Za-z0-9_-]{43}$/);
+});
