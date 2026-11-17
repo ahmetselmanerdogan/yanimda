@@ -26,6 +26,12 @@ export function nextStages(cur: DispatchStage): DispatchStage[] {
  * 112 süreci paneli: aşama zaman çizelgesi, sıradaki aşama düğmeleri, vaka no / tahmini varış / hastane / not ve
  * bilgi kaynağı. Olay kapalıyken de (amir panosu) güncellenir; 15 sn'de bir yenilenir.
  */
+/** 112 varış süresi girişi: yalnız rakam, sözleşme sınırı 0–600 dk (openapi updateDispatch.etaMin). */
+export function etaInput(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 4);
+  return d === '' ? '' : String(Math.min(600, Number(d)));
+}
+
 export function DispatchPanel({
   api,
   eventId,
@@ -149,7 +155,7 @@ export function DispatchPanel({
               <input
                 inputMode="numeric"
                 value={form.etaMin}
-                onChange={(e) => setForm({ ...form, etaMin: e.target.value.replace(/\D/g, '').slice(0, 3) })}
+                onChange={(e) => setForm({ ...form, etaMin: etaInput(e.target.value) })}
               />
             </label>
             <label>

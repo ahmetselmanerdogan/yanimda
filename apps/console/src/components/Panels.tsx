@@ -100,11 +100,16 @@ export function PersonPanel({
   item,
   card,
   mine,
+  cardFailed,
+  onRetryCard,
   onOpenEvent,
 }: {
   item: QueueItem | null;
   card?: PersonCard | null;
   mine: boolean;
+  /** Kişi kartı alınamadı (ağ / sunucu): "yükleniyor"da kalmaz, yeniden denenebilir. */
+  cardFailed?: boolean;
+  onRetryCard?(): void;
   /** Aynı adresteki kişinin açık olayını seç. */
   onOpenEvent?(eventId: string): void;
 }) {
@@ -172,6 +177,13 @@ export function PersonPanel({
       <h3>{t('O-UI-MEDICAL')}</h3>
       {!mine ? (
         <p className="muted">{t('O-UI-MEDICAL-LOCKED')}</p>
+      ) : card === undefined && cardFailed ? (
+        <p className="error" role="alert">
+          {t('O-UI-MEDICAL-FAILED')}{' '}
+          <button type="button" onClick={() => onRetryCard?.()}>
+            {action('O-UI-MEDICAL-FAILED')}
+          </button>
+        </p>
       ) : card === undefined ? (
         <p className="muted" role="status">
           {t('O-UI-MEDICAL-LOADING')}
