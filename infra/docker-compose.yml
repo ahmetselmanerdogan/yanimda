@@ -25,7 +25,7 @@ services:
       ]
     ports: ['19092:19092']
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     ports: ['6379:6379']
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
