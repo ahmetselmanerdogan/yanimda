@@ -1,6 +1,6 @@
 # 03-teknik-mimari.md "Kural paketi" — Türkiye varsayılanları (v1.0)
 country: TR
-version: 9
+version: 10
 # D-06 öğrenme modu (T-070): kişi oluşturulunca 30 gün; günlük iş son 14 güne bakar, en az 7 gün veri ister.
 learning: { days: 30, historyDays: 14, minDays: 7, inactivityPercentile: 95 }
 # D-07 yanlış alarm (T-071): 30 günde 3. yanlış alarmda aileye eşik önerisi + konsolda eşik görüşmesi (CALLBACK P4).
@@ -13,8 +13,8 @@ numbers: { emergency: '112', social: '183', health: '182' }
 call112DeadlineSec: { SOS: 180, FALL: 300, INACTIVITY: 1200 }
 # docs/07 S5.1–S5.5 (T-087) ulaşılamama merdiveni.
 #  Çevrimdışı atlama (S5.1) kapsamanın çevrimiçi kuralını kullanır (coverage.onlineMin: A 15 dk, B 30 dk; köprü).
-#  autoAnswerSec: P1'de sesli cihaz bu sürede kendiliğinden cevaplar (yanınızdayız aramasında asla); 20 sn sessiz
-#  kalan otomatik cevaplı arama "cevap yok" değil olası acil durumdur (kuralın silenceIsEmergencySec'i)
+#  autoAnswerSec: P1'de sesli cihaz bu sürede kendiliğinden cevaplar (yanınızdayız aramasında asla); sessiz kalan
+#  otomatik cevaplı aramayı operatör "Bağlandı, ses yok" (SILENT) diye girer: "cevap yok" değil olası acil durum
 #  unclaimedSupervisorSec: kuyrukta üstlenilmeyen P1 → amir çağrılır (O-P1-UNCLAIMED)
 #  unclaimedVoiceContact: üstlenilmeyen P1'de 1. yakına sesli mesaj (S5.3; sahip kararı, varsayılan kapalı)
 #  awayFromHomeM: kişi evden bu kadar uzaktaysa komşu ve anahtar sahibi adımları atlanır (S5.5)
@@ -36,7 +36,7 @@ fusion:
   gpsFreshSec: 120
 # T-085/T-086 (docs/07 S3.2, S4, S8.4): kapsama, pil ve şarj eşikleri. Kodda sabit pil eşiği kalmaz.
 # coverage.onlineMin: A sınıfı cihaz bu kadar dk görülmezse çevrimdışı, B sınıfı daha uzun (S3.2).
-coverage: { onlineMin: { A: 15, B: 30 }, locationStaleMin: 30 }
+coverage: { onlineMin: { A: 15, B: 30 } }
 # battery: warnPct (W-BAT-20) ve criticalPct (W-BAT-10 + F-BAT-10) sinyal anında; planPct/familyPct 18:00
 # planlı şarj kontrolünde (S4.6); deadPct ve altı "pil bitti" (yetenek sayılmaz).
 battery: { warnPct: 20, planPct: 30, familyPct: 15, criticalPct: 10, deadPct: 5, planHour: '18:00' }
@@ -139,12 +139,11 @@ rules:
       [CALL_WATCH, CALL_VOICE_2:2, CALL_PHONE, CALL_REDIAL, CALL_CONTACT:1, CALL_CONTACT:2, CALL_KEY_HOLDER, CALL_112]
     stepTimeoutSec:
       { CALL_WATCH: 20, CALL_VOICE_2: 20, CALL_PHONE: 20, CALL_REDIAL: 15, CALL_CONTACT: 25, CALL_KEY_HOLDER: 25 }
-    silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: FALL
     priority: 1
-    devicePrompt: { enabled: true, windowSec: 60, repeatVibrateSec: 5, tts: W-FALL-1 }
-    escalateWhen: { noAnswer: true }
+    # Cevapsız cihaz sorusu her zaman yükselir (olay durum makinesi; ayar değil).
+    devicePrompt: { enabled: true, windowSec: 60, tts: W-FALL-1 }
     # S5.2 (SOS ile aynı) + komşu; doğrulanmış düşmede (T-088) doğrulayan cihaz önce aranır.
     chain:
       [
@@ -168,12 +167,12 @@ rules:
         CALL_KEY_HOLDER: 25,
         CALL_NEIGHBOR: 25,
       }
-    silenceIsEmergencySec: 20
     followUpAfterHours: 24
   - type: INACTIVITY
     priority: 2
     thresholdMin: { default: 30, learnable: true, min: 15, max: 90 }
-    activeHours: { useSleepWindow: true }
+    # Uyku penceresi cihaza yapılandırmayla gider (GET /devices/{id}/config → sleepWindow); sunucuda gece bastırma
+    # istenirse suppressIn: [NIGHT].
     devicePrompt: { enabled: true, windowSec: 120, silent: true, tts: W-INACT-1 }
     # D-12 (T-072): soru cevapsızsa operatörden önce kişiye sesli arama; "evet/iyiyim/1" → OK, diğer → kuyruk.
     autoVoiceScreening: &screening

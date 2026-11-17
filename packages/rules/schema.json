@@ -100,8 +100,7 @@
             "B": { "type": "integer", "minimum": 1, "maximum": 240 }
           },
           "additionalProperties": false
-        },
-        "locationStaleMin": { "type": "integer", "minimum": 1 }
+        }
       },
       "additionalProperties": false
     },
@@ -334,12 +333,11 @@
             "properties": {
               "enabled": { "type": "boolean" },
               "windowSec": { "type": "integer" },
-              "repeatVibrateSec": { "type": "integer" },
               "silent": { "type": "boolean" },
               "tts": { "type": "string" }
-            }
+            },
+            "additionalProperties": false
           },
-          "escalateWhen": { "type": "object" },
           "thresholdMin": {
             "type": "object",
             "properties": {
@@ -349,7 +347,6 @@
               "max": { "type": "integer" }
             }
           },
-          "activeHours": { "type": "object" },
           "autoVoiceScreening": {
             "description": "D-12 otomatik sesli ön eleme (T-072): soru/bekleme cevapsızsa operatörden önce kişiye TTS araması; INACTIVITY / WATCH_OFF gibi sorulu/bekleyen türler, COVERAGE_GAP ve P3 değer olayları (T-092, V-VITAL-ASK); asla SOS/FALL",
             "type": "object",
@@ -398,11 +395,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(CALL_WATCH|CALL_VOICE_2:2|CALL_PHONE|CALL_REDIAL|CALL_CONTACT:[1-5]|CALL_KEY_HOLDER|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY|DISPATCH_PRIVATE)$"
+              "pattern": "^(CALL_WATCH|CALL_VOICE_2:2|CALL_PHONE|CALL_REDIAL|CALL_CONTACT:[1-5]|CALL_KEY_HOLDER|CALL_NEIGHBOR|CALL_112|NOTIFY_FAMILY)$",
+              "description": "Adım türü procedures.<ülke>.yaml steps altında tanımlı olmalı (validate.mjs denetler)"
             }
           },
           "stepTimeoutSec": { "type": "object", "additionalProperties": { "type": "integer" } },
-          "silenceIsEmergencySec": { "type": "integer" },
           "followUpAfterHours": { "type": "integer" },
           "operatorScript": {
             "type": "string",
@@ -415,5 +412,6 @@
         "then": { "not": { "required": ["autoVoiceScreening"] } }
       }
     }
-  }
+  },
+  "additionalProperties": false
 }

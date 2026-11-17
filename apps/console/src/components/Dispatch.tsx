@@ -8,6 +8,7 @@ import {
   type DispatchStage,
   type DispatchUpdate,
   type DispatchView,
+  errorText,
 } from '../lib/api';
 import { t } from '../lib/i18n';
 
@@ -25,7 +26,18 @@ export function nextStages(cur: DispatchStage): DispatchStage[] {
  * 112 süreci paneli: aşama zaman çizelgesi, sıradaki aşama düğmeleri, vaka no / tahmini varış / hastane / not ve
  * bilgi kaynağı. Olay kapalıyken de (amir panosu) güncellenir; 15 sn'de bir yenilenir.
  */
-export function DispatchPanel({ api, eventId, initial }: { api: Api; eventId: string; initial?: DispatchView }) {
+export function DispatchPanel({
+  api,
+  eventId,
+  initial,
+  personName,
+}: {
+  api: Api;
+  eventId: string;
+  initial?: DispatchView;
+  /** 112 takip metnindeki kişi adı (konsolda kuyruk kaydından); amir / yönetim panosunda yok → "Kişi". */
+  personName?: string | null;
+}) {
   const [v, setV] = useState<DispatchView | null>(initial ?? null);
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,7 +78,7 @@ export function DispatchPanel({ api, eventId, initial }: { api: Api; eventId: st
       setV(await api.updateDispatch(eventId, b));
       setForm((f) => ({ ...f, note: '' }));
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -96,7 +108,7 @@ export function DispatchPanel({ api, eventId, initial }: { api: Api; eventId: st
           <p>
             {t('O-SCRIPT-112-FOLLOWUP', {
               case: v.caseRef ?? '–',
-              name: t('O-UI-PERSON'),
+              name: personName || t('O-UI-PERSON'),
               min: Math.round((Date.now() - Date.parse(v.notifiedAt)) / 60_000),
             })}
           </p>

@@ -7,10 +7,9 @@ import YAML from 'yaml';
 export interface Rule {
   type: EventType;
   priority: 1 | 2 | 3 | 4;
-  devicePrompt?: { enabled: boolean; windowSec?: number; repeatVibrateSec?: number; silent?: boolean; tts?: string };
+  devicePrompt?: { enabled: boolean; windowSec?: number; silent?: boolean; tts?: string };
   chain: string[];
   stepTimeoutSec?: Record<string, number>;
-  silenceIsEmergencySec?: number;
   followUpAfterHours?: number;
   thresholdMin?: { default: number; learnable?: boolean; min?: number; max?: number };
   suppressIn?: string[];
@@ -78,7 +77,6 @@ export interface FusionParams {
 /** T-085 (S3.2): cihaz bu kadar dk görülmezse çevrimdışı (sınıfa göre). */
 export interface CoverageParams {
   onlineMin: { A: number; B: number };
-  locationStaleMin?: number;
 }
 /** T-086 (S4.2, S4.6): pil eşikleri (%) ve planlı şarj kontrol saati (kişinin saat diliminde, HH:MM). */
 export interface BatteryParams {
@@ -247,7 +245,7 @@ export const fusionOf = (pack: RulePack): FusionParams => ({ ...DEFAULT_FUSION, 
 /** T-087: olayın 112 son sınırı (sn); türün sınırı yoksa null. */
 export const call112DeadlineSecOf = (pack: RulePack, type: EventType): number | null =>
   pack.call112DeadlineSec?.[type] ?? null;
-export const DEFAULT_COVERAGE: CoverageParams = { onlineMin: { A: 15, B: 30 }, locationStaleMin: 30 };
+export const DEFAULT_COVERAGE: CoverageParams = { onlineMin: { A: 15, B: 30 } };
 export const DEFAULT_BATTERY: BatteryParams = {
   warnPct: 20,
   planPct: 30,

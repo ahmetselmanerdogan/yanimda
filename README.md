@@ -16,6 +16,8 @@ pnpm --filter @yanimda/api stack:local # Redis + PGlite sunucusu + API (Docker's
 scripts/load-smoke.sh -e DURATION=2m    # k6 duman testi (k6 gerekir)
 scripts/dev-up.sh --smoke               # Docker'sız: yerel yığın + simülatör fall → kuyrukta (T-008 kabulü)
 pnpm --filter @yanimda/simulator start -- fall --person pp_demo --no-cancel
+# diğer komutlar: sos, cancel, heartbeat, offbody, onbody, battery, inactivity, charge-start, charge-end, spo2,
+# skintemp, scenario, pendant (--dry: göndermeden yazdır; ayrıntı packages/simulator/src/index.mjs başında)
 ```
 
 ## Yapı
@@ -26,7 +28,7 @@ pnpm --filter @yanimda/simulator start -- fall --person pp_demo --no-cancel
 - `packages/contracts` OpenAPI + Kafka şemaları
 - `packages/rules` kural paketleri (YAML)
 - `packages/messages` mesaj kataloğu
-- `packages/simulator` sahte cihaz
+- `packages/simulator` sahte cihaz (signal.schema.json türleri; şarj ve değer sinyalleri dahil)
 - `infra` docker-compose, terraform, helm
 - `docs` proje dokümanları (00–06) ve TASKS.md
 

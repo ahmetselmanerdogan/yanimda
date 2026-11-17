@@ -55,6 +55,14 @@ export function Wizard() {
   const [devCode, setDevCode] = useState<string | undefined>();
   const [billing, setBilling] = useState({ city: '', address: '' });
   const checkoutRef = useRef<HTMLDivElement>(null);
+  // WCAG 2.4.3: adım değişince odak yeni adımın başlığına (ekran okuyucu yeni adımı okur, Tab baştan başlar).
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const shownStage = useRef(stage);
+  useEffect(() => {
+    if (shownStage.current === stage) return; // ilk açılış: odak sayfanın doğal sırasında kalır
+    shownStage.current = stage;
+    headingRef.current?.focus();
+  }, [stage]);
 
   // Ödeme sayfasından dönüş (iptal / hata): oturum varsa doğrudan ödeme adımı.
   useEffect(() => {
@@ -183,7 +191,9 @@ export function Wizard() {
 
       {stage === 'plan' && (
         <section aria-labelledby="plan-h">
-          <h2 id="plan-h">{t('F-WEB-STEP-1')}</h2>
+          <h2 id="plan-h" tabIndex={-1} ref={headingRef}>
+            {t('F-WEB-STEP-1')}
+          </h2>
           <label htmlFor="country">{t('F-WEB-COUNTRY')}</label>
           <select id="country" value={country} onChange={(e) => setCountry(e.target.value as Country)}>
             <option value="TR">{t('F-WEB-COUNTRY-TR')}</option>
@@ -219,7 +229,9 @@ export function Wizard() {
 
       {stage === 'account' && plan && (
         <form onSubmit={submitAccount} noValidate aria-labelledby="acc-h">
-          <h2 id="acc-h">{t('F-WEB-ACCOUNT')}</h2>
+          <h2 id="acc-h" tabIndex={-1} ref={headingRef}>
+            {t('F-WEB-ACCOUNT')}
+          </h2>
           <p className="muted">
             {t(plan.nameCode)} · {formatPrice(plan.amountMinor, plan.currency, country === 'US' ? 'en-US' : 'tr-TR')}{' '}
             {t(`F-WEB-PER-${plan.interval}`)}
@@ -272,7 +284,14 @@ export function Wizard() {
           />
           <p className="alert">{t('F-WEB-LEGAL-PENDING')}</p>
           <label className="check">
-            <input type="checkbox" checked={form.kvkkRead} onChange={(e) => set('kvkkRead', e.target.checked)} />
+            <input
+              id="kvkkRead"
+              type="checkbox"
+              checked={form.kvkkRead}
+              aria-invalid={!!errors.kvkkRead}
+              aria-describedby={errors.kvkkRead ? 'kvkkRead-err' : undefined}
+              onChange={(e) => set('kvkkRead', e.target.checked)}
+            />
             <span>
               <Link href="/kvkk#aydinlatma" target="_blank">
                 {t('F-WEB-KVKK-NOTICE')}
@@ -281,11 +300,18 @@ export function Wizard() {
               {t('F-WEB-KVKK-READ')}
             </span>
           </label>
-          {errors.kvkkRead && <p className="error">{t(errors.kvkkRead)}</p>}
+          {errors.kvkkRead && (
+            <p id="kvkkRead-err" className="error" role="alert">
+              {t(errors.kvkkRead)}
+            </p>
+          )}
           <label className="check">
             <input
+              id="explicitConsent"
               type="checkbox"
               checked={form.explicitConsent}
+              aria-invalid={!!errors.explicitConsent}
+              aria-describedby={errors.explicitConsent ? 'explicitConsent-err' : undefined}
               onChange={(e) => set('explicitConsent', e.target.checked)}
             />
             <span>
@@ -296,7 +322,11 @@ export function Wizard() {
               {t('F-WEB-CONSENT')}
             </span>
           </label>
-          {errors.explicitConsent && <p className="error">{t(errors.explicitConsent)}</p>}
+          {errors.explicitConsent && (
+            <p id="explicitConsent-err" className="error" role="alert">
+              {t(errors.explicitConsent)}
+            </p>
+          )}
           <div className="row">
             <button type="button" className="secondary" onClick={() => setStage('plan')}>
               {t('F-WEB-BACK')}
@@ -310,7 +340,9 @@ export function Wizard() {
 
       {stage === 'phone' && session && (
         <form onSubmit={verify} aria-labelledby="ph-h">
-          <h2 id="ph-h">{t('F-WEB-PHONE')}</h2>
+          <h2 id="ph-h" tabIndex={-1} ref={headingRef}>
+            {t('F-WEB-PHONE')}
+          </h2>
           <p className="alert ok">{t('F-WEB-EMAIL-SENT')}</p>
           <p>{t('F-WEB-PHONE-CODE-SENT', { phone: normalizePhone(form.phone, country) || '' })}</p>
           {devCode && <p className="muted">{t('F-WEB-DEV-CODE', { code: devCode })}</p>}
@@ -338,7 +370,9 @@ export function Wizard() {
 
       {stage === 'payment' && session && (
         <form onSubmit={pay} aria-labelledby="pay-h">
-          <h2 id="pay-h">{t('F-WEB-STEP-2')}</h2>
+          <h2 id="pay-h" tabIndex={-1} ref={headingRef}>
+            {t('F-WEB-STEP-2')}
+          </h2>
           <p className="alert ok">{t('F-WEB-PHONE-OK')}</p>
           {session.country === 'TR' && (
             <>

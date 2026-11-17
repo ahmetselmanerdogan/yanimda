@@ -10,9 +10,15 @@ export function Callback() {
   const router = useRouter();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    void completeLogin(new URLSearchParams(window.location.search)).then((ok) =>
-      ok ? router.replace(takeReturnPath()) : setFailed(true),
+    // Ağ hatası / bozuk yanıt da (reddedilen söz) "giriş tamamlanamadı" gösterir; boş sayfada kalınmaz.
+    void completeLogin(new URLSearchParams(window.location.search)).then(
+      (ok) => (ok ? router.replace(takeReturnPath()) : setFailed(true)),
+      () => setFailed(true),
     );
   }, [router]);
-  return failed ? <p className="alert">{t('F-WEB-ERROR')}</p> : null;
+  return failed ? (
+    <p className="alert" role="alert">
+      {t('F-WEB-ERROR')}
+    </p>
+  ) : null;
 }

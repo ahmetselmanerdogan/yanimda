@@ -23,7 +23,11 @@ export function FakeCheckout() {
   return (
     <>
       <h1>{t('F-WEB-FAKE-TITLE')}</h1>
-      {error && <p className="alert">{t('F-WEB-ERROR')}</p>}
+      {error && (
+        <p className="alert" role="alert">
+          {t('F-WEB-ERROR')}
+        </p>
+      )}
       <div className="row">
         <button type="button" disabled={busy || !ref} onClick={() => go('success')}>
           {t('F-WEB-FAKE-PAY')}

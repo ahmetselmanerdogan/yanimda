@@ -1,7 +1,7 @@
 import type { CoverageView, DevicePromptView, DeviceSummary } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { Api, DeviceCommandType, EventRecord } from '../lib/api';
+import { type Api, type DeviceCommandType, errorText, type EventRecord } from '../lib/api';
 import {
   bodyCode,
   bodyIcon,
@@ -86,7 +86,7 @@ export function DevicePanel({
       void load();
       onSent?.();
     } catch (e) {
-      onError(t('O-UI-ERROR', { detail: (e as Error).message }));
+      onError(t('O-UI-ERROR', { detail: errorText(e) }));
     } finally {
       setBusy(false);
     }

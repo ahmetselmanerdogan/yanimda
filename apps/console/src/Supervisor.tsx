@@ -8,6 +8,7 @@ import { VitalReviewsPanel } from './components/VitalReviews';
 import type { DispatchView, SupervisorAlertView } from './lib/api';
 import {
   ApiError,
+  errorText,
   OPERATOR_STATUSES,
   type OperatorCard,
   type OperatorStatus,
@@ -57,7 +58,7 @@ export function SupervisorBoard({
       api
         .dashboard()
         .then(setD)
-        .catch((e: Error) => setError(t('O-UI-ERROR', { detail: e.message }))),
+        .catch((e: unknown) => setError(t('O-UI-ERROR', { detail: errorText(e) }))),
     [api],
   );
   // Kalıcı amir uyarıları (gördüm): 15 sn'de bir ve WS uyarısı gelince.
@@ -71,13 +72,13 @@ export function SupervisorBoard({
   const ackAlert = (id: string) =>
     void api.ackAlert(id).then(
       () => setAlerts((xs) => xs.filter((x) => x.id !== id)),
-      (e: Error) => setError(e.message),
+      (e: unknown) => setError(errorText(e)),
     );
   // PWA web push: amir uyarıları bu cihaza.
   const [push, setPush] = useState<PushState>('unsupported');
   useEffect(() => void pushState(api).then(setPush, () => undefined), [api]);
   const togglePush = () =>
-    void (push === 'on' ? disablePush(api) : enablePush(api)).then(setPush, (e: Error) => setError(e.message));
+    void (push === 'on' ? disablePush(api) : enablePush(api)).then(setPush, (e: unknown) => setError(errorText(e)));
   // 112 süreçleri (olay kapansa da sürer): 15 sn'de bir.
   const [dispatches, setDispatches] = useState<DispatchView[]>([]);
   useEffect(() => {
@@ -122,9 +123,7 @@ export function SupervisorBoard({
       await reload();
     } catch (e) {
       setError(
-        e instanceof ApiError && e.status === 409
-          ? t('O-UI-CONFLICT')
-          : t('O-UI-ERROR', { detail: (e as Error).message }),
+        e instanceof ApiError && e.status === 409 ? t('O-UI-CONFLICT') : t('O-UI-ERROR', { detail: errorText(e) }),
       );
     } finally {
       setBusy(false);

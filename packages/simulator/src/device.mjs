@@ -39,7 +39,7 @@ export function createDevice({
     kind,
     occurredAt: new Date().toISOString(),
     location: { lat: 40.9873, lng: 29.0291, accuracyM: 12, source: 'GPS' },
-    device: { batteryPct: 63, onWrist: true, connectivity: 'BLE', appVersion: 'sim-0.1' },
+    device: { batteryPct: 63, onWrist: true, charging: false, connectivity: 'BLE', appVersion: 'sim-0.1' },
     ...extra,
   });
 

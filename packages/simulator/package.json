@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node src/index.mjs --dry heartbeat --person pp_demo",
+    "test": "node --test src/args.test.mjs && node src/index.mjs --dry heartbeat --person pp_demo",
     "lint": "eslint src",
-    "typecheck": "node --check src/index.mjs && node --check src/device.mjs && node --check src/partner.mjs"
+    "typecheck": "node --check src/index.mjs && node --check src/device.mjs && node --check src/partner.mjs && node --check src/args.mjs"
   },
   "dependencies": {
     "yaml": "^2.6.0"
