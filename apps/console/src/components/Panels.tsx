@@ -170,8 +170,12 @@ export function PersonPanel({
         </div>
       )}
       <h3>{t('O-UI-MEDICAL')}</h3>
-      {!mine || card === undefined ? (
-        <p className="muted">{t(mine ? 'O-UI-MEDICAL-NONE' : 'O-UI-MEDICAL-LOCKED')}</p>
+      {!mine ? (
+        <p className="muted">{t('O-UI-MEDICAL-LOCKED')}</p>
+      ) : card === undefined ? (
+        <p className="muted" role="status">
+          {t('O-UI-MEDICAL-LOADING')}
+        </p>
       ) : med ? (
         <dl className="medical" data-testid="medical">
           {listRow('O-UI-CONDITIONS', med.conditions)}

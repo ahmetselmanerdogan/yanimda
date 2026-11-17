@@ -11,15 +11,28 @@ interface Props {
   onSelect(id: string): void;
 }
 
-/** E-02 kuyruk (240 px): öncelik rengi, tip, kişi, yaş, kilit. */
+/** Seçenek kimliği (aria-activedescendant); önek DOM kimliğini harfle başlatır. */
+export const optionId = (eventId: string) => `queue-opt-${eventId}`;
+
+/**
+ * E-02 kuyruk (240 px): öncelik rengi, tip, kişi, yaş, kilit. Liste Tab ile odaklanır (tabIndex 0); seçili satır
+ * aria-activedescendant ile duyurulur. Ok tuşları ve Enter konsolun genel klavye işleyicisindedir (E-10): odak
+ * listede de olsa başka yerde de aynı seçimi taşır.
+ */
 export function QueueList({ items, selected, me, now, onSelect }: Props) {
+  const active = selected && items.some((i) => i.eventId === selected) ? optionId(selected) : undefined;
   return (
     <nav className="queue" aria-label={t('O-UI-QUEUE', { n: items.length })}>
       <h2 className="queue-title">{t('O-UI-QUEUE', { n: items.length })}</h2>
       {items.length === 0 ? (
         <p className="muted pad">{t('O-UI-QUEUE-EMPTY')}</p>
       ) : (
-        <ul role="listbox" aria-label={t('O-UI-QUEUE', { n: items.length })}>
+        <ul
+          role="listbox"
+          aria-label={t('O-UI-QUEUE', { n: items.length })}
+          tabIndex={0}
+          aria-activedescendant={active}
+        >
           {items.map((i) => (
             <QueueRow key={i.eventId} item={i} active={i.eventId === selected} me={me} now={now} onSelect={onSelect} />
           ))}
@@ -48,8 +61,8 @@ function QueueRow({
   return (
     <li
       role="option"
+      id={optionId(item.eventId)}
       aria-selected={active}
-      tabIndex={-1}
       className={`queue-row p${item.priority}${active ? ' active' : ''}${overdue ? ' overdue' : ''}`}
       data-event-id={item.eventId}
       onClick={() => onSelect(item.eventId)}

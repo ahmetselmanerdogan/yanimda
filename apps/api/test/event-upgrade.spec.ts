@@ -72,6 +72,34 @@ describe('alarm olmayan açık olaya gerçek alarm → yükseltme', () => {
     expect(await familyCodes()).toContain('F-EVT-SOS');
   });
 
+  it('M-20 (sahip kararı): yükseltmede SLA saatleri SOS anından başlar; TEST zamanı denetimde kalır', async () => {
+    await deliver('TEST');
+    const test = await only();
+    const old = new Date(Date.now() - 30 * 60_000).toISOString(); // TEST 30 dk önce kuyruğa girmiş
+    await h.pg.query('UPDATE event.event SET escalated_at = $2 WHERE id = $1', [test.id, old]);
+    const before = Date.now();
+    await deliver('SOS');
+    const ev = await only();
+    expect(Date.parse(ev.escalatedAt!)).toBeGreaterThanOrEqual(before);
+    const [audit] = await h.rows<{ data: Record<string, unknown> }>(
+      "SELECT data FROM audit.log WHERE action = 'event.type_upgraded' AND entity_id = $1",
+      [test.id],
+    );
+    expect(audit!.data).toMatchObject({ from: 'TEST', to: 'SOS', previousEscalatedAt: old });
+  });
+
+  it('alarm → alarm yükseltmesi (hareketsizlik → düşme) SLA saatini sıfırlamaz', async () => {
+    await deliver('INACTIVITY', { value: 999 });
+    const first = await only();
+    if (first.state === 'DEVICE_PROMPT') await timers.fire(first.id, 'prompt-expire');
+    const old = new Date(Date.now() - 10 * 60_000).toISOString();
+    await h.pg.query('UPDATE event.event SET escalated_at = $2 WHERE id = $1', [first.id, old]);
+    await deliver('FALL');
+    const ev = await only();
+    expect(ev.type).toBe('FALL');
+    expect(ev.escalatedAt).toBe(old);
+  });
+
   it('operatör TEST zincirini yürütürken SOS → bekleyen adımlar atlanır, SOS planı (112 dahil) eklenir', async () => {
     await deliver('TEST');
     const id = (await only()).id;

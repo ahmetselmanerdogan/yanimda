@@ -1055,6 +1055,10 @@
     "channel": "console",
     "text": "Outbox bekleyen (kritik / yan) · DLQ"
   },
+  "O-UI-ADM-HEALTH-OUTBOX-VALUE": {
+    "channel": "console",
+    "text": "{core} / {side} · DLQ {dlq} / {dead}"
+  },
   "O-UI-ADM-HEALTH-112": {
     "channel": "console",
     "text": "Açık 112 süreci"
@@ -1363,6 +1367,10 @@
     "channel": "console",
     "text": "İşlem önekiyle süz"
   },
+  "O-UI-ADM-AUDIT-ACTION-HINT": {
+    "channel": "console",
+    "text": "ör. recording., dispatch., event."
+  },
   "O-DISPATCH-STAGE-NOTIFIED": {
     "channel": "console",
     "text": "112 bildirildi"
@@ -1410,6 +1418,10 @@
   "O-UI-MEDICAL-NONE": {
     "channel": "console",
     "text": "Tıbbi bilgi kayıtlı değil."
+  },
+  "O-UI-MEDICAL-LOADING": {
+    "channel": "console",
+    "text": "Tıbbi özet yükleniyor…"
   },
   "O-UI-ADDRESS": {
     "channel": "console",
@@ -1590,6 +1602,10 @@
     "channel": "console",
     "text": "İşlem yapılamadı: {detail}"
   },
+  "O-UI-NETWORK": {
+    "channel": "console",
+    "text": "Sunucuya ulaşılamadı veya yanıt okunamadı. Bağlantıyı denetleyip tekrar deneyin."
+  },
   "O-UI-CONFLICT": {
     "channel": "console",
     "text": "Olay başka operatörde veya durumu değişti. Liste yenilendi."
@@ -1721,6 +1737,10 @@
   "O-UI-SECONDS": {
     "channel": "console",
     "text": "{n} sn"
+  },
+  "O-UI-MINUTES": {
+    "channel": "console",
+    "text": "{n} dk"
   },
   "O-UI-PRIORITY": {
     "channel": "console",
@@ -5383,5 +5403,40 @@
   "P-ERR-SIGNAL-WRITE-FAILED": {
     "channel": "phone",
     "text": "Sinyal kaydedilemedi, yeniden deneyin"
+  },
+  "W-FSI-PERM": {
+    "channel": "watch",
+    "text": "Acil uyarılar ekranı açabilsin diye tam ekran izni verin.",
+    "action": "İzin ver"
+  },
+  "W-BGLOC": {
+    "channel": "watch",
+    "text": "Acil durumda konumunuz operatöre ve 112'ye iletilir. Bunun için Yanımda, uygulama kapalıyken de konumunuzu kullanır.",
+    "action": "Kabul et"
+  },
+  "W-BGLOC-LATER": {
+    "channel": "watch",
+    "text": "Şimdi değil"
+  },
+  "P-PERM-FULLSCREEN": {
+    "channel": "phone",
+    "text": "Soru ekranı kilitliyken de açılsın diye tam ekran bildirime izin verin.",
+    "action": "İzin ver"
+  },
+  "P-OPERATOR": {
+    "channel": "phone",
+    "text": "Operatörünüz: {operator}."
+  },
+  "F-UI-COPY": {
+    "channel": "family",
+    "text": "Kopyala"
+  },
+  "F-UI-COPIED": {
+    "channel": "family",
+    "text": "Kopyalandı"
+  },
+  "F-UI-PUSH-OFF": {
+    "channel": "family",
+    "text": "Bildirim izni kapalı. Olaylardan anında haber alamazsınız; telefonun ayarlarından Yanımda bildirimlerini açın."
   }
 }

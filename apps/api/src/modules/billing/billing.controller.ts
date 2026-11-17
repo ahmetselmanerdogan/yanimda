@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import type { Actor } from '../profile/contacts';
 import { ProfileGuard } from '../profile/profile.controller';
@@ -46,7 +47,7 @@ export class BillingController {
   /** POST /v1/signup — adım 2 hesap: Keycloak consumers hesabı + kişi + TRIAL abonelik. */
   @Post('signup')
   @RateLimit({ name: 'signup', limit: 10, windowSec: 3600, by: 'ip' })
-  signup(@Body() body: unknown, @Req() req: RawRequest) {
+  signup(@Body(new OpenApiBody('signup')) body: unknown, @Req() req: RawRequest) {
     return this.billing.signup(body, req.ip);
   }
 
@@ -60,14 +61,22 @@ export class BillingController {
   @Post('signup/:id/phone/verify')
   @RateLimit({ name: 'signup-verify', limit: 10, windowSec: 3600, by: 'param:id' })
   @HttpCode(200)
-  verify(@Param('id') id: string, @Body() body: unknown, @Headers('x-signup-token') token?: string) {
+  verify(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('verifySignupPhone')) body: unknown,
+    @Headers('x-signup-token') token?: string,
+  ) {
     return this.billing.verifyPhone(id, token, body);
   }
 
   /** POST /v1/signup/{id}/checkout — adım 2 ödeme: sağlayıcının barındırdığı sayfa. */
   @Post('signup/:id/checkout')
   @HttpCode(200)
-  checkout(@Param('id') id: string, @Body() body: unknown, @Headers('x-signup-token') token?: string) {
+  checkout(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('createSignupCheckout')) body: unknown,
+    @Headers('x-signup-token') token?: string,
+  ) {
     return this.billing.checkoutWithToken(id, token, body);
   }
 
@@ -95,7 +104,7 @@ export class BillingController {
   /** Sahte ödeme sayfasının düğmesi (yalnız PAYMENT_PROVIDER=fake). */
   @Post('payments/fake/:ref/pay')
   @HttpCode(200)
-  fakePay(@Param('ref') ref: string, @Body() body: unknown) {
+  fakePay(@Param('ref') ref: string, @Body(new OpenApiBody('fakePay')) body: unknown) {
     return this.billing.fakePay(ref, body);
   }
 }
@@ -119,7 +128,11 @@ export class SubscriptionController {
 
   @Post(':id/subscription/checkout')
   @HttpCode(200)
-  checkout(@Param('id') id: string, @Body() body: unknown, @Req() req: RawRequest) {
+  checkout(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('createSubscriptionCheckout')) body: unknown,
+    @Req() req: RawRequest,
+  ) {
     return this.billing.checkoutForPerson(req.actor!, id, body);
   }
 }

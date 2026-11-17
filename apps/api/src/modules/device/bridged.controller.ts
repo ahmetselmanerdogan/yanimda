@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { BridgedDeviceService } from './bridged.service';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
 
@@ -18,7 +19,11 @@ export class BridgedDeviceController {
 
   /** POST /v1/devices/bridged — yeni 201, aynı telefon + adres yeniden 200 (aynı deviceId). */
   @Post()
-  async register(@Req() req: DeviceRequest, @Body() body: unknown, @Res({ passthrough: true }) res: ResStatus) {
+  async register(
+    @Req() req: DeviceRequest,
+    @Body(new OpenApiBody('registerBridgedDevice')) body: unknown,
+    @Res({ passthrough: true }) res: ResStatus,
+  ) {
     const r = await this.bridged.register(req.device!, body);
     res.status(r.created ? 201 : 200);
     return r.view;

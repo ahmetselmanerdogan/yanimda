@@ -32,11 +32,16 @@ const STEP: Record<string, { label: string; script?: string; target: StepTarget;
   CALL_NEIGHBOR: { label: 'O-STEP-NEIGHBOR', script: 'O-SCRIPT-NEIGHBOR', target: 'NEIGHBOR', timeoutSec: 25 },
   CALL_112: { label: 'O-STEP-112', script: 'O-SCRIPT-112', target: 'EMERGENCY', timeoutSec: 0 },
 };
-/** packages/rules/tr.yaml zincirleriyle aynı (tatbikatta kullanılan tipler). */
-const CHAINS: Partial<Record<EventType, string[]>> = {
+/**
+ * Tatbikat zincirleri packages/rules/tr.yaml zincirlerinin KISALTILMIŞIdır: sıra aynıdır (kişi → yakınlar → 112), ama
+ * kişinin cihaz ve yakın kaydına bağlı adımlar — 2. sesli cihaz (CALL_VOICE_2), en iyi cihaza yeniden arama
+ * (CALL_REDIAL), anahtar sahibi (CALL_KEY_HOLDER) ve SOS'ta 2. yakın — tatbikat kişisinde yoktur. Her tatbikat
+ * zincirinin tr.yaml zincirinin alt dizisi olduğu training.test.ts'te denetlenir.
+ */
+export const DRILL_CHAINS: Partial<Record<EventType, string[]>> = {
   SOS: ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_112'],
   FALL: ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_CONTACT:2', 'CALL_NEIGHBOR', 'CALL_112'],
-  INACTIVITY: ['CALL_PHONE', 'CALL_WATCH', 'CALL_CONTACT:1', 'CALL_NEIGHBOR', 'CALL_112'],
+  INACTIVITY: ['CALL_WATCH', 'CALL_PHONE', 'CALL_CONTACT:1', 'CALL_NEIGHBOR', 'CALL_112'],
 };
 const PRIORITY: Partial<Record<EventType, number>> = { SOS: 1, FALL: 1, INACTIVITY: 2 };
 const OPEN: EventState[] = ['OPERATOR_ASSIGNED', 'CONTACT_CHAIN', 'CONFIRMED_OK', 'CONFIRMED_EMERGENCY', 'DISPATCH'];
@@ -140,7 +145,7 @@ export class TrainingSim {
       if (d.ev.state === 'OPERATOR_QUEUE') {
         d.ev.operatorId = this.me;
         this.go(d, 'OPERATOR_ASSIGNED');
-        if (!d.steps.length) d.steps = (CHAINS[d.ev.type] ?? ['CALL_PHONE']).map((e, i) => step(e, i + 1));
+        if (!d.steps.length) d.steps = (DRILL_CHAINS[d.ev.type] ?? ['CALL_PHONE']).map((e, i) => step(e, i + 1));
       } else if (d.ev.operatorId !== this.me) throw new ApiError(409, t('O-TRAIN-ERR-TAKEN'));
       return this.changed(d);
     },

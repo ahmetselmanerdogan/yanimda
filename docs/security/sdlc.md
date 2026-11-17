@@ -36,8 +36,9 @@ dosyadır. Repoda kanıtı olmayan ayarlar (GitHub dal koruması, mobil imzalama
 | İşletim | DNS envanteri ve alt alan adı devralma denetimi | `docs/security/dns-envanteri.md` | aylık |
 | İşletim | Veri saklama süreleri ve temizlik işi | `docs/security/saklama.md` | sürekli (iş) |
 
-\* Dal koruması (main'e yalnız PR, CI yeşil, en az bir onay) GitHub depo ayarıdır, repoda kanıtı yoktur. main'e
-giden değişiklikler fiilen PR ile birleşiyor (`git log --merges`), ama zorunluluk ayarı **doğrulanmalı** (açık iş D-1).
+\* Dal koruması GitHub kural setidir (`main koruması (T-081/T-083)`, id 27453389, 2026-11-17): main'e yalnız PR,
+zorunlu kontroller `ci` işlerinin altısı + `security` ZAP, force-push ve silme yasak. Onay şartı yok (tek geliştirici;
+sahip kararı, risk kabulü). Doğrulama: `gh api repos/ahmetselmanerdogan/yanimda/rulesets/27453389`.
 
 ## 2. Kod incelemesi
 
@@ -68,7 +69,7 @@ dışarıdan bildirim. Kabul edilen riskler `risk-kabulleri.md`'ye sahip onayıy
 
 | # | İş |
 | --- | --- |
-| D-1 | GitHub dal koruması (zorunlu PR + yeşil CI + 1 onay + imzalı commit opsiyonu) ayarını doğrula ve ekran görüntüsü / `gh api` çıktısını buraya ekle |
+| D-1 | ~~GitHub dal koruması~~ kural seti kuruldu (yukarıda). Açık: ikinci geliştirici gelince 1 onay şartı; imzalı commit |
 | D-2 | Dağıtımda imza doğrulaması: compose / Helm imajı digest ile çeker ama `cosign verify` dağıtım adımında yok (yalnız sürüm işinde) |
 | D-3 | Mobil depolar için aynı tablo (imzalama anahtarları, Play App Signing, App Store Connect, MASVS denetimi) |
 | D-4 | `SECURITY.md` (dışarıdan açık bildirimi kanalı) |

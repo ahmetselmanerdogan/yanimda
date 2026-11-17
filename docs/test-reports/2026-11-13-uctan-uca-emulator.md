@@ -40,8 +40,10 @@ saat debug `DEV_CONFIG` ile kendi token'ıyla doğrudan (LTE yolu) gönderdi. An
 
 ## Açık (karar / iz)
 
-- Yükseltilen olayda (TEST → SOS) yaş, ilk arama ve 112 son sınırı ilk olayın (TEST) zamanından sayılıyor; SOS ilk
-  anda "süre aşıldı" görünür. Alarm saatlerinin yükseltme anından başlaması ürün kararı.
+- ~~Yükseltilen olayda (TEST → SOS) yaş, ilk arama ve 112 son sınırı ilk olayın (TEST) zamanından sayılıyor; SOS ilk
+  anda "süre aşıldı" görünür. Alarm saatlerinin yükseltme anından başlaması ürün kararı.~~ Kapandı (2026-11-17, sahip
+  kararı): üstlenme, ilk arama ve 112 son sınırı yükseltme anından başlar; eski zaman `event.type_upgraded`
+  denetiminde (`previousEscalatedAt`). Olay yaşı ilk sinyalden sayılmaya devam eder. Test: `event-upgrade.spec.ts` (M-20).
 - ~~Telefon kurulumunda "Kontrol et": saat bulunamaz ve Wear OS eşlikçi uygulaması yoksa ekranda geri bildirim yok.~~
   — düzeltildi (2026-11-15): kontrolden sonra P-SETUP-WATCH-NOT-FOUND ve "Yeniden dene"
   (`2026-11-14-uctan-uca-emulator-otomatik-atama.md`, "Açık" bölümü).

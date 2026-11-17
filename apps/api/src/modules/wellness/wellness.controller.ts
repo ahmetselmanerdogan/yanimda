@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Put, Query, Req, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import type { Actor } from '../profile/contacts';
 import { type CheckStatus, WellnessService } from './wellness.service';
@@ -26,7 +27,7 @@ export class WellnessController {
 
   @Put('protected-persons/:id/check-plan')
   @Roles('FAMILY', 'SUPERVISOR', 'ADMIN')
-  setPlan(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+  setPlan(@Param('id') id: string, @Req() req: UserRequest, @Body(new OpenApiBody('setCheckPlan')) body: unknown) {
     return this.wellness.setPlan(actorOf(req), id, body);
   }
 

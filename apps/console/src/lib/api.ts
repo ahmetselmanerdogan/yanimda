@@ -487,6 +487,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Hatanın kullanıcıya gösterilecek metni. ApiError zaten katalogdan (veya sunucunun Türkçe `detail`'inden) gelir;
+ * ağ hatası (fetch TypeError), bozuk JSON ve tarayıcı hataları tarayıcının İngilizce metnini taşır, gösterilmez:
+ * O-UI-NETWORK.
+ */
+export function errorText(e: unknown): string {
+  return e instanceof ApiError ? e.message : t('O-UI-NETWORK');
+}
+
 export type TokenSource = () => Promise<string | null>;
 
 /** API istemcisi: her istekte güncel operatör token'ı; hata RFC 7807 → ApiError. */

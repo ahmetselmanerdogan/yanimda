@@ -115,6 +115,15 @@ describe('SLA sayaçları', () => {
     expect(slaOf(it2, ev, undefined, now)).toEqual({ ageSec: 30, firstCallLeftSec: 15 });
     expect(slaOf(it2, ev, '2026-11-09T10:00:28Z', now).firstCallLeftSec).toBeUndefined();
   });
+  it("M-20: üstlenilmiş TEST olayı SOS'a yükselince ilk arama süresi yükseltme anından sayılır", () => {
+    const ev = {
+      state: 'OPERATOR_ASSIGNED',
+      escalatedAt: '2026-11-09T10:00:20Z', // yükseltme anı (sunucu SLA saatini yeniden başlattı)
+      transitions: [{ to: 'OPERATOR_ASSIGNED', at: '2026-11-09T09:30:00Z', actorKind: 'OPERATOR' }],
+    } as unknown as EventRecord;
+    const it2 = item('a', 1, '2026-11-09T09:29:00Z', 'OPERATOR_ASSIGNED');
+    expect(slaOf(it2, ev, undefined, now).firstCallLeftSec).toBe(10);
+  });
   it('saat biçimi', () => {
     expect(clock(75)).toBe('1:15');
     expect(clock(-3)).toBe('−0:03');

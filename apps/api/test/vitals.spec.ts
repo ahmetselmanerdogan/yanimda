@@ -347,6 +347,20 @@ describe('kurallar → olay (S6.4)', () => {
   });
 });
 
+describe('kapanış / yanlış alarm aboneleri: hata yutulmaz (S6.4)', () => {
+  it('sessizlik / yanlış alarm yazımı geçici hata verirse işçi yeniden teslim etsin diye abone reddeder', async () => {
+    await setup(on);
+    const boom = new Error('ECONNRESET');
+    vitals.onEventClosed = () => Promise.reject(boom);
+    vitals.onFalseAlarm = () => Promise.reject(boom);
+    const env = (payload: unknown) => ({ payload }) as never;
+    await expect(
+      bus.deliver('event.closed', env({ id: 'e', protectedPersonId: P, confirmedOutcome: 'OK' }), 'core'),
+    ).rejects.toBe(boom);
+    await expect(bus.deliver('event.false_alarm', env({ eventId: 'e' }), 'core')).rejects.toBe(boom);
+  });
+});
+
 describe('alarm yorgunluğu (S6.7)', () => {
   beforeEach(async () => {
     await setup(on);

@@ -1,9 +1,17 @@
-import type { AdminCoverageMetrics } from '@yanimda/contracts';
+import type { AdminCoverageMetrics, StepResult } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
 import { CoverageMetricsView } from './components/CoverageBoard';
 import { DispatchPanel } from './components/Dispatch';
-import type { AdminAnalytics, AdminCall, AdminHealth, AuditRow, DispatchView, WellnessCheck } from './lib/api';
+import {
+  type AdminAnalytics,
+  type AdminCall,
+  type AdminHealth,
+  type AuditRow,
+  type DispatchView,
+  errorText,
+  type WellnessCheck,
+} from './lib/api';
 import type { Backend } from './lib/backend';
 import { t } from './lib/i18n';
 import { resultCode } from './lib/ladder';
@@ -17,10 +25,17 @@ type Tab = 'overview' | 'coverage' | 'events' | 'calls' | 'dispatch' | 'wellness
 const TABS: Tab[] = ['overview', 'coverage', 'events', 'calls', 'dispatch', 'wellness', 'audit'];
 const PERIODS = [1, 7, 30, 90];
 
-const dt = (iso: string) =>
-  new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+/** Zaman damgası (gün.ay saat:dk); sunucu boş verdiyse "–" (vaka dosyası alanları `string | null`). */
+export const dt = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '–';
 const pct = (v: number) => `%${Math.round(v * 100)}`;
-const n1 = (v: number | null | undefined, unit = '') => (v === null || v === undefined ? '–' : `${v}${unit}`);
+/** Süre birimleri katalogdan (O-UI-SECONDS / O-UI-MINUTES); değer yoksa "–". */
+export const sec = (v: number | null | undefined) =>
+  v === null || v === undefined ? '–' : t('O-UI-SECONDS', { n: v });
+export const mins = (v: number | null | undefined) =>
+  v === null || v === undefined ? '–' : t('O-UI-MINUTES', { n: v });
 
 export function AdminBoard({
   backend,
@@ -105,7 +120,7 @@ function useLoad<T>(fn: () => Promise<T>, onError: (e: string | null) => void, d
       setV(await fn());
       onError(null);
     } catch (e) {
-      onError(t('O-UI-ERROR', { detail: (e as Error).message }));
+      onError(t('O-UI-ERROR', { detail: errorText(e) }));
     }
   }, deps);
   useEffect(() => void load(), [load]);
@@ -146,14 +161,8 @@ function Overview({ api, days, onError }: Part) {
           value={a.events.real}
           note={t('O-UI-ADM-EMERGENCIES', { n: a.events.byOutcome.EMERGENCY ?? 0 })}
         />
-        <Kpi
-          label={t('O-UI-ADM-CLAIM-SLA')}
-          value={`${n1(a.sla.claimP50Sec, ' sn')} / ${n1(a.sla.claimP95Sec, ' sn')}`}
-        />
-        <Kpi
-          label={t('O-UI-ADM-FIRST-CALL')}
-          value={`${n1(a.sla.firstCallP50Sec, ' sn')} / ${n1(a.sla.firstCallP95Sec, ' sn')}`}
-        />
+        <Kpi label={t('O-UI-ADM-CLAIM-SLA')} value={`${sec(a.sla.claimP50Sec)} / ${sec(a.sla.claimP95Sec)}`} />
+        <Kpi label={t('O-UI-ADM-FIRST-CALL')} value={`${sec(a.sla.firstCallP50Sec)} / ${sec(a.sla.firstCallP95Sec)}`} />
         <Kpi
           label={t('O-UI-ADM-ANSWER-RATE')}
           value={pct(a.calls.answerRate)}
@@ -161,7 +170,7 @@ function Overview({ api, days, onError }: Part) {
         />
         <Kpi
           label={t('O-UI-ADM-112-ARRIVAL')}
-          value={`${n1(a.dispatch.arrivalP50Min, ' dk')} / ${n1(a.dispatch.arrivalP90Min, ' dk')}`}
+          value={`${mins(a.dispatch.arrivalP50Min)} / ${mins(a.dispatch.arrivalP90Min)}`}
           note={t('O-UI-ADM-112-COUNT', { n: a.dispatch.total, late: a.dispatch.late })}
           warn={a.dispatch.late > 0}
         />
@@ -188,13 +197,18 @@ function Overview({ api, days, onError }: Part) {
         <dl className="kv">
           <dt>{t('O-UI-ADM-HEALTH-QUEUE')}</dt>
           <dd>
-            {h.queue.waiting} · {n1(h.queue.oldestSec, ' sn')}
+            {h.queue.waiting} · {sec(h.queue.oldestSec)}
           </dd>
           <dt>{t('O-UI-ADM-HEALTH-STAFF')}</dt>
           <dd>{h.staffOnline}</dd>
           <dt>{t('O-UI-ADM-HEALTH-OUTBOX')}</dt>
           <dd className={h.outbox.dlq > 0 ? 'late' : ''}>
-            {h.outbox.core} / {h.outbox.side} · DLQ {h.outbox.dlq} / {h.outbox.sideDead}
+            {t('O-UI-ADM-HEALTH-OUTBOX-VALUE', {
+              core: h.outbox.core,
+              side: h.outbox.side,
+              dlq: h.outbox.dlq,
+              dead: h.outbox.sideDead,
+            })}
           </dd>
           <dt>{t('O-UI-ADM-HEALTH-112')}</dt>
           <dd className={h.dispatch.late > 0 ? 'late' : ''}>
@@ -243,8 +257,8 @@ function Overview({ api, days, onError }: Part) {
                   <td data-label={t('O-UI-ADM-COL-CALLS')}>
                     {o.calls} ({o.answered})
                   </td>
-                  <td data-label={t('O-UI-ADM-COL-CLAIM-AVG')}>{n1(o.avgClaimSec, ' sn')}</td>
-                  <td data-label={t('O-UI-ADM-COL-HANDLE')}>{n1(o.avgHandleMin, ' dk')}</td>
+                  <td data-label={t('O-UI-ADM-COL-CLAIM-AVG')}>{sec(o.avgClaimSec)}</td>
+                  <td data-label={t('O-UI-ADM-COL-HANDLE')}>{mins(o.avgHandleMin)}</td>
                 </tr>
               ))}
             </tbody>
@@ -270,7 +284,7 @@ function Calls({ api, days, onError, onOpen }: Part & { onOpen(id: string): void
     try {
       setPlaying({ id, url: await api.recordingUrl(id, reason.trim()) });
     } catch (e) {
-      onError(t('O-UI-ERROR', { detail: (e as Error).message }));
+      onError(t('O-UI-ERROR', { detail: errorText(e) }));
     }
   };
   return (
@@ -328,9 +342,9 @@ function Calls({ api, days, onError, onOpen }: Part & { onOpen(id: string): void
                 </td>
                 <td data-label={t('O-UI-ADM-COL-ANSWER')} className={c.answered ? '' : 'late'}>
                   {c.answered ? t('O-UI-ADM-ANSWERED') : t('O-UI-ADM-NOT-ANSWERED')}
-                  {c.result ? ` · ${c.result}` : ''}
+                  {c.result ? ` · ${t(resultCode(c.result as StepResult))}` : ''}
                 </td>
-                <td data-label={t('O-UI-ADM-COL-DURATION')}>{n1(c.durationSec, ' sn')}</td>
+                <td data-label={t('O-UI-ADM-COL-DURATION')}>{sec(c.durationSec)}</td>
                 <td data-label={t('O-UI-ADM-RECORDING')}>
                   {c.recording ? (
                     <button type="button" onClick={() => void play(c.id)}>
@@ -425,7 +439,7 @@ function Audit({ api, days, onError }: Part) {
         <span className="muted small">{t('O-UI-ADM-AUDIT-ACTION')}</span>
         <input
           value={action}
-          placeholder="recording., dispatch., event."
+          placeholder={t('O-UI-ADM-AUDIT-ACTION-HINT')}
           onChange={(e) => setAction(e.target.value.trim())}
         />
       </label>
@@ -491,7 +505,7 @@ function Events({ api, days, onError, onOpen }: Part & { onOpen(id: string): voi
                 <td data-label={t('O-UI-ADM-COL-TIME')}>{dt(e.createdAt)}</td>
                 <td data-label={t('O-UI-ADM-COL-PERSON')}>{e.person ?? '–'}</td>
                 <td data-label={t('O-UI-ADM-COL-TYPE')}>
-                  P{e.priority} {t(`O-TYPE-${e.type}`)}
+                  {t('O-UI-PRIORITY', { n: e.priority })} {t(`O-TYPE-${e.type}`)}
                   {e.isTest ? ` · ${t('O-UI-TEST')}` : ''}
                 </td>
                 <td data-label={t('O-UI-ADM-COL-STATUS')}>
@@ -533,7 +547,7 @@ function CaseFile({
     <section className="sup-panel wide case" aria-labelledby="case-title" data-testid="case-file">
       <header className="row">
         <h2 id="case-title">
-          {t('O-UI-ADM-CASE')} · P{ev.priority} {t(`O-TYPE-${ev.type}`)} · {ev.person ?? '–'}
+          {t('O-UI-ADM-CASE')} · {t('O-UI-PRIORITY', { n: ev.priority })} {t(`O-TYPE-${ev.type}`)} · {ev.person ?? '–'}
         </h2>
         <span className="spacer" />
         <button type="button" onClick={onClose}>
@@ -541,14 +555,14 @@ function CaseFile({
         </button>
       </header>
       <p className="muted small">
-        {dt(ev.createdAt!)} · {t(`O-STATE-${ev.state}`)}
+        {dt(ev.createdAt)} · {t(`O-STATE-${ev.state}`)}
         {ev.outcome ? ` · ${t(`O-OUT-${ev.outcome}`)}` : ''} · {t('O-UI-ADM-SIGNALS', { n: ev.signals })}
       </p>
       <h3>{t('O-UI-ADM-CASE-TIMELINE')}</h3>
       <ol className="case-list">
         {c.transitions.map((x, i) => (
           <li key={i}>
-            <time>{dt(x.at!)}</time> {t(`O-STATE-${x.to}`)} · {x.actorKind}
+            <time>{dt(x.at)}</time> {t(`O-STATE-${x.to}`)} · {x.actorKind}
             {x.actorId ? ` ${x.actorId}` : ''}
             {x.note ? ` · ${x.note}` : ''}
           </li>
@@ -572,7 +586,7 @@ function CaseFile({
           <li key={x.id}>
             <time>{dt(x.at)}</time> {partyLabel(x.party)} ·{' '}
             {x.answered ? t('O-UI-ADM-ANSWERED') : t('O-UI-ADM-NOT-ANSWERED')}
-            {x.durationSec !== null ? ` · ${x.durationSec} sn` : ''} · {x.operatorName ?? x.operatorId ?? '–'}
+            {x.durationSec !== null ? ` · ${sec(x.durationSec)}` : ''} · {x.operatorName ?? x.operatorId ?? '–'}
             {x.recording ? ` · ${t('O-UI-ADM-RECORDING')}` : ''}
           </li>
         ))}
@@ -583,7 +597,7 @@ function CaseFile({
           <ol className="case-list">
             {c.dispatch.timeline.map((u, i) => (
               <li key={i}>
-                <time>{dt(u.at!)}</time> {t(`O-DISPATCH-STAGE-${u.status}`)} · {t(`O-UI-DISPATCH-SOURCE-${u.source}`)}
+                <time>{dt(u.at)}</time> {t(`O-DISPATCH-STAGE-${u.status}`)} · {t(`O-UI-DISPATCH-SOURCE-${u.source}`)}
                 {u.note ? ` · ${u.note}` : ''}
               </li>
             ))}
@@ -596,7 +610,7 @@ function CaseFile({
       <ol className="case-list">
         {c.notifications.items.map((n, i) => (
           <li key={i} className={n.status === 'failed' ? 'late' : ''}>
-            <time>{dt(n.createdAt!)}</time> {n.code} · {n.recipientKind} · {n.channel} · {n.status}
+            <time>{dt(n.createdAt)}</time> {n.code} · {n.recipientKind} · {n.channel} · {n.status}
             {n.fallback ? ` · ${t('O-UI-ADM-FALLBACK')}` : ''}
             {n.deliveredAt ? ` · ${dt(n.deliveredAt)}` : ''}
           </li>
@@ -608,8 +622,8 @@ function CaseFile({
           <ol className="case-list">
             {c.alerts.map((a, i) => (
               <li key={i}>
-                <time>{dt(a.at!)}</time> {a.code}
-                {a.ackedBy ? ` · ${t('O-UI-ALERTS-ACKED', { by: a.ackedBy, time: dt(a.ackedAt!) })}` : ''}
+                <time>{dt(a.at)}</time> {a.code}
+                {a.ackedBy ? ` · ${t('O-UI-ALERTS-ACKED', { by: a.ackedBy, time: dt(a.ackedAt) })}` : ''}
               </li>
             ))}
           </ol>

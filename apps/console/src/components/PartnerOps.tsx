@@ -1,7 +1,7 @@
 import type { PartnerHealth, WorkOrder } from '@yanimda/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { Api } from '../lib/api';
+import { type Api, errorText } from '../lib/api';
 import { action, t } from '../lib/i18n';
 
 const sec = (ms: number | null) => (ms === null ? null : Math.round(ms / 100) / 10);
@@ -93,7 +93,7 @@ export function PartnerOpsPanel({ api, onError }: { api: Api; onError(message: s
     setBusy(true);
     void api
       .completeWorkOrder(id)
-      .then(load, (e: Error) => onError(e.message))
+      .then(load, (e: unknown) => onError(errorText(e)))
       .finally(() => setBusy(false));
   };
   return <PartnerOpsView partners={partners} orders={orders} busy={busy} onDone={done} />;

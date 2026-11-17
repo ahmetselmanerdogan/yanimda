@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Post, Req, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { WebPushService } from './webpush.service';
@@ -19,14 +20,17 @@ export class WebPushController {
   @Post('subscriptions')
   @RateLimit({ name: 'webpush', limit: 30, windowSec: 3600, by: 'user' })
   @HttpCode(200)
-  subscribe(@Req() req: UserRequest, @Body() body: unknown) {
+  subscribe(@Req() req: UserRequest, @Body(new OpenApiBody('webPushSubscribe')) body: unknown) {
     const u = userOf(req);
     return this.push.register(u.sub, u.roles, body);
   }
 
   @Delete('subscriptions')
   @HttpCode(204)
-  async unsubscribe(@Req() req: UserRequest, @Body() body: { endpoint?: unknown }) {
+  async unsubscribe(
+    @Req() req: UserRequest,
+    @Body(new OpenApiBody('webPushUnsubscribe')) body: { endpoint?: unknown },
+  ) {
     await this.push.unregister(userOf(req).sub, body?.endpoint);
   }
 }

@@ -22,32 +22,47 @@ export function Done() {
     const s = loadSession();
     const sub = params.get('sub');
     if (!s || s.subscriptionId !== sub) return;
+    let live = true;
     let tries = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
       try {
         const v = await api.signupStatus(s.subscriptionId, s.token);
+        if (!live) return; // sayfadan çıkıldı: yanıt atılır, yeni yoklama kurulmaz
         setView(v);
         // Sağlayıcıya gidildi ama onay henüz gelmedi: 20 sn'ye kadar bekle.
         const pending = v.status === 'TRIAL' && v.provider !== null && !v.paymentMethodOnFile;
         setWaiting(pending && tries < 10);
         if (pending && tries++ < 10) timer = setTimeout(poll, 2000);
       } catch {
-        setWaiting(false);
+        if (live) setWaiting(false);
       }
     };
     void poll();
-    return () => clearTimeout(timer);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [params]);
 
   return (
     <>
       <h1>{t('F-WEB-DONE')}</h1>
       <Steps current={3} />
-      {waiting && <p className="alert">{t('F-WEB-PAY-WAITING')}</p>}
-      {view?.status === 'ACTIVE' && <p className="alert ok">{t('F-WEB-DONE-ACTIVE')}</p>}
+      {waiting && (
+        <p className="alert" role="status">
+          {t('F-WEB-PAY-WAITING')}
+        </p>
+      )}
+      {view?.status === 'ACTIVE' && (
+        <p className="alert ok" role="status">
+          {t('F-WEB-DONE-ACTIVE')}
+        </p>
+      )}
       {view?.status === 'TRIAL' && !waiting && (
-        <p className="alert ok">{t('F-WEB-DONE-TRIAL', { date: formatDate(view.trialEndsAt) })}</p>
+        <p className="alert ok" role="status">
+          {t('F-WEB-DONE-TRIAL', { date: formatDate(view.trialEndsAt) })}
+        </p>
       )}
       <p>{t('F-WEB-EMAIL-SENT')}</p>
       <h2>{t('F-WEB-STEP-3')}</h2>

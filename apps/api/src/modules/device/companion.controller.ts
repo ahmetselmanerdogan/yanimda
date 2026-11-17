@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { ProtectionService } from '../event/protection.service';
 import { CompanionService } from './companion.service';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
@@ -23,7 +24,7 @@ export class CompanionController {
   async enrollCompanion(
     @Param('id') id: string,
     @Req() req: DeviceRequest,
-    @Body() body: unknown,
+    @Body(new OpenApiBody('enrollCompanion')) body: unknown,
     @Res({ passthrough: true }) res: ResStatus,
   ) {
     EnrollmentService.assertSelf(req.device!, id);
@@ -35,7 +36,11 @@ export class CompanionController {
   /** PATCH /v1/devices/{id}/setup-state — kurulum sihirbazı ilerlemesi; eksik izin → aileye F-PERM. */
   @Patch(':id/setup-state')
   @HttpCode(204)
-  async setupState(@Param('id') id: string, @Req() req: DeviceRequest, @Body() body: unknown) {
+  async setupState(
+    @Param('id') id: string,
+    @Req() req: DeviceRequest,
+    @Body(new OpenApiBody('putSetupState')) body: unknown,
+  ) {
     EnrollmentService.assertSelf(req.device!, id);
     await this.companion.setSetupState(req.device!, body);
   }
