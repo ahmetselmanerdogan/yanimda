@@ -177,7 +177,7 @@ services:
   # TLS sonlandırma ve yönlendirme; sertifikalar otomatik (ACME), caddy_data biriminde.
   # T-081: salt okunur kök, yalnız 80/443 bağlama yetkisi (yerelde docker --read-only --cap-drop ALL ile doğrulandı).
   caddy:
-    image: caddy:2.8.4-alpine
+    image: caddy:2.11.9-alpine
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
