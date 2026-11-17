@@ -103,6 +103,19 @@ spec:
             - name: OIDC_CONSUMERS_ISSUER
               value: {{ include "yanimda.issuer" (dict "root" $root "realm" "consumers") | quote }}
             {{- end }}
+            {{- /* T-060: aile web kökü (ödeme dönüşü) ve sağlayıcının eriştiği genel API kökü (iyzico callback, Twilio webhook) */}}
+            {{- if not (hasKey $root.Values.api.env "FAMILY_WEB_URL") }}
+            - name: FAMILY_WEB_URL
+              value: {{ printf "https://aile.%s" $root.Values.global.domain | quote }}
+            {{- end }}
+            {{- if not (hasKey $root.Values.api.env "PUBLIC_API_URL") }}
+            - name: PUBLIC_API_URL
+              value: {{ printf "https://api.%s" $root.Values.global.domain | quote }}
+            {{- end }}
+            {{- if not (hasKey $root.Values.api.env "CPAAS_WEBHOOK_BASE") }}
+            - name: CPAAS_WEBHOOK_BASE
+              value: {{ printf "https://api.%s" $root.Values.global.domain | quote }}
+            {{- end }}
             {{- if $root.Values.global.internalCa.configMap }}
             # T-081 (ASVS 9.2.2, 1.9.2): iç bağlantılar TLS + sunucu doğrulaması. node-postgres URL'de sslmode yoksa
             # PGSSLMODE'u okur (verify-full → ssl: true, ad + zincir doğrulamalı); ioredis rediss://. Her iki istemci

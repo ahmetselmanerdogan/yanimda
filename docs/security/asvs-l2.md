@@ -148,11 +148,11 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | 3.2.4 | Onaylı algoritmayla üretim | ✅ | — |
 | 3.3.1 | Çıkış token'ı geçersiz kılar | ⚠️ | Konsol `signoutRedirect` (`apps/console/src/App.tsx:62`); erişim token'ı API'de süresi (5 dk) dolana kadar geçerli. Cihaz iptali anında (`enrollment.service.ts:247-265`). |
 | 3.3.2 | Boşta/mutlak süre (operations) | ✅ | `ssoSessionIdleTimeout: 3600`, `ssoSessionMaxLifespan: 43200`, `accessTokenLifespan: 300`. |
-| 3.3.2 | Boşta/mutlak süre (consumers) | ⚠️ | 30 gün / 90 gün, çevrimdışı oturum 90 gün: mobil aile uygulaması için bilinçli risk kabulü gerekir (G-9). |
+| 3.3.2 | Boşta/mutlak süre (consumers) | ⚠️ | 14 gün boşta / 30 gün mutlak, çevrimdışı oturum 14 gün boşta / 30 gün mutlak (`realm-consumers.json`; `family-web` 30 dk / 12 sa): mobil aile uygulaması için risk kabulü R-2 (G-9). |
 | 3.3.3 | Parola değişince diğer oturumları kapatma | ✅ | Keycloak "diğer cihazlardan çık". |
 | 3.3.4 | Etkin oturumları görme/kapatma | ⚠️ | Keycloak hesap konsolunda; aile uygulamasında yok. |
 | 3.4.x | Çerez öznitelikleri | N/A | API çerez kullanmaz. |
-| 3.5.1 | OAuth izni/token iptal edilebilir | ✅ | consumers `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0` (`realm-consumers.json`); cihaz token iptali anında. Operations'ta rotasyon bilinçli kapalı (`altyapi-kanit.md`). |
+| 3.5.1 | OAuth izni/token iptal edilebilir | ✅ | consumers `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0` (`realm-consumers.json`); cihaz token iptali anında. Rotasyon yalnız consumers realm'inde açık; operations realm'inde bilinçli kapalı (çok sekmeli konsolda acil olay ortasında oturum kaybını önlemek için; 12 sa SSO + OTP + 5 dk erişim token'ı), risk kabulü R-4 (`risk-kabulleri.md`). |
 | 3.5.2 | Statik API sırrı yerine oturum token'ı | ✅ | Statik `ADMIN_TOKEN` üretimde yok (1.2.4); yönetici uçları OIDC oturum token'ı. |
 | 3.5.3 | Durumsuz token imzalı ve doğrulanır | ✅ | Yalnız RS256/ES256, `alg: none`/HS reddi, `iss`/`aud`/`exp`/`nbf`/`typ` (`oidc-verifier.ts:100-148`); cihaz: sabit başlık + `timingSafeEqual` (`device-token.ts:56-74`); `test/identity.spec.ts`, `test/device-enrollment.spec.ts`. |
 | 3.7.1 | Hassas işlemde yeniden doğrulama | ⚠️ | Step-up yok; 112 yükseltme gerekçe ister (`chain.controller.ts:77`). |

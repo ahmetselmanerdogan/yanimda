@@ -15,6 +15,7 @@ import type {
   WorkOrder,
 } from '@yanimda/contracts';
 
+import { runtimeConfig } from './config';
 import { has, hasVars, t } from './i18n';
 
 export interface AutoAssignState {
@@ -498,7 +499,7 @@ export function errorText(e: unknown): string {
 export type TokenSource = () => Promise<string | null>;
 
 /** API istemcisi: her istekte güncel operatör token'ı; hata RFC 7807 → ApiError. */
-export function createApi(token: TokenSource, base: string = import.meta.env.VITE_API_BASE || '/v1') {
+export function createApi(token: TokenSource, base: string = runtimeConfig().apiBase || '/v1') {
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
     const t = await token();
     const r = await fetch(`${base}${path}`, {
@@ -628,8 +629,8 @@ export function createApi(token: TokenSource, base: string = import.meta.env.VIT
 }
 export type Api = ReturnType<typeof createApi>;
 
-/** WebSocket adresi (aynı köken veya VITE_API_BASE). */
-export function queueSocketUrl(base: string = import.meta.env.VITE_API_BASE || '/v1'): string {
+/** WebSocket adresi (aynı köken veya çalışma zamanı apiBase). */
+export function queueSocketUrl(base: string = runtimeConfig().apiBase || '/v1'): string {
   const u = new URL(`${base}/ws/queue`, window.location.href);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   return u.toString();

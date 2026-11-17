@@ -76,7 +76,8 @@ services:
       resources:
         limits: { cpus: '1', memory: 768m }
 
-  # Operatör konsolu: statik Vite derlemesi (infra/console/Dockerfile), :8080, root değil.
+  # Operatör konsolu: statik Vite derlemesi (infra/console/Dockerfile), :8080, root değil. Tek imaj: ortam
+  # bilgisi kap ortamından /config.json olarak üretilir (Caddyfile); sır yok.
   console:
     image: ${CONSOLE_IMAGE:?CONSOLE_IMAGE gerekli}
     restart: unless-stopped
@@ -84,6 +85,11 @@ services:
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
+    environment:
+      CONSOLE_OIDC_AUTHORITY: https://auth.${DOMAIN}/realms/operations
+      CONSOLE_OIDC_CLIENT_ID: console
+      # Boş: aynı köken /v1 (Caddy console.<domain>/v1 → api)
+      CONSOLE_API_BASE: ''
     logging: *logging
     healthcheck:
       test: ['CMD', 'wget', '-qO', '/dev/null', 'http://127.0.0.1:8080/']
@@ -124,6 +130,10 @@ services:
       YANIMDA_CONSOLE_EXTRA_REDIRECT: https://console.${DOMAIN}/*
       YANIMDA_FAMILY_WEB_URL: https://aile.${DOMAIN}
       YANIMDA_FAMILY_APP_EXTRA_REDIRECT: app.yanimda.family:/oauth2redirect
+      # consumers realm hizmet hesabı istemci sırları (realm-consumers.json ${YANIMDA_*_CLIENT_SECRET}): API
+      # (KEYCLOAK_SIGNUP_CLIENT_SECRET) ve sentetik sonda (SYNTHETIC_CLIENT_SECRET) ile aynı değer; tıklamasız kurulum.
+      YANIMDA_SIGNUP_CLIENT_SECRET: ${KEYCLOAK_SIGNUP_CLIENT_SECRET:?KEYCLOAK_SIGNUP_CLIENT_SECRET gerekli}
+      YANIMDA_SYNTHETIC_CLIENT_SECRET: ${SYNTHETIC_CLIENT_SECRET:?SYNTHETIC_CLIENT_SECRET gerekli}
       YANIMDA_KC_SMTP_HOST: ${KC_SMTP_HOST:?KC_SMTP_HOST gerekli}
       YANIMDA_KC_SMTP_PORT: ${KC_SMTP_PORT:-587}
       YANIMDA_KC_SMTP_FROM: ${KC_SMTP_FROM:-noreply@${DOMAIN}}

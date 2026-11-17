@@ -79,6 +79,97 @@ describe('sözleşme eşliği', () => {
     for (const k of ['NODE_ENV', 'PORT', 'HOSTNAME']) used.delete(k);
     expect([...used].filter((k) => !declared.has(k)).sort()).toEqual([]);
   });
+
+  /**
+   * Üretimde okunan (gizli veya ortama özgü) değişkenler: VPS compose şablonu (infra/.env.prod.example, api/worker
+   * `env_file`) ve Helm (values.yaml api.env/Secret anahtar listesi veya şablonlar) bunları bilmeli. Yeni bir üretim
+   * değişkeni eklenince buraya, .env.prod.example'a ve Helm'e birlikte eklenir.
+   */
+  const PRODUCTION_REQUIRED = [
+    // Veri, şifreleme, cihaz/kayıt token'ları
+    'DATABASE_URL',
+    'REDIS_URL',
+    'FIELD_ENC_KEYS',
+    'DEVICE_TOKEN_SECRET',
+    'DEVICE_TOKEN_SECRETS',
+    'BLE_ADDRESS_PEPPER',
+    'SIGNUP_TOKEN_SECRET',
+    // Kimlik (Keycloak / OIDC)
+    'KEYCLOAK_URL',
+    'OIDC_OPERATIONS_ISSUER',
+    'OIDC_CONSUMERS_ISSUER',
+    'OIDC_AUDIENCE',
+    'OIDC_REQUIRE_MFA',
+    'KEYCLOAK_SIGNUP_CLIENT_ID',
+    'KEYCLOAK_SIGNUP_CLIENT_SECRET',
+    'KEYCLOAK_CONSUMERS_REALM',
+    'KEYCLOAK_FAMILY_CLIENT_ID',
+    // Genel adresler (ödeme dönüşü, sağlayıcı webhook'ları)
+    'FAMILY_WEB_URL',
+    'PUBLIC_API_URL',
+    'CPAAS_WEBHOOK_BASE',
+    // Ses kayıtları
+    'S3_ENDPOINT',
+    'S3_BUCKET',
+    'S3_ACCESS_KEY',
+    'S3_SECRET_KEY',
+    // Telefoni
+    'CPAAS_PROVIDER',
+    'CPAAS_AGENT_NUMBER',
+    'CPAAS_INBOUND_NUMBER',
+    'CPAAS_BACKUP_NUMBER',
+    'OPERATOR_CALLER_IDS',
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_FROM_NUMBER',
+    'TWILIO_API_KEY_SID',
+    'TWILIO_API_KEY_SECRET',
+    'TWILIO_TWIML_APP_SID',
+    // Mobil ve web push
+    'FCM_PROJECT_ID',
+    'FCM_CLIENT_EMAIL',
+    'FCM_PRIVATE_KEY',
+    'APNS_KEY_ID',
+    'APNS_TEAM_ID',
+    'APNS_PRIVATE_KEY',
+    'APNS_TOPIC',
+    'VAPID_PUBLIC_KEY',
+    'VAPID_PRIVATE_KEY',
+    'VAPID_SUBJECT',
+    // T-060 abonelik ve ödeme
+    'PAYMENT_PROVIDER',
+    'IYZICO_API_KEY',
+    'IYZICO_SECRET_KEY',
+    'IYZICO_MERCHANT_ID',
+    'IYZICO_BASE_URL',
+    'STRIPE_SECRET_KEY',
+    'STRIPE_WEBHOOK_SECRET',
+    'KVKK_NOTICE_VERSION',
+    // Bayraklar
+    'VITALS_ENABLED',
+  ];
+
+  it('üretim değişkenleri API kaynağında okunuyor, infra/.env.prod.example ve Helm’de var', () => {
+    const source = files(SRC)
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    expect(PRODUCTION_REQUIRED.filter((k) => !source.includes(k))).toEqual([]);
+
+    const prod = readFileSync(join(ROOT, 'infra/.env.prod.example'), 'utf8');
+    const prodKeys = new Set([...prod.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!));
+    expect(PRODUCTION_REQUIRED.filter((k) => !prodKeys.has(k))).toEqual([]);
+
+    const helmDir = join(ROOT, 'infra/helm/yanimda');
+    const helm = [
+      join(helmDir, 'values.yaml'),
+      ...readdirSync(join(helmDir, 'templates')).map((f) => join(helmDir, 'templates', f)),
+    ]
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    expect(PRODUCTION_REQUIRED.filter((k) => !new RegExp(`\\b${k}\\b`).test(helm))).toEqual([]);
+    // Üretimde yönetici kısa yolu yok (T-081 G-4): şablon dosyasında değer atanmış ADMIN_TOKEN olmamalı.
+    expect(prod).not.toMatch(/^ADMIN_TOKEN=/m);
+  });
 });
 
 /** Sözleşme bulguları (denetim B1–B5): yanıt şemaları sunucunun gerçekten döndürdüğüyle örtüşür. */

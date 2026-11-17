@@ -25,7 +25,12 @@ Docker bu makinede yok, bu yüzden Testcontainers kullanılmadı. Testler gerçe
 - **Süreler:** Uçtan uca ve kaos testlerinde kural süreleri 0,1 ölçekli (FALL penceresi 6 sn); k6'da gerçek kural paketi
   kullanıldı.
 
-**Açık:** Aynı testlerin gerçek TimescaleDB ve yönetilen Redis ile koşumu Docker veya staging (T-083) ile yapılmalı.
+~~**Açık:** Aynı testlerin gerçek TimescaleDB ve yönetilen Redis ile koşumu Docker veya staging (T-083) ile
+yapılmalı.~~ — kapandı (2026-11-17): CI `image` işi (`.github/workflows/ci.yml`) her PR'da üretim imajını gerçek
+TimescaleDB (`timescale/timescaledb:2.17.2-pg16`, `infra/init.sql`) + Redis 7.4 hizmet kaplarına karşı açar: migration'lar,
+`signal.signal` hypertable, kayıtlı cihazdan SOS → outbox → operatör kuyruğu ve aynı veritabanının döküm/geri yükleme
+tatbikatı (`infra/backup/restore-drill.sh`). Yük, `load-v1.yml` (`LOAD_TIMESCALE=1`, `scripts/load-v1.sh`) ile gerçek
+TimescaleDB'de koşar (`docs/test-reports/yuk-kaos-v1.md`). Yönetilen Redis (DCS) yalnız staging'de doğrulanabilir.
 CI'da uçtan uca iş, aynı Docker'sız düzenle her PR'da koşar (Ubuntu'ya `apt install redis-server`).
 
 ## 1. Senaryolar (`pnpm --filter @yanimda/api test:e2e`)

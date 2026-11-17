@@ -30,7 +30,8 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        if (res.ok && (shell || /\.(js|css|svg|webmanifest)$/.test(url.pathname))) {
+        // /config.json (ortam yapılandırması) da: çevrimdışı kabuk doğru Keycloak/API adresiyle açılır.
+        if (res.ok && (shell || url.pathname === '/config.json' || /\.(js|css|svg|webmanifest)$/.test(url.pathname))) {
           const copy = res.clone();
           void caches.open(CACHE).then((c) => c.put(shell ? '/' : e.request, copy));
         }

@@ -50,3 +50,62 @@ systemctl enable --now docker unattended-upgrades fail2ban
 # SSH: yalnız anahtar.
 sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
 systemctl reload ssh || systemctl reload sshd || true
+
+# T-083 haftalık geri yükleme tatbikatı (infra/backup/restore-drill.sh): Pazar 04:00 UTC, günlük yedekten (03:15)
+# sonra. Döküm yedek kabıyla indirilir (aws CLI + OBS kimlikleri .env.prod'dan, compose eşlemesiyle); geri yükleme ana
+# makinede ağsız geçici TimescaleDB kabında. Sonuç restore_drill_* metrikleri (Pushgateway, yanimda ağı) →
+# RestoreDrillFailed/Stale/TooSlow uyarıları. Depo yolu /etc/default/yanimda-restore-drill (YANIMDA_REPO).
+# Elle: systemctl start yanimda-restore-drill.service && journalctl -u yanimda-restore-drill
+[ -f /etc/default/yanimda-restore-drill ] || cat > /etc/default/yanimda-restore-drill <<'ENV'
+YANIMDA_REPO=${data_mount}/yanimda
+DRILL_MAX_SEC=3600
+ENV
+cat > /usr/local/sbin/yanimda-restore-drill <<'SH'
+#!/bin/bash
+set -euo pipefail
+: "$${YANIMDA_REPO:?YANIMDA_REPO gerekli (/etc/default/yanimda-restore-drill)}"
+cd "$YANIMDA_REPO"
+mkdir -p ${data_mount}/drill
+work=$(mktemp -d ${data_mount}/drill/run.XXXXXX)
+cleanup() { [[ "$work" == ${data_mount}/drill/run.* ]] && rm -r -f -- "$work"; }
+trap cleanup EXIT
+mkdir "$work/fetch" "$work/tmp"
+chown 70:70 "$work/fetch" # yedek kabı postgres (uid 70) kullanıcısıyla yazar
+docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml run --rm --no-deps \
+  -v "$work/fetch:/drill" -e DRILL_FETCH_DIR=/drill backup /opt/backup/restore-drill.sh
+manifest=""
+[ ! -f "$work/fetch/db.manifest" ] || manifest="$work/fetch/db.manifest"
+TMPDIR="$work/tmp" DRILL_DUMP_FILE="$work/fetch/db.dump" DRILL_MANIFEST_FILE="$manifest" \
+  PUSHGATEWAY_URL=http://pushgateway:9091 PUSHGATEWAY_DOCKER_NETWORK=yanimda infra/backup/restore-drill.sh
+SH
+chmod 0750 /usr/local/sbin/yanimda-restore-drill
+cat > /etc/systemd/system/yanimda-restore-drill.service <<'UNIT'
+[Unit]
+Description=Yanımda haftalık geri yükleme tatbikatı (T-083)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/yanimda-restore-drill
+ExecStart=/usr/local/sbin/yanimda-restore-drill
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+UNIT
+cat > /etc/systemd/system/yanimda-restore-drill.timer <<'UNIT'
+[Unit]
+Description=Yanımda haftalık geri yükleme tatbikatı (Pazar 04:00 UTC)
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now yanimda-restore-drill.timer

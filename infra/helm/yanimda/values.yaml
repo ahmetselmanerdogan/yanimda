@@ -34,11 +34,21 @@ api:
     repository: ghcr.io/example/yanimda-api
     tag: '0.0.0'
     pullPolicy: IfNotPresent
-  # Gizli anahtarlar (Secret'ta olmalı): DATABASE_URL, REDIS_URL, FIELD_ENC_KEYS, DEVICE_TOKEN_SECRET, SIGNUP_TOKEN_SECRET, S3_ACCESS_KEY,
-  # S3_SECRET_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, ADMIN_TOKEN,
-  # FCM_PRIVATE_KEY, APNS_PRIVATE_KEY … (kök .env.example). envFrom ile tümü kaba verilir.
+  # Gizli anahtarlar (Secret'ta olmalı; envFrom ile tümü kaba verilir; kök .env.example ve infra/.env.prod.example;
+  # apps/api/test/contract-parity.spec.ts üretim listesini denetler):
+  #   DATABASE_URL, REDIS_URL, FIELD_ENC_KEYS, DEVICE_TOKEN_SECRET, DEVICE_TOKEN_SECRETS, BLE_ADDRESS_PEPPER,
+  #   SIGNUP_TOKEN_SECRET, KEYCLOAK_SIGNUP_CLIENT_SECRET (T-060 web kaydı; Keycloak realm içe aktarımı da okur),
+  #   S3_ACCESS_KEY, S3_SECRET_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET,
+  #   TWILIO_TWIML_APP_SID, GOOGLE_GEOCODING_KEY, FCM_PROJECT_ID, FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY, APNS_KEY_ID,
+  #   APNS_TEAM_ID, APNS_PRIVATE_KEY, IYZICO_API_KEY, IYZICO_SECRET_KEY, IYZICO_MERCHANT_ID, STRIPE_SECRET_KEY,
+  #   STRIPE_WEBHOOK_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, PARTNER_<KOD>_WEBHOOK_SECRET.
+  #   ADMIN_TOKEN üretimde TANIMLANMAZ (T-081 G-4).
+  # Ortama özgü, gizli olmayan ama varsayılanı olmayan anahtarlar da bu Secret'ta (Vault'ta ortam başına; api.env'e
+  # boş değerle yazılırsa Secret'ı ezer): S3_ENDPOINT, TWILIO_FROM_NUMBER, CPAAS_AGENT_NUMBER, CPAAS_INBOUND_NUMBER,
+  # CPAAS_BACKUP_NUMBER, OPERATOR_CALLER_IDS, TWILIO_BYOC_TRUNK_SID, IYZICO_PLAN_<PLAN>, STRIPE_PRICE_<PLAN>.
   existingSecret: yanimda-api
-  # Gizli olmayan ortam (kök .env.example). OIDC issuer'ları boşsa auth.<domain>/realms/{operations,consumers}.
+  # Gizli olmayan ortam (kök .env.example). OIDC issuer'ları boşsa auth.<domain>/realms/{operations,consumers};
+  # FAMILY_WEB_URL boşsa https://aile.<domain>, PUBLIC_API_URL ve CPAAS_WEBHOOK_BASE boşsa https://api.<domain>.
   env:
     NODE_ENV: production
     DB_MIGRATE_ON_START: 'true'
@@ -58,6 +68,20 @@ api:
     S3_ENSURE_BUCKET: 'false'
     RECORDING_RETENTION_DAYS: '365'
     CPAAS_PROVIDER: twilio
+    CPAAS_SOFTPHONE: 'on'
+    APNS_TOPIC: app.yanimda.companion
+    # T-060 web abonelik: Keycloak consumers hesabı açan hizmet hesabı (sır: KEYCLOAK_SIGNUP_CLIENT_SECRET), ödeme
+    # sağlayıcısı canlı (anahtarlar Secret'ta; TR iyzico, US Stripe), KVKK metin sürümü.
+    KEYCLOAK_SIGNUP_CLIENT_ID: yanimda-signup
+    KEYCLOAK_CONSUMERS_REALM: consumers
+    KEYCLOAK_FAMILY_CLIENT_ID: family-web
+    PAYMENT_PROVIDER: live
+    IYZICO_BASE_URL: https://api.iyzipay.com
+    KVKK_NOTICE_VERSION: taslak-2026-11
+    # Personel web push (amir uyarıları; anahtarlar Secret'ta VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)
+    VAPID_SUBJECT: mailto:destek@yanimda.app
+    # T-092 değer kuralları bayrağı: yazılı mevzuat görüşü olmadan 'true' yapılmaz
+    VITALS_ENABLED: 'false'
   # API kopyalarında outbox işçisi: worker.enabled iken "off"; "on" = sıcak yedek (kira ile tek aktif).
   outboxWorker: 'off'
   port: 3000
@@ -82,11 +106,17 @@ worker:
 console:
   enabled: true
   replicas: 2
-  # infra/console/Dockerfile (VITE_OIDC_AUTHORITY derlemede gömülür → ortam başına imaj)
+  # infra/console/Dockerfile: TEK imaj (release-image.yml, cosign imzalı); ortam bilgisi kap ortamından /config.json
+  # olarak üretilir, derlemeye gömülmez.
   image:
     repository: ghcr.io/example/yanimda-console
     tag: '0.0.0'
     pullPolicy: IfNotPresent
+  # Boş: https://auth.<domain>/realms/operations (api.env.OIDC_OPERATIONS_ISSUER verildiyse o)
+  oidcAuthority: ''
+  oidcClientId: console
+  # Boş: aynı köken /v1 (Ingress console.<domain>/v1 → api)
+  apiBase: ''
   resources:
     requests: { cpu: 20m, memory: 32Mi }
     limits: { cpu: 200m, memory: 128Mi }
@@ -112,7 +142,10 @@ keycloak:
     repository: quay.io/keycloak/keycloak
     tag: '26.0'
     pullPolicy: IfNotPresent
-  # Secret anahtarları: KC_DB_PASSWORD, KC_BOOTSTRAP_ADMIN_PASSWORD
+  # Secret anahtarları: KC_DB_PASSWORD, KC_BOOTSTRAP_ADMIN_PASSWORD (isteğe bağlı KC_SMTP_PASSWORD). Realm içe
+  # aktarımındaki hizmet hesabı istemci sırları api.existingSecret KEYCLOAK_SIGNUP_CLIENT_SECRET ve
+  # synthetic.existingSecret SYNTHETIC_CLIENT_SECRET anahtarlarından okunur: API/sonda ile Keycloak aynı sırrı görür.
+  # synthetic.enabled=false ise SYNTHETIC_CLIENT_SECRET bu Secret'ta olmalı (rastgele; istemci realm'de yine vardır).
   existingSecret: yanimda-keycloak
   db:
     # timescaledb.enabled ise boş bırakılabilir: <release>-timescaledb:5432/keycloak
@@ -214,7 +247,7 @@ synthetic:
   schedule: '*/5 * * * *'
   image:
     repository: node
-    tag: 20-alpine
+    tag: 26-alpine
     pullPolicy: IfNotPresent
   # Secret anahtarları: SYNTHETIC_CLIENT_SECRET (zorunlu), UPTIME_KUMA_PUSH_URL (isteğe bağlı)
   existingSecret: yanimda-synthetic

@@ -83,8 +83,6 @@ terraform init -backend-config=backend.hcl && terraform plan -out tf.plan && ter
 ```sh
 # VPS'te (cloud-init Docker'ı kurar). Depo yalnız infra/ için gerekir; imajlar kayıt deposundan.
 cp infra/.env.prod.example infra/.env.prod && chmod 600 infra/.env.prod   # değerleri sır yöneticisinden doldurun
-docker build -f infra/console/Dockerfile --build-arg VITE_OIDC_AUTHORITY=https://auth.$DOMAIN/realms/operations \
-  -t $CONSOLE_IMAGE .                                                       # CI'da; ortam başına imaj
 docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
 docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml up -d
 ```
@@ -95,6 +93,10 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
   kirasıyla (tek aktif işçi). `API_OUTBOX_WORKER=on` ile kopyalar sıcak yedek olur (işçi ölürse ≤ 30 sn'de devralır).
   `signal_to_screen_seconds` vb. geçiş metrikleri yalnız kirayı tutan süreçte ölçülür (Prometheus `api` ve `worker`'ı
   kazır).
+- **İmajlar**: API ve konsol imajları `release-image.yml`'de kurulur, Trivy'den geçer, GHCR'ye itilir, cosign ile
+  anahtarsız imzalanır (SBOM tasdikli); `API_IMAGE`/`CONSOLE_IMAGE` digest'e sabitlenir. Konsol **tek imaj**: ortam
+  bilgisi derlemeye gömülmez, kap ortamından (`CONSOLE_OIDC_AUTHORITY`, `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_API_BASE`)
+  Caddy `/config.json` üretir, konsol açılmadan okur (`apps/console/src/lib/config.ts`).
 - **Migration**: her süreç açılışta çalıştırır; advisory lock sıraya sokar.
 - **Sırlar**: `.env.prod` tek dosya; api/worker kapları `env_file` ile alır. Sentetik ve yedek kapları yalnız kendi
   değişkenlerini alır. Prod'da `.env.prod` sır yöneticisinden (Huawei CSMS / Vault) üretilmeli.
@@ -110,6 +112,11 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
   değişkeninden çözülür. Varsayılanlar geliştirme adresleridir (localhost); prod compose ve Helm bunları
   `https://console.<domain>`, `https://aile.<domain>`, uygulama şeması ve `sslRequired=all` ile verir — üretim
   realm'inde geliştirme adresi kalmaz (`keycloak.test.mjs` denetler; Keycloak 26.0.8'de doğrulandı).
+- **Hizmet hesabı sırları**: `yanimda-signup` (API web kaydı) ve `yanimda-synthetic` (sentetik sonda) gizli
+  istemcilerinin sırları `${YANIMDA_SIGNUP_CLIENT_SECRET:…}` / `${YANIMDA_SYNTHETIC_CLIENT_SECRET:…}` yer
+  tutucularıyla ortamdan gelir (tıklamasız kurulum). Varsayılan `dev-only-*` yalnız geliştirmedir; prod compose
+  (`KEYCLOAK_SIGNUP_CLIENT_SECRET`, `SYNTHETIC_CLIENT_SECRET`, `:?` zorunlu) ve Helm (`secretKeyRef`, koşulsuz) her
+  zaman verir — `keycloak.test.mjs` denetler. API ve sonda aynı değeri kendi değişkenlerinden okur.
 - **İçe aktarma yalnız realm yoksa** çalışır (`--import-realm`, var olan realm atlanır). Var olan ortamda politika
   değişikliği (kara liste, oturum süreleri, `revokeRefreshToken`) yönetici API'siyle veya
   `kc.sh import --file … --override true` ile (bakım penceresinde) uygulanır.
@@ -157,8 +164,12 @@ denetimi.
 
 Kurulum (bir kez, ortam başına):
 
-1. Keycloak `consumers` realm'inde gizli istemci `yanimda-synthetic`: _Client authentication_ açık, yalnız _Service
-   accounts_; servis hesabına realm rolü `FAMILY`; `family-app`'teki gibi `aud=yanimda-api` audience eşleyicisi.
+1. Keycloak `consumers` realm'indeki gizli istemci `yanimda-synthetic` realm içe aktarmasıyla gelir
+   (`realm-consumers.json`: yalnız _Service accounts_, servis hesabına yalnız `FAMILY`, `aud=yanimda-api` eşleyicisi).
+   Sırrı `openssl rand -hex 32` ile üretip sır yöneticisine `SYNTHETIC_CLIENT_SECRET` olarak yazın; prod compose
+   bunu Keycloak'a `YANIMDA_SYNTHETIC_CLIENT_SECRET` olarak verir (Helm: `synthetic.existingSecret`). Realm zaten varsa
+   istemci içe aktarılmaz: yönetici API'si `partialImport` (`ifResourceExists: SKIP`) veya bakım penceresinde
+   `kc.sh import --override true` ile ekleyin.
 2. Bu istemcinin token'ıyla 3 kişi oluşturun (servis hesabı OWNER olur):
    `curl -X POST https://api.$DOMAIN/v1/protected-persons -H "authorization: Bearer $T" -H 'content-type: application/json' -d '{"displayName":"SENTETIK 1"}'`
    → dönen `id`'ler `SYNTHETIC_PERSON_IDS`.

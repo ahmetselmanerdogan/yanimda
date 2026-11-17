@@ -42,6 +42,16 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          {{- if eq $app.component "console" }}
+          # Tek imaj, ortam başına yapılandırma: Caddy /config.json'ı bu ortamdan üretir (infra/console/Caddyfile).
+          env:
+            - name: CONSOLE_OIDC_AUTHORITY
+              value: {{ $root.Values.console.oidcAuthority | default (include "yanimda.issuer" (dict "root" $root "realm" "operations")) | quote }}
+            - name: CONSOLE_OIDC_CLIENT_ID
+              value: {{ $root.Values.console.oidcClientId | quote }}
+            - name: CONSOLE_API_BASE
+              value: {{ $root.Values.console.apiBase | quote }}
+          {{- end }}
           readinessProbe:
             httpGet:
               path: /

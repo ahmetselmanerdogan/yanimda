@@ -105,15 +105,47 @@
     {
       "clientId": "yanimda-signup",
       "name": "Web kayıt hizmet hesabı (T-060)",
-      "description": "API'nin consumers hesabı açtığı istemci. Sır Keycloak'ta üretilir: KEYCLOAK_SIGNUP_CLIENT_SECRET (dev-users.mjs yazdırır). fullScopeAllowed=true: realm-management rolleri token'a girsin (yalnız manage-users/view-users atanır).",
+      "description": "API'nin consumers hesabı açtığı istemci; yalnız manage-users/view-users. Sır: YANIMDA_SIGNUP_CLIENT_SECRET (= API KEYCLOAK_SIGNUP_CLIENT_SECRET; varsayılan yalnız geliştirme).",
       "enabled": true,
       "publicClient": false,
       "protocol": "openid-connect",
       "clientAuthenticatorType": "client-secret",
+      "secret": "${YANIMDA_SIGNUP_CLIENT_SECRET:dev-only-signup-client-secret}",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "fullScopeAllowed": true
+    },
+    {
+      "clientId": "yanimda-synthetic",
+      "name": "Sentetik sonda hizmet hesabı (T-083)",
+      "description": "Sentetik sonda (client-credentials): rol FAMILY, aud yanimda-api. Sır: YANIMDA_SYNTHETIC_CLIENT_SECRET (= sonda SYNTHETIC_CLIENT_SECRET; varsayılan yalnız geliştirme).",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${YANIMDA_SYNTHETIC_CLIENT_SECRET:dev-only-synthetic-client-secret}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["basic", "roles"],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "yanimda-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -124,6 +156,12 @@
       "clientRoles": {
         "realm-management": ["manage-users", "view-users"]
       }
+    },
+    {
+      "username": "service-account-yanimda-synthetic",
+      "enabled": true,
+      "serviceAccountClientId": "yanimda-synthetic",
+      "realmRoles": ["FAMILY"]
     }
   ],
   "smtpServer": {
@@ -154,5 +192,11 @@
   "eventsExpiration": 7776000,
   "eventsListeners": ["email"],
   "adminEventsEnabled": true,
-  "adminEventsDetailsEnabled": false
+  "adminEventsDetailsEnabled": false,
+  "scopeMappings": [
+    {
+      "client": "yanimda-synthetic",
+      "roles": ["FAMILY"]
+    }
+  ]
 }
