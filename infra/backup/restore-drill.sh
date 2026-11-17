@@ -11,8 +11,13 @@
 #   DRILL_MAX_SEC        süre sınırı (3600)
 #   DRILL_JOBS           pg_restore paralelliği (1; Timescale hiper tablolarında paralel geri yükleme önerilmez)
 #   PUSHGATEWAY_URL      isteğe bağlı; restore_drill_* metrikleri
+#   PUSHGATEWAY_DOCKER_NETWORK  isteğe bağlı; Pushgateway yalnız bu Docker ağında erişilebilirse (VPS: yanimda)
+#                        metrikler PUSHGATEWAY_CURL_IMAGE (varsayılan yanimda-backup:local) kabından gönderilir
+#   DRILL_FETCH_DIR      yalnız indir: en yeni .dump/.manifest bu dizine kopyalanır, geri yükleme yapılmaz (docker
+#                        gerekmez; aws CLI'li yedek kabında çalışır — infra/terraform/.../user_data.sh.tftpl)
 #
-# Kullanım (VPS, haftalık systemd timer/cron):  infra/backup/restore-drill.sh
+# Kullanım (VPS, haftalık systemd timer: yanimda-restore-drill.timer, Pazar 04:00 UTC):  infra/backup/restore-drill.sh
+# CI: ci.yml `image` işi gerçek TimescaleDB dökümüyle DRILL_DUMP_FILE + DRILL_MAX_SEC=600.
 set -euo pipefail
 
 DRILL_IMAGE="${DRILL_IMAGE:-timescale/timescaledb:2.17.2-pg16}"
@@ -37,6 +42,15 @@ s3() {
   fi
 }
 
+push_body() {
+  if [ -n "${PUSHGATEWAY_DOCKER_NETWORK:-}" ]; then
+    docker run --rm -i --network "$PUSHGATEWAY_DOCKER_NETWORK" --entrypoint curl \
+      "${PUSHGATEWAY_CURL_IMAGE:-yanimda-backup:local}" -fsS --max-time 10 --data-binary @- "$1"
+  else
+    curl -fsS --max-time 10 --data-binary @- "$1"
+  fi
+}
+
 push_metrics() {
   local ok="$1" elapsed=$(($(date +%s) - started))
   [ -n "${PUSHGATEWAY_URL:-}" ] || return 0
@@ -47,8 +61,7 @@ push_metrics() {
     echo "restore_drill_duration_seconds ${elapsed}"
     echo "# TYPE restore_drill_last_run_timestamp_seconds gauge"
     echo "restore_drill_last_run_timestamp_seconds $(date +%s)"
-  } | curl -fsS --max-time 10 --data-binary @- "${PUSHGATEWAY_URL%/}/metrics/job/restore_drill" ||
-    log "uyarı: Pushgateway'e yazılamadı"
+  } | push_body "${PUSHGATEWAY_URL%/}/metrics/job/restore_drill" || log "uyarı: Pushgateway'e yazılamadı"
 }
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/restore-drill.XXXXXX")
@@ -73,6 +86,13 @@ else
   s3 cp --only-show-errors "s3://${BACKUP_S3_BUCKET}/${latest}" "$work/db.dump"
   s3 cp --only-show-errors "s3://${BACKUP_S3_BUCKET}/${latest%.dump}.manifest" "$work/db.manifest" ||
     log "uyarı: manifest yok; sayım karşılaştırması atlanır"
+fi
+
+if [ -n "${DRILL_FETCH_DIR:-}" ]; then
+  cp "$work/db.dump" "$DRILL_FETCH_DIR/db.dump"
+  [ ! -f "$work/db.manifest" ] || cp "$work/db.manifest" "$DRILL_FETCH_DIR/db.manifest"
+  log "indirildi: ${DRILL_FETCH_DIR} (geri yükleme ayrı adımda)"
+  exit 0
 fi
 
 manifest() {
