@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Members } from '@/components/Members';
+import { accountError, type Billing, billingPayload, EMPTY_BILLING } from '@/lib/account';
 import { api, ApiError } from '@/lib/api';
 import { openCheckout } from '@/lib/checkout';
 import { dataExportError, exportBlob, saveBlob } from '@/lib/data-export';
-import { cancellable, errorCode, needsPayment, statusLine, type SubscriptionView } from '@/lib/flow';
+import { cancellable, needsPayment, statusLine, type SubscriptionView } from '@/lib/flow';
 import { t } from '@/lib/i18n';
 import type { MemberRole } from '@/lib/members';
 import { accessToken, login, logout } from '@/lib/oidc';
@@ -30,7 +31,10 @@ export function Account() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [billing, setBilling] = useState({ city: '', address: '' });
+  // Fatura bilgisi kişi kartı başına (iki kişinin ödemesi aynı alanları paylaşmaz).
+  const [billing, setBilling] = useState<Record<string, Billing>>({});
+  const editBilling = (personId: string, k: keyof Billing, v: string) =>
+    setBilling((b) => ({ ...b, [personId]: { ...(b[personId] ?? EMPTY_BILLING), [k]: v } }));
   const box = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (at: string) => {
@@ -68,7 +72,9 @@ export function Account() {
       setItems((xs) => xs?.map((x) => (x.personId === it.personId ? { ...x, sub } : x)) ?? null);
       setNotice('F-WEB-CANCELED');
     } catch (e) {
-      setError(e instanceof ApiError ? errorCode(e.status, 'cancel') : 'F-WEB-ERROR');
+      const r = accountError(e, 'cancel');
+      if (r.relogin) setToken(null);
+      else setError(r.code);
     } finally {
       setBusy(null);
     }
@@ -94,24 +100,19 @@ export function Account() {
 
   async function pay(it: Item) {
     if (!token || !it.sub) return;
-    const tr = it.sub.countryCode === 'TR';
-    if (tr && (!billing.city.trim() || !billing.address.trim())) {
+    const b = billingPayload(billing[it.personId], it.sub.countryCode);
+    if (b.invalid) {
       setError('F-WEB-ERROR-INVALID');
       return;
     }
     setBusy(it.personId);
     setError(null);
     try {
-      openCheckout(
-        await api.checkoutForPerson(
-          token,
-          it.personId,
-          tr ? { city: billing.city, address: billing.address } : undefined,
-        ),
-        box.current,
-      );
+      openCheckout(await api.checkoutForPerson(token, it.personId, b.billing), box.current);
     } catch (e) {
-      setError(e instanceof ApiError ? errorCode(e.status, 'checkout') : 'F-WEB-ERROR');
+      const r = accountError(e, 'checkout');
+      if (r.relogin) setToken(null);
+      else setError(r.code);
     } finally {
       setBusy(null);
     }
@@ -155,15 +156,15 @@ export function Account() {
                     <input
                       id={`city-${it.personId}`}
                       type="text"
-                      value={billing.city}
-                      onChange={(e) => setBilling((b) => ({ ...b, city: e.target.value }))}
+                      value={billing[it.personId]?.city ?? ''}
+                      onChange={(e) => editBilling(it.personId, 'city', e.target.value)}
                     />
                     <label htmlFor={`addr-${it.personId}`}>{t('F-WEB-BILLING-ADDRESS')}</label>
                     <input
                       id={`addr-${it.personId}`}
                       type="text"
-                      value={billing.address}
-                      onChange={(e) => setBilling((b) => ({ ...b, address: e.target.value }))}
+                      value={billing[it.personId]?.address ?? ''}
+                      onChange={(e) => editBilling(it.personId, 'address', e.target.value)}
                     />
                   </>
                 )}
