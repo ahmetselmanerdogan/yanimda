@@ -54,7 +54,7 @@ services:
 
   # Sentetik sonda, yedek ve geri yükleme tatbikatı metrikleri buraya itilir (diskte kalıcı).
   pushgateway:
-    image: prom/pushgateway:v1.10.0
+    image: prom/pushgateway:v1.11.5
     restart: unless-stopped
     command: ['--persistence.file=/data/pushgateway.db', '--persistence.interval=1m']
     volumes: ['pushgateway_data:/data']
