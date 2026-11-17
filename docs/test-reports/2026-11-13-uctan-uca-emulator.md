@@ -42,7 +42,9 @@ saat debug `DEV_CONFIG` ile kendi token'ıyla doğrudan (LTE yolu) gönderdi. An
 
 - Yükseltilen olayda (TEST → SOS) yaş, ilk arama ve 112 son sınırı ilk olayın (TEST) zamanından sayılıyor; SOS ilk
   anda "süre aşıldı" görünür. Alarm saatlerinin yükseltme anından başlaması ürün kararı.
-- Telefon kurulumunda "Kontrol et": saat bulunamaz ve Wear OS eşlikçi uygulaması yoksa ekranda geri bildirim yok.
+- ~~Telefon kurulumunda "Kontrol et": saat bulunamaz ve Wear OS eşlikçi uygulaması yoksa ekranda geri bildirim yok.~~
+  — düzeltildi (2026-11-15): kontrolden sonra P-SETUP-WATCH-NOT-FOUND ve "Yeniden dene"
+  (`2026-11-14-uctan-uca-emulator-otomatik-atama.md`, "Açık" bölümü).
 - Konsol değer özelliği kapalıyken her yenilemede `/events/{id}/vitals` çağırıp 404 alıyor (zararsız gürültü).
 - ~~Yerelde `packages/contracts/dist` eski kalırsa `ladder.spec.ts` (SILENT) kırılır; CI derlediği için etkilenmez. Depoda
   `packages/contracts/src/index.js` / `.d.ts` derleme çıktısı izleniyor (eski, SILENT yok).~~ — düzeltildi
