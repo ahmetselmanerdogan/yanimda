@@ -5383,5 +5383,40 @@
   "P-ERR-SIGNAL-WRITE-FAILED": {
     "channel": "phone",
     "text": "Sinyal kaydedilemedi, yeniden deneyin"
+  },
+  "W-FSI-PERM": {
+    "channel": "watch",
+    "text": "Acil uyarılar ekranı açabilsin diye tam ekran izni verin.",
+    "action": "İzin ver"
+  },
+  "W-BGLOC": {
+    "channel": "watch",
+    "text": "Acil durumda konumunuz operatöre ve 112'ye iletilir. Bunun için Yanımda, uygulama kapalıyken de konumunuzu kullanır.",
+    "action": "Kabul et"
+  },
+  "W-BGLOC-LATER": {
+    "channel": "watch",
+    "text": "Şimdi değil"
+  },
+  "P-PERM-FULLSCREEN": {
+    "channel": "phone",
+    "text": "Soru ekranı kilitliyken de açılsın diye tam ekran bildirime izin verin.",
+    "action": "İzin ver"
+  },
+  "P-OPERATOR": {
+    "channel": "phone",
+    "text": "Operatörünüz: {operator}."
+  },
+  "F-UI-COPY": {
+    "channel": "family",
+    "text": "Kopyala"
+  },
+  "F-UI-COPIED": {
+    "channel": "family",
+    "text": "Kopyalandı"
+  },
+  "F-UI-PUSH-OFF": {
+    "channel": "family",
+    "text": "Bildirim izni kapalı. Olaylardan anında haber alamazsınız; telefonun ayarlarından Yanımda bildirimlerini açın."
   }
 }
