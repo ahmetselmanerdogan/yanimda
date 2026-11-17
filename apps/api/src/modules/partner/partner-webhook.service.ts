@@ -14,6 +14,7 @@ import type { PartnerRejectReason, PartnerWebhookResult, Signal } from '@yanimda
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { fail } from '../../common/catalog-error';
+import { validateBody } from '../../common/openapi-body';
 import { DB, type Db } from '../../db/client';
 import { auditLog, device, partnerDelivery, partnerLatency, vendorLink } from '../../db/schema';
 import { DeviceService } from '../device/device.service';
@@ -135,6 +136,8 @@ export class PartnerWebhookService {
     } catch {
       throw fail(BadRequestException, 'A-ERR-BODY-NOT-JSON');
     }
+    // T-081: şema (openapi partnerWebhook) imza ve tekrar kontrolünden sonra — pipe imzadan önce çalışırdı.
+    validateBody('partnerWebhook', body);
     const parsed = adapter.parse(body);
     if (!parsed.length) throw fail(BadRequestException, 'A-ERR-EVENTS-EMPTY');
 

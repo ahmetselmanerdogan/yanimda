@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit } from '../../common/rate-limit';
 import { type DeviceRequest, DeviceTokenGuard } from './device-token.guard';
 import { type DevicePrincipal, EnrollmentService, etagMatches } from './enrollment.service';
@@ -34,7 +35,11 @@ export class EnrollmentController {
   /** POST /v1/devices/enroll — davet kodu + cihaz bilgisi → cihaz token'ı. Yeni 201, yeniden deneme 200. */
   @Post('enroll')
   @RateLimit({ name: 'enroll', limit: 20, windowSec: 600, by: 'ip' })
-  async enroll(@Body() body: unknown, @Ip() ip: string, @Res({ passthrough: true }) res: Res304) {
+  async enroll(
+    @Body(new OpenApiBody('enrollDevice')) body: unknown,
+    @Ip() ip: string,
+    @Res({ passthrough: true }) res: Res304,
+  ) {
     const r = await this.enrollment.enroll(body, ip);
     res.status(r.created ? 201 : 200);
     return r.body;
@@ -74,7 +79,11 @@ export class EnrollmentController {
   @Put(':id/push-token')
   @HttpCode(204)
   @UseGuards(DeviceTokenGuard)
-  async pushToken(@Param('id') id: string, @Req() req: DeviceRequest, @Body() body: unknown) {
+  async pushToken(
+    @Param('id') id: string,
+    @Req() req: DeviceRequest,
+    @Body(new OpenApiBody('putPushToken')) body: unknown,
+  ) {
     EnrollmentService.assertSelf(principal(req), id);
     await this.enrollment.setPushToken(principal(req), body);
   }

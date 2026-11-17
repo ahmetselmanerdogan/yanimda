@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Inject, Module, Param, Post, Req, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { EventModule } from '../event/event.module';
 import type { UserRequest } from '../identity/oidc.guard';
 import type { Actor } from '../profile/contacts';
@@ -17,7 +18,7 @@ export class FalseAlarmController {
 
   /** C-12 POST /v1/events/{id}/feedback — { real: boolean } ("Gerçek miydi?"). */
   @Post('events/:id/feedback')
-  feedback(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  feedback(@Param('id') id: string, @Body(new OpenApiBody('eventFeedback')) body: unknown, @Req() req: ActorRequest) {
     return this.falseAlarms.feedback(req.actor!, id, body);
   }
 

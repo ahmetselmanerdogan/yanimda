@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { PartnerHealthService } from './partner-health.service';
@@ -39,7 +40,7 @@ export class VendorLinkController {
 
   @Post('vendor-links')
   @HttpCode(201)
-  create(@Body() body: unknown, @Req() req: UserRequest) {
+  create(@Body(new OpenApiBody('createVendorLink')) body: unknown, @Req() req: UserRequest) {
     return this.links.create(body, userOf(req).sub);
   }
 

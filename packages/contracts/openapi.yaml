@@ -292,8 +292,12 @@ paths:
               type: object
               required: [endpoint, keys]
               properties:
-                endpoint: { type: string, format: uri }
-                keys: { type: object, properties: { p256dh: { type: string }, auth: { type: string } } }
+                endpoint: { type: string, format: uri, pattern: '^https://', maxLength: 1000 }
+                expirationTime: { type: [number, 'null'], description: 'PushSubscription.toJSON() alanı; saklanmaz' }
+                keys:
+                  type: object
+                  required: [p256dh, auth]
+                  properties: { p256dh: { type: string }, auth: { type: string } }
       responses:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -473,7 +477,7 @@ paths:
                 caseRef: { type: [string, 'null'], maxLength: 64 }
                 etaMin: { type: [integer, 'null'], minimum: 0, maximum: 600 }
                 hospital: { type: [string, 'null'], maxLength: 160 }
-                note: { type: string, maxLength: 1000 }
+                note: { type: [string, 'null'], maxLength: 1000 }
                 source: { enum: [OPERATOR, EMS, FAMILY], default: OPERATOR }
                 followUp:
                   {
@@ -1705,11 +1709,14 @@ paths:
                 protectedPersonId: { type: string, format: uuid }
                 partner: { type: string, example: FAKE_PENDANT }
                 model: { type: string, example: FAKE_PENDANT_CELL }
-                vendorDeviceId: { type: string, minLength: 1, maxLength: 200 }
-                vendorAccountId: { type: string, minLength: 1, maxLength: 200 }
-                bodyLocation: { $ref: '#/components/schemas/BodyLocation' }
+                vendorDeviceId:
+                  { type: string, pattern: '^[!-~]{1,200}$', description: Yazdırılabilir ASCII, boşluksuz }
+                vendorAccountId: { type: string, pattern: '^[!-~]{1,200}$' }
+                bodyLocation:
+                  oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }]
+                  description: null / yok → kolyede NECK, diğerlerinde HOME
                 consent:
-                  type: object
+                  type: [object, 'null']
                   required: [basis, at]
                   properties:
                     basis: { enum: [EXPLICIT_CONSENT, SCC_NOTIFIED, ADEQUACY] }
@@ -1880,8 +1887,8 @@ paths:
                     type: [object, 'null']
                     properties:
                       id: { type: string }
-                      type: { type: string }
-                      state: { type: string }
+                      type: { $ref: '#/components/schemas/EventType' }
+                      state: { $ref: '#/components/schemas/EventState' }
                       priority: { type: integer }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/invite:
@@ -2547,7 +2554,13 @@ paths:
                   properties:
                     firstName: { type: string, maxLength: 60 }
                     lastName: { type: string, maxLength: 60 }
-                    email: { type: string, format: email }
+                    email:
+                      type: string
+                      maxLength: 254
+                      pattern: '^\s*[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}\s*$'
+                      description: >-
+                        Sunucu deseniyle aynı (kırpıldıktan sonra); Türkçe karakterli adresler geçerli — `format: email`
+                        (yalnız ASCII) aile web'in kabul ettiği adresleri reddederdi.
                     phone: { type: string, pattern: '^\+[1-9]\d{6,14}$' }
                 protectedPerson:
                   type: object
@@ -2588,7 +2601,20 @@ paths:
       security: [{ signupToken: [] }]
       parameters: [{ $ref: '#/components/parameters/SubscriptionId' }]
       responses:
-        '200': { description: Gönderildi }
+        '200':
+          description: Gönderildi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [phoneVerification]
+                properties:
+                  phoneVerification: { const: SENT }
+                  devCode:
+                    {
+                      type: string,
+                      description: 'Yalnız geliştirmede sahte SMS ile (NODE_ENV ≠ production, SIGNUP_DEV_CODE ≠ off)',
+                    }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
@@ -2607,7 +2633,11 @@ paths:
       responses:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
-        '200': { description: Doğrulandı }
+        '200':
+          description: Doğrulandı
+          content:
+            application/json:
+              schema: { type: object, required: [phoneVerified], properties: { phoneVerified: { const: true } } }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '410': { $ref: '#/components/responses/Problem' }
@@ -2691,7 +2721,18 @@ paths:
             schema: { type: object, properties: { outcome: { enum: [success, fail] } } }
       responses:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
-        '200': { description: 'İmzalı webhook gerçek yoldan işlendi; `redirect` web adresi' }
+        '200':
+          description: 'İmzalı webhook gerçek yoldan işlendi; `redirect` web adresi'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, duplicate, outcome, redirect]
+                properties:
+                  received: { const: true }
+                  duplicate: { type: boolean }
+                  outcome: { enum: [applied, stale, terminal, ignored, unmatched, duplicate] }
+                  redirect: { type: string, description: Web adım 3 adresi }
         '404': { $ref: '#/components/responses/Problem' }
   /protected-persons/{id}/subscription:
     get:
@@ -3078,6 +3119,10 @@ components:
                   farklı cihazlar, ilk eleman alarmı açan), corroboratedAt (iki farklı cihaz 90 sn içinde düşme),
                   cancelledByDeviceId (cihaz sorusunu "iyiyim" ile kapatan cihaz). location açık P1/P2'de en taze
                   ve en doğru kaynaktan yeniden birleştirilir (S3.7).
+                properties:
+                  id: { type: string, format: uuid }
+                  type: { $ref: '#/components/schemas/EventType' }
+                  state: { $ref: '#/components/schemas/EventState' }
               chain: { oneOf: [{ $ref: '#/components/schemas/ChainView' }, { type: 'null' }] }
               calls: { type: array, items: { $ref: '#/components/schemas/CallView' } }
               ladder: { $ref: '#/components/schemas/LadderView' }
@@ -3100,6 +3145,43 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    EventType:
+      description: Olay türü (contracts `EventType`, kural paketi `rules[].type`; parite testi contract-parity.spec.ts).
+      enum:
+        [
+          SOS,
+          FALL,
+          INACTIVITY,
+          CALLBACK,
+          WATCH_OFF,
+          BATTERY_LOW,
+          BATTERY_DEAD,
+          CONNECTION_LOST,
+          ROUTINE_DEVIATION,
+          HEART_ANOMALY,
+          TEST,
+          FOLLOW_UP,
+          COVERAGE_GAP,
+          WELFARE_CHECK,
+          SPO2_LOW,
+        ]
+    EventState:
+      description: Olay durum makinesi (contracts `EventState`).
+      enum:
+        [
+          CREATED,
+          DEVICE_PROMPT,
+          CANCELLED_BY_USER,
+          ESCALATED,
+          OPERATOR_QUEUE,
+          OPERATOR_ASSIGNED,
+          CONTACT_CHAIN,
+          CONFIRMED_OK,
+          CONFIRMED_EMERGENCY,
+          DISPATCH,
+          FOLLOW_UP,
+          CLOSED,
+        ]
     Subscription:
       type: object
       required:
@@ -3134,10 +3216,10 @@ components:
       properties:
         id: { type: string, format: uuid }
         protectedPersonId: { type: string, format: uuid }
-        type: { type: string }
+        type: { $ref: '#/components/schemas/EventType' }
         priority: { type: integer }
         isTest: { type: boolean }
-        state: { type: string }
+        state: { $ref: '#/components/schemas/EventState' }
         stage:
           enum: [DETECTED, ASKING, CANCELLED, QUEUED, OPERATOR, CALLING, SAFE, EMERGENCY, DISPATCH, FOLLOW_UP, CLOSED]
         createdAt: { type: string, format: date-time }
@@ -3155,7 +3237,12 @@ components:
                 type: object
                 properties:
                   n: { type: integer }
-                  kind: { enum: [CALL_WATCH, CALL_PHONE, CALL_CONTACT, CALL_NEIGHBOR, CALL_112] }
+                  kind:
+                    type: string
+                    description: |
+                      chain_step.kind — kural paketi prosedürlerinin (packages/rules/procedures.tr.yaml) adım türü:
+                      CALL_WATCH, CALL_VOICE_2, CALL_PHONE, CALL_REDIAL, CALL_CONTACT, CALL_KEY_HOLDER, CALL_NEIGHBOR,
+                      CALL_112, NOTIFY_FAMILY (ChainStep.kind gibi açık uçlu; yeni adım türü sözleşmeyi kırmaz)
                   contactIndex: { type: [integer, 'null'] }
                   status: { enum: [PENDING, CALLING, DONE] }
                   result: { type: [string, 'null'] }
@@ -3178,9 +3265,9 @@ components:
             type: object
             properties:
               eventId: { type: string, format: uuid }
-              type: { type: string }
+              type: { $ref: '#/components/schemas/EventType' }
               priority: { type: integer }
-              state: { type: string }
+              state: { $ref: '#/components/schemas/EventState' }
               since: { type: string, format: date-time }
               offerUntil:
                 type: [string, 'null']
@@ -3193,7 +3280,7 @@ components:
       type: object
       properties:
         eventId: { type: string, format: uuid }
-        type: { type: string }
+        type: { $ref: '#/components/schemas/EventType' }
         priority: { type: integer }
         kind:
           {
@@ -3230,7 +3317,7 @@ components:
       required: [eventId, state, completed]
       properties:
         eventId: { type: string, format: uuid }
-        state: { type: string }
+        state: { $ref: '#/components/schemas/EventState' }
         completed: { type: boolean }
         outcome: { type: [string, 'null'] }
         operatorNote: { type: [string, 'null'], description: Kapanışta operatörün notu }
@@ -3240,10 +3327,11 @@ components:
       type: object
       required: [step, completed]
       properties:
-        step: { type: string, pattern: '^[A-Z_]+$', example: BATTERY }
+        step: { type: string, pattern: '^[A-Z_]+$', maxLength: 40, example: BATTERY }
         completed: { type: boolean }
         missing:
           type: array
+          maxItems: 8
           items: { enum: [NOTIFICATIONS, CALLS, LOCATION, LOCATION_BACKGROUND, MOTION, BATTERY, WATCH, HEALTH] }
         watchPaired: { type: [boolean, 'null'] }
     DailySummary:
@@ -3784,7 +3872,7 @@ components:
             type: object
             properties:
               eventId: { type: string }
-              eventType: { type: string }
+              eventType: { $ref: '#/components/schemas/EventType' }
               at: { type: string, format: date-time }
               acked: { type: boolean }
         dispatch112:
@@ -3999,10 +4087,10 @@ components:
             type: object
             properties:
               id: { type: string, format: uuid }
-              type: { type: string }
+              type: { $ref: '#/components/schemas/EventType' }
               priority: { type: integer }
               isTest: { type: boolean }
-              state: { type: string }
+              state: { $ref: '#/components/schemas/EventState' }
               createdAt: { type: string, format: date-time }
               closedAt: { type: [string, 'null'], format: date-time }
               outcome: { type: [string, 'null'] }
@@ -4187,6 +4275,8 @@ components:
         arrivalLate: { type: boolean }
         open: { type: boolean }
         checks: { type: integer, description: Takip zamanlayıcısının amir uyarısı sayısı }
+        followUps:
+          { type: integer, minimum: 0, description: "Operatörün 112'yi tekrar arayıp durumu sorduğu takip aramaları" }
         timeline:
           type: array
           items:
@@ -4198,6 +4288,7 @@ components:
               actorId: { type: [string, 'null'] }
               source: { enum: [OPERATOR, EMS, FAMILY, SYSTEM] }
               note: { type: [string, 'null'] }
+              followUp: { type: boolean, description: Takip araması kaydı }
     # ---- T-092 değer kuralları ve BLE köprülü cihazlar ----
     BridgedDeviceModel: { enum: [BLE_HR, BLE_PULSE_OX, BLE_THERMO, BLE_PENDANT] }
     BridgedDeviceRegister:
@@ -4294,7 +4385,7 @@ components:
             type: object
             properties:
               eventId: { type: string, format: uuid }
-              type: { type: string }
+              type: { $ref: '#/components/schemas/EventType' }
               outcome: { enum: [EMERGENCY, UNREACHABLE] }
               at: { type: string, format: date-time }
     VitalSettings:
@@ -4337,9 +4428,9 @@ components:
       required: [eventId, type, priority, state, createdAt, lockedBy, isTest, person]
       properties:
         eventId: { type: string, format: uuid }
-        type: { type: string }
+        type: { $ref: '#/components/schemas/EventType' }
         priority: { type: integer }
-        state: { type: string }
+        state: { $ref: '#/components/schemas/EventState' }
         createdAt: { type: string, format: date-time }
         escalatedAt: { type: [string, 'null'], format: date-time }
         lockedBy: { type: [string, 'null'], description: Üstlenen operatör (token sub) }

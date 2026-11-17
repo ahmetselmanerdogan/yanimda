@@ -24,9 +24,19 @@ interface Operation {
 
 type Spec = {
   paths: Record<string, Record<string, { operationId?: string; requestBody?: RequestBody }>>;
-  components?: unknown;
+  components?: { requestBodies?: Record<string, RequestBody> };
 };
-type RequestBody = { required?: boolean; content?: Record<string, { schema?: unknown }> };
+type RequestBody = { $ref?: string; required?: boolean; content?: Record<string, { schema?: unknown }> };
+
+/** `requestBody: { $ref: '#/components/requestBodies/X' }` → bileşen (ör. CheckoutInput). */
+function requestBodyOf(spec: Spec, rb: RequestBody | undefined): RequestBody | undefined {
+  const ref = rb?.$ref;
+  if (!ref) return rb;
+  const name = /^#\/components\/requestBodies\/(.+)$/.exec(ref)?.[1];
+  const hit = name ? spec.components?.requestBodies?.[name] : undefined;
+  if (!hit) throw new Error(`OpenAPI: çözülemeyen requestBody $ref ${ref}`);
+  return hit;
+}
 
 let ajv: Ajv2020 | undefined;
 let operations: Map<string, { schema: unknown; required: boolean }> | undefined;
@@ -65,8 +75,9 @@ function load(specPath = SPEC_PATH) {
   const ops = new Map<string, { schema: unknown; required: boolean }>();
   for (const methods of Object.values(spec.paths))
     for (const op of Object.values(methods)) {
-      const schema = op?.requestBody?.content?.['application/json']?.schema;
-      if (op?.operationId && schema) ops.set(op.operationId, { schema, required: !!op.requestBody?.required });
+      const rb = requestBodyOf(spec, op?.requestBody);
+      const schema = rb?.content?.['application/json']?.schema;
+      if (op?.operationId && schema) ops.set(op.operationId, { schema, required: !!rb?.required });
     }
   ajv = a;
   operations = ops;
@@ -100,6 +111,22 @@ export function describeErrors(errors: ErrorObject[] | null | undefined): string
   return [...seen].join('; ');
 }
 
+/** Şemaya uymayan gövde → 400 `A-ERR-BODY-SCHEMA` (ayrıntıda değer yok). */
+function check(op: Operation, value: unknown): unknown {
+  if (value === undefined && !op.required) return value;
+  if (!op.validate(value))
+    throw fail(BadRequestException, 'A-ERR-BODY-SCHEMA', { errors: describeErrors(op.validate.errors) });
+  return value;
+}
+
+/**
+ * Pipe kullanılamayan uçlar için (imzası ham gövde üzerinden önce doğrulanması gereken webhook'lar): imza
+ * doğrulandıktan sonra çağrılır, `OpenApiBody` ile aynı 400'ü verir.
+ */
+export function validateBody(operationId: string, value: unknown): unknown {
+  return check(bodyValidator(operationId), value);
+}
+
 /**
  * `@Body(new OpenApiBody('createProtectedPerson'))`. Şema derlemesi sınıf tanımında (açılışta) yapılır: sözleşmede
  * olmayan `operationId` API'yi açmaz. Gövde yoksa ve sözleşmede zorunlu değilse servis karar verir.
@@ -111,9 +138,6 @@ export class OpenApiBody implements PipeTransform {
   }
 
   transform(value: unknown): unknown {
-    if (value === undefined && !this.op.required) return value;
-    if (!this.op.validate(value))
-      throw fail(BadRequestException, 'A-ERR-BODY-SCHEMA', { errors: describeErrors(this.op.validate.errors) });
-    return value;
+    return check(this.op, value);
   }
 }

@@ -71,6 +71,7 @@ export interface DeviceAdapter {
 /** Cihaz bu sinyali gönderemez / tür bilinmiyor / simülatör kapalı → 400. */
 export class UnsupportedSignalError extends Error {}
 
+/** signal.schema.json `kind` enum ile aynı (parite: test/contract-parity.spec.ts B5). */
 export const ALL_SIGNAL_KINDS: Signal['kind'][] = [
   'SOS',
   'FALL',
