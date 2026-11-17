@@ -1,4 +1,7 @@
 # Konsol statik sunucusu (kapta, root değil, :8080). TLS ve /v1 yönlendirmesi dıştaki Caddy/Ingress'te.
+# Tek imaj, ortam başına yapılandırma: /config.json kap ortamından yapılandırma yüklenirken üretilir
+# (CONSOLE_OIDC_AUTHORITY zorunlu, CONSOLE_OIDC_CLIENT_ID varsayılan "console", CONSOLE_API_BASE boş = aynı köken /v1);
+# konsol açılmadan önce okur (apps/console/src/lib/config.ts).
 {
 	admin off
 	auto_https off
@@ -15,6 +18,13 @@
 	header /sw.js Cache-Control "no-cache"
 	header /sw.js Service-Worker-Allowed "/"
 	header /manifest.webmanifest Content-Type "application/manifest+json"
-	try_files {path} /index.html
-	file_server
+	handle /config.json {
+		header Cache-Control "no-store"
+		header Content-Type "application/json"
+		respond `{"oidcAuthority":"{$CONSOLE_OIDC_AUTHORITY}","oidcClientId":"{$CONSOLE_OIDC_CLIENT_ID:console}","apiBase":"{$CONSOLE_API_BASE}"}` 200
+	}
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 }

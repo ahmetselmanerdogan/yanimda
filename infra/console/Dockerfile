@@ -1,24 +1,21 @@
 # T-083 operatör konsolu imajı (statik Vite derlemesi). Repo kökünden:
-#   docker build -f infra/console/Dockerfile \
-#     --build-arg VITE_OIDC_AUTHORITY=https://auth.staging.example/realms/operations \
-#     -t yanimda-console:staging .
-# VITE_* derleme anında gömülür → ortam başına imaj. VITE_API_BASE boş: aynı köken (/v1; Caddy/Ingress yönlendirir).
+#   docker build -f infra/console/Dockerfile -t yanimda-console:local .
+# TEK İMAJ, ortam başına yapılandırma: derlemeye VITE_* gömülmez. Kap açılışında Caddy /config.json'ı ortamdan üretir
+# (infra/console/Caddyfile):
+#   CONSOLE_OIDC_AUTHORITY=https://auth.<domain>/realms/operations   (zorunlu)
+#   CONSOLE_OIDC_CLIENT_ID=console                                   (varsayılan)
+#   CONSOLE_API_BASE=                                                (boş: aynı köken /v1; Caddy/Ingress yönlendirir)
+# Konsol açılmadan önce /config.json'ı okur (apps/console/src/lib/config.ts). release-image.yml bu imajı GHCR'ye
+# iter, cosign ile imzalar (compose CONSOLE_IMAGE, Helm console.image).
 
 FROM node:26-alpine AS build
 WORKDIR /repo
 RUN npm install -g pnpm@9.12.0
 COPY . .
-ARG VITE_OIDC_AUTHORITY
-ARG VITE_OIDC_CLIENT_ID=console
-ARG VITE_API_BASE=
-ENV VITE_OIDC_AUTHORITY=$VITE_OIDC_AUTHORITY \
-    VITE_OIDC_CLIENT_ID=$VITE_OIDC_CLIENT_ID \
-    VITE_API_BASE=$VITE_API_BASE
-RUN test -n "$VITE_OIDC_AUTHORITY" || (echo "VITE_OIDC_AUTHORITY gerekli" >&2; exit 1)
 RUN pnpm install --frozen-lockfile \
  && pnpm --filter @yanimda/console... build
 
-FROM caddy:2.8.4-alpine AS runtime
+FROM caddy:2.11.9-alpine AS runtime
 # Salt okunur kök dosya sistemiyle çalışabilsin: Caddy durum dizinleri /tmp altında (tmpfs/emptyDir).
 ENV XDG_CONFIG_HOME=/tmp/config \
     XDG_DATA_HOME=/tmp/data

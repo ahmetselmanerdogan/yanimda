@@ -1,15 +1,19 @@
 import { type User, UserManager, WebStorageStateStore } from 'oidc-client-ts';
 
+import { runtimeConfig } from './config';
+
 /**
  * T-020 konsol girişi: Keycloak `operations` realm'i, PKCE (S256) yetkilendirme kodu akışı, OTP Keycloak'ta zorunlu.
  * Oturum Keycloak'ta 12 saat; erişim token'ı 5 dk, yenileme token'ıyla sessiz yenilenir. Token yalnız oturum
  * deposunda (sessionStorage) tutulur: sekme kapanınca yeniden giriş.
+ * Issuer ve istemci kimliği çalışma zamanı yapılandırmasından (lib/config.ts): bu modül `loadRuntimeConfig`
+ * tamamlandıktan sonra yüklenir (main.tsx dinamik import).
  */
-const authority = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:8080/realms/operations';
+const { oidcAuthority: authority, oidcClientId } = runtimeConfig();
 
 export const userManager = new UserManager({
   authority,
-  client_id: import.meta.env.VITE_OIDC_CLIENT_ID || 'console',
+  client_id: oidcClientId,
   redirect_uri: `${window.location.origin}/`,
   post_logout_redirect_uri: `${window.location.origin}/`,
   response_type: 'code',
