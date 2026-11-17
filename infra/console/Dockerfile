@@ -15,10 +15,17 @@ COPY . .
 RUN pnpm install --frozen-lockfile \
  && pnpm --filter @yanimda/console... build
 
+# Caddy ikilisi güncel bağımlılıkla yeniden derlenir: resmi 2.11.9 ikilisindeki golang.org/x/net v0.60.0
+# CVE-2026-78661 (HIGH, düzeltme 0.62.0) release-image.yml Trivy kapısını düşürür. Caddy yeni sürüm çıkarınca
+# --replace kaldırılır (Dependabot docker güncellemesi).
+FROM caddy:2.11.9-builder-alpine AS caddy
+RUN xcaddy build v2.11.9 --output /usr/bin/caddy --replace golang.org/x/net=golang.org/x/net@v0.62.0
+
 FROM caddy:2.11.9-alpine AS runtime
 # Salt okunur kök dosya sistemiyle çalışabilsin: Caddy durum dizinleri /tmp altında (tmpfs/emptyDir).
 ENV XDG_CONFIG_HOME=/tmp/config \
     XDG_DATA_HOME=/tmp/data
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY infra/console/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/apps/console/dist /srv
 USER 65532:65532
