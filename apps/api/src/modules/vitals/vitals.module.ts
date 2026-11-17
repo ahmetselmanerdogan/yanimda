@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { EventModule } from '../event/event.module';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import type { Actor } from '../profile/contacts';
@@ -67,7 +68,11 @@ export class VitalsFamilyController {
 
   /** PUT /v1/protected-persons/{id}/vital-settings — hesap sahibi (OWNER) veya yönetici. */
   @Put('vital-settings')
-  async setSettings(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  async setSettings(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('setVitalSettings')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     await this.profile.authorizeOwner(req.actor!, id);
     return this.vitals.setSettings(id, body, actorId(req.actor!));
   }
@@ -89,7 +94,11 @@ export class VitalsReviewController {
   /** POST /v1/supervisor/vital-reviews/{id}/resolve — { note? } */
   @Post(':id/resolve')
   @HttpCode(200)
-  resolve(@Param('id') id: string, @Body() body: unknown, @Req() req: UserRequest) {
+  resolve(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('resolveVitalReview')) body: unknown,
+    @Req() req: UserRequest,
+  ) {
     return this.vitals.resolveReview(id, userOf(req).sub, body);
   }
 }

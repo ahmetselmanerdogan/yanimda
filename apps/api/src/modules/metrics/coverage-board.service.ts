@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { LadderStepStat, SupervisorCoverageBoard } from '@yanimda/contracts';
+import type { EventType, LadderStepStat, SupervisorCoverageBoard } from '@yanimda/contracts';
 import { sql } from 'drizzle-orm';
 
 import { DB, type Db } from '../../db/client';
@@ -108,7 +108,12 @@ export class CoverageBoardService {
       .sort((a, b) => (a.phoneSeenAt ?? '').localeCompare(b.phoneSeenAt ?? ''))
       .slice(0, LIST_LIMIT);
 
-    const unclaimedP1 = await this.q<{ event_id: string; event_type: string; at: Date | string; acked: boolean }>(sql`
+    const unclaimedP1 = await this.q<{
+      event_id: string;
+      event_type: EventType;
+      at: Date | string;
+      acked: boolean;
+    }>(sql`
       SELECT event_id, event_type, at, acked_at IS NOT NULL AS acked FROM event.supervisor_alert
       WHERE code = 'O-P1-UNCLAIMED' AND at >= ${now.toISOString()}::timestamptz - interval '7 days'
         AND at <= ${now.toISOString()}::timestamptz

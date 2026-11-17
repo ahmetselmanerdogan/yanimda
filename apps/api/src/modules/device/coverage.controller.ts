@@ -28,6 +28,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { fail } from '../../common/catalog-error';
+import { OpenApiBody } from '../../common/openapi-body';
 import { DB, type Db } from '../../db/client';
 import { auditLog, device, devicePrompt } from '../../db/schema';
 import { isBodyLocation } from '../event/coverage.service';
@@ -199,7 +200,11 @@ export class CoverageController {
 
   /** PUT /v1/protected-persons/{id}/charging-plan — aile (OWNER/MEMBER) veya yönetici. */
   @Put(':id/charging-plan')
-  async setPlan(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  async setPlan(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('putChargingPlan')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     const a = actorOf(req);
     await this.access.person(a, id, 'plan');
     return this.protection.coverage.setChargingPlan(id, body, 'sub' in a && a.sub ? a.sub : 'admin');
@@ -231,7 +236,11 @@ export class DeviceManageController {
    * numarası `voiceNumber` (T-087 S5.2; yalnız operasyon, E.164; denetime değeri yazılmaz).
    */
   @Patch(':id')
-  async patch(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest): Promise<DeviceSummary> {
+  async patch(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('patchDevice')) body: unknown,
+    @Req() req: ActorRequest,
+  ): Promise<DeviceSummary> {
     const personId = await this.access.device(actorOf(req), id, 'patch');
     const set = parsePatch(body);
     if (set.voiceNumber !== undefined && actorOf(req).kind === 'FAMILY')
@@ -281,7 +290,11 @@ export class DeviceManageController {
   /** POST /v1/devices/{id}/charging-intent — kişinin kendi cihazı veya aile. 202 { until }. */
   @Post(':id/charging-intent')
   @HttpCode(202)
-  async chargingIntent(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  async chargingIntent(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('chargingIntent')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     const a = actorOf(req);
     const personId = await this.access.device(a, id, 'intent');
     const b = (body ?? {}) as { minutes?: unknown };
@@ -300,7 +313,11 @@ export class DeviceManageController {
    */
   @Post(':id/commands')
   @HttpCode(202)
-  async command(@Param('id') id: string, @Body() body: unknown, @Req() req: ActorRequest) {
+  async command(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('deviceCommand')) body: unknown,
+    @Req() req: ActorRequest,
+  ) {
     const a = actorOf(req);
     const personId = await this.access.device(a, id, 'command');
     const { type, eventId: asked } = parseCommand(body);

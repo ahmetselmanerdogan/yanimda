@@ -1,10 +1,11 @@
 import { Body, Controller, HttpCode, Module, Post } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { NestFactory } from '@nestjs/core';
+import { t } from '@yanimda/messages';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { configureHttpSecurity } from '../src/common/http-security';
-import { bodyValidator, jsonBodyOperations, OpenApiBody } from '../src/common/openapi-body';
+import { bodyValidator, jsonBodyOperations, OpenApiBody, validateBody } from '../src/common/openapi-body';
 import { ProblemFilter } from '../src/common/problem.filter';
 import { ChainController } from '../src/modules/chain/chain.controller';
 import { FamilyMembersController, ProfileController } from '../src/modules/profile/profile.controller';
@@ -19,6 +20,58 @@ describe('OpenAPI gövde doğrulaması', () => {
     expect(ops.length).toBeGreaterThan(30);
     for (const op of ops) expect(() => bodyValidator(op), op).not.toThrow();
     expect(bodyValidator('postSignals').validate([{ schemaVersion: 2 }])).toBe(false);
+  });
+
+  it('requestBodies $ref (CheckoutInput) çözülür', () => {
+    expect(jsonBodyOperations()).toEqual(
+      expect.arrayContaining(['createSignupCheckout', 'createSubscriptionCheckout']),
+    );
+    const v = bodyValidator('createSignupCheckout').validate;
+    expect(v({})).toBe(true);
+    expect(v({ billing: { city: 'İstanbul', address: 'Moda Cd. 1' } })).toBe(true);
+    expect(v({ billing: { city: 'İstanbul' } })).toBe(false);
+  });
+
+  it('validateBody (imza sonrası webhook doğrulaması) pipe ile aynı katalog kodu', () => {
+    expect(validateBody('partnerWebhook', { events: [] })).toEqual({ events: [] });
+    let err: unknown;
+    try {
+      validateBody('partnerWebhook', [{ id: 'x' }]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { getStatus(): number }).getStatus()).toBe(400);
+    expect((err as { getResponse(): { code: string } }).getResponse().code).toBe('A-ERR-BODY-SCHEMA');
+  });
+
+  it('istemcilerin gerçekten gönderdiği gövdeler geçer (sunucuyla aynı gevşeklik)', () => {
+    const ok = (op: string, body: unknown) => expect(bodyValidator(op).validate(body), op).toBe(true);
+    // aile web: Türkçe karakterli e-posta (sunucu EMAIL deseni kabul ediyor; Ajv `format: email` reddederdi)
+    ok('signup', {
+      plan: 'STANDARD',
+      country: 'TR',
+      account: { firstName: 'Çağrı', lastName: 'Öz', email: 'çağrı@şirket.com.tr', phone: '+905551112233' },
+      protectedPerson: { displayName: 'Anne' },
+      consents: { kvkkNoticeVersion: 'v1', explicitConsent: true },
+    });
+    ok('updateDispatch', { source: 'OPERATOR', caseRef: null, hospital: null, etaMin: null, note: null });
+    ok('createVendorLink', {
+      protectedPersonId: '0190a8e2-7c1d-7000-8000-000000000001',
+      partner: 'FAKE_PENDANT',
+      model: 'FAKE_PENDANT_CELL',
+      vendorDeviceId: 'FP-0001',
+      bodyLocation: null,
+      consent: null,
+    });
+    // konsol: PushSubscription.toJSON() expirationTime taşır
+    ok('webPushSubscribe', {
+      endpoint: 'https://push.example/x',
+      expirationTime: null,
+      keys: { p256dh: 'a', auth: 'b' },
+    });
+    // Android: tüm alanlar dolu kurulum durumu
+    ok('putSetupState', { step: 'BATTERY', completed: false, missing: ['BATTERY', 'WATCH'], watchPaired: true });
+    ok('chargingIntent', {});
   });
 
   it('bilinmeyen operationId açılışta hata', () => {
@@ -64,7 +117,30 @@ class Probe {
     got.push(body ?? 'yok');
   }
 }
-@Module({ controllers: [Probe] })
+@Controller()
+class DeviceProbe {
+  @Post('device')
+  @HttpCode(204)
+  patch(@Body(new OpenApiBody('patchDevice')) body: unknown) {
+    got.push(body);
+  }
+  @Post('auto-assign')
+  @HttpCode(204)
+  autoAssign(@Body(new OpenApiBody('setAutoAssign')) body: unknown) {
+    got.push(body);
+  }
+  @Post('enroll')
+  @HttpCode(204)
+  enroll(@Body(new OpenApiBody('enrollDevice')) body: unknown) {
+    got.push(body);
+  }
+  @Post('checkout')
+  @HttpCode(204)
+  checkout(@Body(new OpenApiBody('createSignupCheckout')) body: unknown) {
+    got.push(body ?? 'yok');
+  }
+}
+@Module({ controllers: [Probe, DeviceProbe] })
 class ProbeModule {}
 
 describe('OpenAPI gövde doğrulaması (HTTP)', () => {
@@ -116,5 +192,46 @@ describe('OpenAPI gövde doğrulaması (HTTP)', () => {
       expect(p.detail).not.toContain('BELKI');
     }
     expect(got).toEqual([]);
+  });
+
+  it('temsilî 400’ler: bilinmeyen alan / yanlış tür / eksik zorunlu alan / boş zorunlu gövde → A-ERR-BODY-SCHEMA', async () => {
+    got.length = 0;
+    const enroll = { inviteCode: '123456', deviceId: '0190a8e2-7c1d-7000-8000-000000000001', kind: 'ANDROID_PHONE' };
+    const cases: [string, unknown, RegExp][] = [
+      ['/device', { nickname: 'Saat', isAdmin: true }, /\/ additionalProperties/],
+      ['/device', {}, /\/ minProperties/],
+      ['/auto-assign', { enabled: 'evet' }, /\/enabled type/],
+      ['/auto-assign', undefined, /\/ type/],
+      ['/enroll', { inviteCode: '123456', kind: 'ANDROID_PHONE' }, /required\(deviceId\)/],
+      ['/enroll', { ...enroll, deviceId: 'dev-1' }, /\/deviceId format/],
+      ['/enroll', { ...enroll, inviteCode: '12345' }, /\/inviteCode pattern/],
+      ['/checkout', { billing: { city: 'İzmir' } }, /\/billing required\(address\)/],
+    ];
+    for (const [path, body, re] of cases) {
+      const r = await post(path, body);
+      expect(r.status, `${path} ${JSON.stringify(body)}`).toBe(400);
+      const p = (await r.json()) as { code: string; detail: string };
+      expect(p.code).toBe('A-ERR-BODY-SCHEMA');
+      expect(p.detail).toMatch(re);
+      expect(p.detail).not.toContain('dev-1');
+    }
+    expect(got).toEqual([]);
+    expect((await post('/device', { nickname: null, voiceOrder: 2 })).status).toBe(204);
+    expect((await post('/enroll', enroll)).status).toBe(204);
+    expect((await post('/checkout')).status).toBe(204);
+    expect(got).toHaveLength(3);
+  });
+
+  it('JSON olmayan gövde katalog kodlu 400 (A-ERR-BODY-NOT-JSON)', async () => {
+    const r = await fetch(`${base}/device`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"nickname": "+905551112233" x',
+    });
+    expect(r.status).toBe(400);
+    const p = (await r.json()) as { code: string; detail: string };
+    expect(p.code).toBe('A-ERR-BODY-NOT-JSON');
+    expect(p.detail).toBe(t('A-ERR-BODY-NOT-JSON', 'tr')); // ayrıştırıcı iletisi (gövde parçası) dışarı çıkmaz
+    expect(JSON.stringify(p)).not.toContain('905551112233');
   });
 });

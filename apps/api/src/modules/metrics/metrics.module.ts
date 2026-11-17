@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import { EventModule } from '../event/event.module';
 import { ProtectionService } from '../event/protection.service';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
@@ -71,19 +72,23 @@ export class SupervisorController {
 
   /** Operatör durumu: AVAILABLE / BREAK / OFFLINE (audit). */
   @Put('operators/:sub/status')
-  status(@Param('sub') sub: string, @Body() body: { status?: unknown } = {}, @Req() req: UserRequest) {
+  status(
+    @Param('sub') sub: string,
+    @Body(new OpenApiBody('setOperatorStatus')) body: { status?: unknown },
+    @Req() req: UserRequest,
+  ) {
     return this.supervisor.setStatus(sub, body?.status, userOf(req).sub);
   }
 
   /** Otomatik atama bayrağı (0039): açıkken kuyruktaki olay uygun operatöre atanır. */
   @Put('auto-assign')
-  autoAssign(@Body() body: { enabled?: unknown } = {}, @Req() req: UserRequest) {
+  autoAssign(@Body(new OpenApiBody('setAutoAssign')) body: { enabled?: unknown }, @Req() req: UserRequest) {
     return this.supervisor.setAutoAssign(body?.enabled, userOf(req).sub);
   }
 
   /** Yedek merkeze taşma bayrağı (v1.0'da işaret; yönlendirme v2.0). */
   @Put('overflow')
-  overflow(@Body() body: { enabled?: unknown } = {}, @Req() req: UserRequest) {
+  overflow(@Body(new OpenApiBody('setOverflow')) body: { enabled?: unknown }, @Req() req: UserRequest) {
     return this.supervisor.setOverflow(body?.enabled, userOf(req).sub);
   }
 }

@@ -334,7 +334,7 @@ export interface SupervisorCoverageBoard {
   /** Ulaşılamama oranı (P1/P2 merdivenleri, test hariç): adım türü başına deneme / ulaşılan / ulaşılamayan. */
   unreachable: { days7: LadderStepStat[]; days30: LadderStepStat[] };
   /** 90 sn üstlenilmeyen P1 (O-P1-UNCLAIMED), son 7 gün. */
-  unclaimedP1: { eventId: string; eventType: string; at: string; acked: boolean }[];
+  unclaimedP1: { eventId: string; eventType: EventType; at: string; acked: boolean }[];
   /** Hareketsizlik / yerinde kontrol olaylarında 112 bildirimi, son 7 gün. */
   dispatch112: { eventId: string; eventType: string; notifiedAt: string; status: string; name: string | null }[];
 }
@@ -708,10 +708,10 @@ export interface DataExportPerson {
   /** Olay özeti (en yeni önce, en çok 1000): konum, operatör ve notlar yok. */
   events: {
     id: string;
-    type: string;
+    type: EventType;
     priority: number;
     isTest: boolean;
-    state: string;
+    state: EventState;
     createdAt: string;
     closedAt: string | null;
     outcome: string | null;

@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 
 import { fail } from '../../common/catalog-error';
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { NotifyService } from './notify.service';
@@ -30,7 +31,7 @@ export class NotifyController {
   /** PUT /v1/me/push-target — {platform: 'FCM', token}. */
   @Put('me/push-target')
   @HttpCode(204)
-  async setTarget(@Body() body: unknown, @Req() req: UserRequest) {
+  async setTarget(@Body(new OpenApiBody('setPushTarget')) body: unknown, @Req() req: UserRequest) {
     await this.notify.setPushTarget(userOf(req).sub, body);
   }
 

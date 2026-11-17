@@ -18,6 +18,7 @@ import {
 import { validate as isUuid } from 'uuid';
 
 import { fail } from '../../common/catalog-error';
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { type CallView, TelephonyService, type VoiceToken, WEBHOOK_KINDS, type WebhookKind } from './telephony.service';
@@ -82,7 +83,11 @@ export class TelephonyController {
   /** POST /v1/telephony/calls/{callId}/hold — `{ on: boolean }`. */
   @Post('calls/:callId/hold')
   @HttpCode(200)
-  hold(@Param('callId') id: string, @Body() body: unknown, @Req() req: UserRequest): Promise<CallView> {
+  hold(
+    @Param('callId') id: string,
+    @Body(new OpenApiBody('holdCall')) body: unknown,
+    @Req() req: UserRequest,
+  ): Promise<CallView> {
     const on = (body as { on?: unknown } | null)?.on;
     if (typeof on !== 'boolean') throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'on' });
     return this.telephony.hold(callId(id), userOf(req).sub, on);
@@ -91,7 +96,11 @@ export class TelephonyController {
   /** POST /v1/telephony/calls/{callId}/conference — `{ contactIndex?: 1..5 }` (varsayılan 1. yakın). */
   @Post('calls/:callId/conference')
   @HttpCode(200)
-  conference(@Param('callId') id: string, @Body() body: unknown, @Req() req: UserRequest): Promise<CallView> {
+  conference(
+    @Param('callId') id: string,
+    @Body(new OpenApiBody('conferenceCall')) body: unknown,
+    @Req() req: UserRequest,
+  ): Promise<CallView> {
     const n = (body as { contactIndex?: unknown } | null)?.contactIndex ?? 1;
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 5)
       throw fail(BadRequestException, 'A-ERR-FIELD-RANGE', { field: 'contactIndex', min: 1, max: 5 });

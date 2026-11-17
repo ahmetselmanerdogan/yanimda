@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import type { DataExport, DataExportPerson, DataExportWithheld } from '@yanimda/contracts';
+import type { DataExport, DataExportPerson, DataExportWithheld, EventState, EventType } from '@yanimda/contracts';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { fail } from '../../common/catalog-error';
@@ -205,10 +205,10 @@ export class DataExportService {
       })),
       events: events.map((e) => ({
         id: e.id,
-        type: e.type,
+        type: e.type as EventType,
         priority: e.priority,
         isTest: e.isTest,
-        state: e.state,
+        state: e.state as EventState,
         createdAt: e.createdAt.toISOString(),
         closedAt: iso(e.closedAt),
         outcome: e.confirmedOutcome,

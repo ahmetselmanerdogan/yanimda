@@ -46,7 +46,11 @@ export class ChainController {
   /** POST /v1/events/{id}/dispatch — 112 aşaması / vaka no / tahmini varış / hastane / not (olay kapalıyken de). */
   @Post(':id/dispatch')
   @HttpCode(200)
-  updateDispatch(@Param('id') id: string, @Req() req: UserRequest, @Body() body: unknown) {
+  updateDispatch(
+    @Param('id') id: string,
+    @Req() req: UserRequest,
+    @Body(new OpenApiBody('updateDispatch')) body: unknown,
+  ) {
     const u = userOf(req);
     // Amir/yönetici her süreci, operatör yalnız yürüttüğü olayınkini günceller (DispatchService.update).
     const kind = u.roles.includes('ADMIN') ? 'ADMIN' : u.roles.includes('SUPERVISOR') ? 'SUPERVISOR' : 'OPERATOR';

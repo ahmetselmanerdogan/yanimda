@@ -19,6 +19,7 @@ import {
 import { validate as isUuid } from 'uuid';
 
 import { fail } from '../../common/catalog-error';
+import { OpenApiBody } from '../../common/openapi-body';
 import { RateLimit, WEBHOOK_LIMIT } from '../../common/rate-limit';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 import { SupervisorService } from '../metrics/supervisor.service';
@@ -110,7 +111,10 @@ export class OperatorsController {
 
   /** PUT /v1/operators/me/status — `{ status: AVAILABLE | BREAK }` (audit). */
   @Put('me/status')
-  async setMine(@Body() body: { status?: unknown } | null, @Req() req: UserRequest) {
+  async setMine(
+    @Body(new OpenApiBody('setMyOperatorStatus')) body: { status?: unknown } | null,
+    @Req() req: UserRequest,
+  ) {
     const status = body?.status;
     if (!SELF_STATUSES.includes(status as (typeof SELF_STATUSES)[number]))
       throw fail(BadRequestException, 'A-ERR-FIELD-ENUM', { field: 'status', values: SELF_STATUSES.join(' | ') });

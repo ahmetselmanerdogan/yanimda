@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Inject, Module, Param, Put, Req, UseGuards } from '@nestjs/common';
 
+import { OpenApiBody } from '../../common/openapi-body';
 import type { UserRequest } from '../identity/oidc.guard';
 import type { Actor } from '../profile/contacts';
 import { ProfileGuard } from '../profile/profile.controller';
@@ -20,7 +21,11 @@ export class LearningController {
 
   /** PUT /v1/protected-persons/{id}/thresholds — aile ayarı (öğrenme bu alana dokunmaz; null → varsayılan). */
   @Put('thresholds')
-  set(@Param('id') id: string, @Body() body: unknown, @Req() req: UserRequest & { actor?: Actor }) {
+  set(
+    @Param('id') id: string,
+    @Body(new OpenApiBody('setThresholds')) body: unknown,
+    @Req() req: UserRequest & { actor?: Actor },
+  ) {
     return this.learning.setThresholds(req.actor!, id, body);
   }
 }

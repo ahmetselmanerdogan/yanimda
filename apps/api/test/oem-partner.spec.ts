@@ -1,3 +1,4 @@
+import type { HttpException } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FieldCipher } from '../src/common/field-cipher';
@@ -462,6 +463,16 @@ describe('İmzalı webhook (S2.6: imza, tekrar koruması, idempotency)', () => {
       rejected: [{ reason: 'UNSUPPORTED_SIGNAL' }],
     });
     expect(await status(deliver([]))).toBe(400);
+    // T-081: openapi şeması (nesne) imzadan SONRA — imzasız dizi 401, imzalı dizi 400 A-ERR-BODY-SCHEMA.
+    const arr = JSON.stringify([ev('SOS', 'FP-RAD')]);
+    const raw = (headers: Record<string, string>) =>
+      webhook.ingest('FAKE_PENDANT', { rawBody: Buffer.from(arr), headers }).catch((e: HttpException) => e);
+    expect(((await raw({ ...signed(arr), 'x-partner-signature': '00' })) as HttpException).getStatus()).toBe(401);
+    const schemaErr = (await raw(signed(arr))) as HttpException;
+    expect([schemaErr.getStatus(), (schemaErr.getResponse() as { code: string }).code]).toEqual([
+      400,
+      'A-ERR-BODY-SCHEMA',
+    ]);
   });
 
   it('komutlar ortak merkezine (DeviceService): hücresel kolye çaldır / konum / test; radyo kolyede yalnız test', async () => {

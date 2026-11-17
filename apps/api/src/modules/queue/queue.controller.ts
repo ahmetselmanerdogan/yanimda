@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 
 import { fail } from '../../common/catalog-error';
+import { OpenApiBody } from '../../common/openapi-body';
 import { EventService } from '../event/event.service';
 import { OidcGuard, Roles, userOf, type UserRequest } from '../identity/oidc.guard';
 
@@ -43,7 +44,11 @@ export class QueueController {
   @Post('events/:id/unclaim')
   @HttpCode(200)
   @Roles('SUPERVISOR')
-  async unclaim(@Param('id') id: string, @Req() req: UserRequest, @Body() body: { reason?: unknown } = {}) {
+  async unclaim(
+    @Param('id') id: string,
+    @Req() req: UserRequest,
+    @Body(new OpenApiBody('unclaimEvent')) body: { reason?: unknown } = {},
+  ) {
     const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 500) || undefined : undefined;
     const ev = await this.events.unclaim(id, userOf(req).sub, reason);
     return { eventId: ev.id, state: ev.state };

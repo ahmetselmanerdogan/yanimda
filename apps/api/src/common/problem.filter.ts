@@ -25,6 +25,11 @@ export function isTransient(e: unknown): boolean {
   );
 }
 
+const isJsonParseError = (e: HttpException) =>
+  e.getStatus() === HttpStatus.BAD_REQUEST &&
+  e.cause instanceof SyntaxError &&
+  (e.cause as { type?: unknown }).type === 'entity.parse.failed';
+
 /** RFC 7807 problem+json hata biçimi (03-teknik-mimari.md "API sözleşmeleri"). PII içermez. */
 @Catch()
 export class ProblemFilter implements ExceptionFilter {
@@ -42,6 +47,12 @@ export class ProblemFilter implements ExceptionFilter {
       // Katalog kodu (packages/messages, örn. F-MEMBER-CODE-USED): istemci metni kendi kataloğundan gösterir.
       const c = typeof body === 'object' && body ? (body as { code?: unknown }).code : undefined;
       if (typeof c === 'string' && CATALOG_CODE.test(c)) code = c;
+      // Bozuk JSON (body-parser SyntaxError, Nest BadRequest'e sarar): ayrıştırıcı iletisi gövdeden parça taşır
+      // (PII) — katalog kodu ve sabit metin verilir.
+      if (isJsonParseError(exception)) {
+        code = 'A-ERR-BODY-NOT-JSON';
+        detail = t(code, 'tr');
+      }
       // D-01: partideki her sinyal reddedildiyse (400/403) hangi sinyalin neden reddedildiği (sabit kod, PII yok).
       if (typeof body === 'object' && body) rejected = sanitizeRejected((body as { rejected?: unknown }).rejected);
     } else if (isTransient(exception)) {
