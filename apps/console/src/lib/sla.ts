@@ -28,7 +28,11 @@ export function slaOf(
     s.claimLeftSec = claimSlaSec(item.priority ?? 1) - sec(item.escalatedAt ?? item.createdAt, now);
   if (ev && !firstCalledAt && (ev.state === 'OPERATOR_ASSIGNED' || ev.state === 'CONTACT_CHAIN')) {
     const assigned = [...ev.transitions].reverse().find((x) => x.to === 'OPERATOR_ASSIGNED')?.at;
-    if (assigned) s.firstCallLeftSec = FIRST_CALL_SLA_SEC - sec(assigned, now);
+    // M-20: operatördeki alarm olmayan olay (TEST) alarma yükseldiyse sunucu escalatedAt'i yükseltme anına çeker;
+    // ilk arama süresi de o andan sayılır (eski atanma anından değil).
+    const start =
+      assigned && ev.escalatedAt && Date.parse(ev.escalatedAt) > Date.parse(assigned) ? ev.escalatedAt : assigned;
+    if (start) s.firstCallLeftSec = FIRST_CALL_SLA_SEC - sec(start, now);
   }
   return s;
 }

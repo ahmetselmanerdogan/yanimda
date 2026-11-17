@@ -85,6 +85,31 @@ describe('kapatma ve takip araması', () => {
     expect(timers.pendingIds()).not.toContain(`${c}.follow-up`);
   });
 
+  it('T-063: TEST olayı kapanışı takip planlamaz (gerçek FOLLOW_UP olayı doğmaz, metrik kirlenmez)', async () => {
+    const id = await claimed('pp-t', 'TEST');
+    const [ev] = await h.rows<{ is_test: boolean }>('SELECT is_test FROM event.event WHERE id = $1', [id]);
+    expect(ev!.is_test).toBe(true);
+    await chain.close(id, 'op-1', { outcome: 'TEST', followUpAfterHours: 24 });
+    expect(timers.pendingIds()).not.toContain(`${id}.follow-up`);
+    const planned = await h.rows(
+      "SELECT 1 FROM audit.log WHERE action = 'event.follow_up_planned' AND entity_id = $1",
+      [id],
+    );
+    expect(planned).toHaveLength(0);
+  });
+
+  it('takip zamanlayıcısı kaynak olay kapanmamışsa (geri alınan kapanış) olay açmaz', async () => {
+    const id = await claimed('pp-o');
+    await timers.fire(id, 'follow-up');
+    const fu = await h.rows("SELECT 1 FROM event.event WHERE type = 'FOLLOW_UP'");
+    expect(fu).toHaveLength(0);
+    // açık olaya da yabancı kaynak olarak eklenmez
+    const [ev] = await h.rows<{ src: string[] }>('SELECT source_signal_ids AS src FROM event.event WHERE id = $1', [
+      id,
+    ]);
+    expect(ev!.src.filter((x) => x.startsWith('follow-up:'))).toEqual([]);
+  });
+
   it('doğrulama: sonuç zorunlu/geçerli, not ≤ 2000, takip 1–168 tamsayı', async () => {
     const id = await claimed();
     expect(await status(chain.close(id, 'op-1', {}))).toBe(400);

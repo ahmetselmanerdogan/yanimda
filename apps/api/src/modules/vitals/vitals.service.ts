@@ -178,11 +178,10 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
       bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e.payload)),
       bus.subscribe<{ id: string; confirmedOutcome?: string; closedAt?: string; protectedPersonId: string }>(
         TOPICS.eventClosed,
-        (e) => this.onEventClosed(e.payload).catch((err) => this.log.warn(`Kapanış işlenemedi: ${safeError(err)}`)),
+        // Hata yutulmaz: işçi yeniden teslim eder (yazımlar idempotent: ON CONFLICT / coalesce).
+        (e) => this.onEventClosed(e.payload),
       ),
-      bus.subscribe<FalseAlarm>(TOPICS.eventFalseAlarm, (e) =>
-        this.onFalseAlarm(e.payload).catch((err) => this.log.warn(`Yanlış alarm işlenemedi: ${safeError(err)}`)),
-      ),
+      bus.subscribe<FalseAlarm>(TOPICS.eventFalseAlarm, (e) => this.onFalseAlarm(e.payload)),
     ];
   }
 
