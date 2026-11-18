@@ -1074,8 +1074,14 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     const from = { type: u.ev.type, isTest: u.ev.isTest };
     // M-20 (sahip kararı): alarm olmayan olay (TEST, geri arama …) gerçek alarma döndüyse SLA saatleri (üstlenme,
     // 112 son sınırı, karar süresi metriği) alarm anından başlar; eski zaman denetimde kalır. Henüz kuyruğa
-    // girmemiş olayda escalate() zaten şimdiyi yazar. Alarm → alarm (hareketsizlik → düşme) saati değiştirmez.
-    const restart = !ALARM_TYPES.has(from.type) && u.ev.state !== 'CREATED' && u.ev.state !== 'DEVICE_PROMPT';
+    // girmemiş olayda escalate() zaten şimdiyi yazar. Alarm → alarm (hareketsizlik → düşme) ve alarm olmayan türe
+    // yükseltme (KAPSAMA BOŞLUĞU → YERİNDE KONTROL) saati değiştirmez. Kuyruk taramaları (O-QUEUE-UNCLAIMED,
+    // O-P1-UNCLAIMED) max(kuyruğa giriş, escalated_at) kullanır.
+    const restart =
+      ALARM_TYPES.has(type) &&
+      !ALARM_TYPES.has(from.type) &&
+      u.ev.state !== 'CREATED' &&
+      u.ev.state !== 'DEVICE_PROMPT';
     const previousEscalatedAt = u.ev.escalatedAt ?? null;
     await this.repo.insertAudit(u.tx, {
       actorKind: 'SYSTEM',

@@ -50,6 +50,25 @@ describe('kalıcı amir uyarıları', () => {
     expect(await alerts.sweep(new Date(Date.now() + 11 * 60_000))).toBe(1); // P4 10 dk sonra
   });
 
+  it('M-20: TEST → SOS yükseltmesi: üstlenme hedefi yükseltme anından (eski kuyruk girişi hemen uyarı vermez)', async () => {
+    await deliver('TEST', 'pp-u');
+    const [ev] = await events.all();
+    const old = new Date(Date.now() - 30 * 60_000);
+    await h.pg.query(`UPDATE event.transition SET at = $2 WHERE event_id = $1 AND to_state = 'OPERATOR_QUEUE'`, [
+      ev!.id,
+      old,
+    ]);
+    await h.pg.query('UPDATE event.event SET escalated_at = $2 WHERE id = $1', [ev!.id, old]);
+    await deliver('SOS', 'pp-u');
+    const up = new Date((await events.get(ev!.id)).escalatedAt!);
+    expect((await events.get(ev!.id)).type).toBe('SOS');
+    expect(await alerts.sweep(new Date(up.getTime() + 5_000))).toBe(0);
+    expect(await alerts.sweep(new Date(up.getTime() + 11_000))).toBe(1);
+    expect(await alerts.sweep(new Date(up.getTime() + 60_000))).toBe(0);
+    const [a] = await h.rows<{ dedupe_key: string }>('SELECT dedupe_key FROM event.supervisor_alert');
+    expect(a!.dedupe_key).toBe(`unclaimed:${ev!.id}:${up.toISOString()}`);
+  });
+
   it('kilit düştü uyarısı outbox üzerinden kalıcı olur; gördüm audit, ikinci kez 409, olmayan 404', async () => {
     await deliver('SOS', 'pp-c');
     const [ev] = await events.all();

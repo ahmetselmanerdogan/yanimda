@@ -102,12 +102,15 @@ describe('YERİNDE KONTROL (S4.7)', () => {
     const [gap] = await open();
     expect(gap).toMatchObject({ type: 'COVERAGE_GAP', priority: 3, state: 'OPERATOR_QUEUE' });
     await step(t(T14, 135));
-    expect((await events.get(gap!.id)).type).toBe('COVERAGE_GAP');
+    const before = await events.get(gap!.id);
+    expect(before.type).toBe('COVERAGE_GAP');
     await step(t(T14, 136)); // 16 + 120 uyanık dk
     await step(t(T14, 146)); // tekrar ayıklanır
     const list = await all();
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ id: gap!.id, type: 'WELFARE_CHECK', priority: 2, state: 'OPERATOR_QUEUE' });
+    // M-20: yalnız gerçek alarma (SOS / FALL / INACTIVITY) yükseltme saatleri yeniden başlatır.
+    expect((await events.get(gap!.id)).escalatedAt).toBe(before.escalatedAt);
     expect(list[0]!.sourceSignalIds).toEqual(expect.arrayContaining([expect.stringMatching(/^welfare:/)]));
     expect((await welfareAudit(gap!.id)).map((a) => a.data.reason)).toEqual(['DEVICE_DROPPED']);
     // Konsol: neden ve 112 son sınırı yok (operatör kararı).
