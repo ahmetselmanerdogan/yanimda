@@ -5461,5 +5461,44 @@
   "F-UI-PUSH-OFF": {
     "channel": "family",
     "text": "Bildirim izni kapalı. Olaylardan anında haber alamazsınız; telefonun ayarlarından Yanımda bildirimlerini açın."
+  },
+  "P-PERM-CALLS-DISCLOSURE": {
+    "channel": "phone",
+    "text": "Yanımda, gelen aramanın operatörümüzden geldiğini anlamak için telefon durumunuzu ve rehberinizdeki numaraları yalnız bu telefonda okur. Rehberiniz ve arama bilgileriniz hiçbir yere gönderilmez, saklanmaz."
+  },
+  "P-PERM-CALLS-UNAVAILABLE": {
+    "channel": "phone",
+    "text": "Bu telefon operatörümüzün aramasını tanıyamıyor; aradığımızda hoparlör kendiliğinden açılmaz. Telefonu her zamanki gibi açın.",
+    "action": "Devam"
+  },
+  "F-UI-DEVICES-REMOVE-CONFIRM-WATCH": {
+    "channel": "family",
+    "text": "{device} kaldırılacak: bağlantısı hemen kesilir ve korumaya sayılmaz. Gerekirse bu ekrandaki \"Kaldırılan cihazlar\" bölümünden yeniden ekleyebilirsiniz.",
+    "action": "Kaldır"
+  },
+  "F-UI-DEVICES-REMOVED-SECTION": {
+    "channel": "family",
+    "text": "Kaldırılan cihazlar"
+  },
+  "F-UI-DEVICES-REMOVED-AT": {
+    "channel": "family",
+    "text": "Kaldırıldı: {time}"
+  },
+  "F-UI-DEVICES-RESTORE": {
+    "channel": "family",
+    "text": "Yeniden ekle"
+  },
+  "F-UI-DEVICES-RESTORE-CONFIRM": {
+    "channel": "family",
+    "text": "{device} yeniden eklenecek. Kişinin telefonuyla yeniden bağlandığında korumaya sayılır.",
+    "action": "Yeniden ekle"
+  },
+  "F-UI-DEVICES-RESTORED": {
+    "channel": "family",
+    "text": "Cihaz yeniden eklendi"
+  },
+  "W-WATCH-REMOVED": {
+    "channel": "watch",
+    "text": "Bu saat aileniz tarafından kaldırıldı. Yeniden eklemek için aile uygulamasını kullanın."
   }
 }
