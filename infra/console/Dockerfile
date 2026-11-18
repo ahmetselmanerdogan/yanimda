@@ -30,9 +30,9 @@ FROM caddy:2.11.9-alpine AS server
 # Salt okunur kök dosya sistemiyle çalışabilsin: Caddy durum dizinleri /tmp altında (tmpfs/emptyDir).
 ENV XDG_CONFIG_HOME=/tmp/config \
     XDG_DATA_HOME=/tmp/data
-# Yamalı ikili yeni yola, resmi (yamasız, dosya yetkili) ikili silinir; bağlantı eski yolu çağıranlar için.
-COPY --from=caddy /out/caddy /usr/local/bin/caddy
-RUN rm -f /usr/bin/caddy && ln -s /usr/local/bin/caddy /usr/bin/caddy && caddy version
+# Yamalı ikili resmi ikilinin YERİNE (aynı yol): silip bağlantı bırakmak Trivy'nin alt katmandaki eski ikiliyi
+# raporlamasına yol açar.
+COPY --from=caddy /out/caddy /usr/bin/caddy
 COPY infra/console/Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=0755 infra/console/entrypoint.sh /usr/local/bin/console-entrypoint
 USER 65532:65532
