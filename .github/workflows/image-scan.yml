@@ -1,0 +1,79 @@
+name: image-scan
+# Haftalık Trivy taraması: üretimde çalışan TÜM imajlar (compose prod + izleme, Helm şablonları, yerelde kurulan dış
+# Caddy ve yedek imajları, GHCR'deki son API/konsol imajı). PR'da çalışmaz ve zorunlu kontrol DEĞİLDİR: amaç, sabit
+# etiketli üçüncü taraf imajlarda (Keycloak, Prometheus, Grafana, Caddy …) sonradan yayımlanan açıkları yakalamak.
+# Bulgu → Dependabot PR'ı beklenir veya sürüm elle yükseltilir (docs/security/sdlc.md "Bağımlılık").
+on:
+  schedule: [{ cron: '30 5 * * 1' }]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read # GHCR'deki yanimda-api / yanimda-console
+
+concurrency:
+  group: image-scan
+  cancel-in-progress: true
+
+jobs:
+  trivy:
+    name: Trivy (compose + Helm imaj listesi)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: İmaj listesi (compose prod + izleme, Helm 3 değer dosyası)
+        run: |
+          set -euo pipefail
+          # Şablon ortam dosyaları yalnız değişken çözümü için (sır yok); yer tutucu imajlar aşağıda elenir.
+          for f in .env.prod .env.prod.api .env.prod.keycloak .env.prod.synthetic .env.prod.backup .env.prod.monitoring; do
+            cp "infra/$f.example" "infra/$f"
+          done
+          {
+            docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml --profile family-web config --images
+            docker compose --env-file infra/.env.prod --env-file infra/.env.prod.monitoring \
+              -f infra/monitoring/docker-compose.monitoring.yml config --images
+            for v in values.yaml values-staging.yaml values-production.yaml; do
+              docker run --rm -v "$PWD/infra:/infra" -w /infra/helm alpine/helm:3.16.2 \
+                template yanimda yanimda -f "yanimda/$v" --set timescaledb.enabled=true --set redis.enabled=true \
+                --set minio.enabled=true --set synthetic.enabled=true --set global.environment=staging 2>/dev/null \
+                | sed -nE 's/^[[:space:]]*image:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p'
+            done
+          } | grep -vE '^(ghcr\.io/example/|yanimda/family-web:|yanimda-[a-z]+:local$)' | sort -u > images.txt
+          echo "ghcr.io/${{ github.repository_owner }}/yanimda-api:main" >> images.txt
+          echo "ghcr.io/${{ github.repository_owner }}/yanimda-console:main" >> images.txt
+          cat images.txt
+      - name: Yerelde kurulan imajlar (dış Caddy, yedek)
+        run: |
+          docker build -q -t yanimda-caddy:scan infra/caddy
+          docker build -q -t yanimda-backup:scan infra/backup
+          printf '%s\n' yanimda-caddy:scan yanimda-backup:scan >> images.txt
+      - name: Trivy (HIGH/CRITICAL, düzeltmesi olan)
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          mkdir -p trivy-cache reports
+          failed=()
+          echo "## Haftalık imaj taraması" >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r img; do
+            [ -n "$img" ] || continue
+            out="reports/$(echo "$img" | tr '/:@' '___').txt"
+            if docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/trivy-cache:/root/.cache/trivy" aquasec/trivy:0.56.2 image --exit-code 1 \
+              --severity HIGH,CRITICAL --ignore-unfixed --no-progress --quiet "$img" > "$out" 2>&1; then
+              echo "- geçti: \`$img\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failed+=("$img")
+              echo "- AÇIK VAR: \`$img\`" >> "$GITHUB_STEP_SUMMARY"
+              cat "$out"
+            fi
+          done < images.txt
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::${#failed[@]} imajda HIGH/CRITICAL (düzeltmesi olan) açık: ${failed[*]}"
+            exit 1
+          fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: image-scan, path: 'reports/', if-no-files-found: ignore }

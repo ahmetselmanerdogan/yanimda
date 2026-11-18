@@ -1,6 +1,7 @@
 name: release-image
-# T-081: API ve konsol imajları GHCR'ye itilir, Trivy'den geçer, cosign ile anahtarsız (OIDC) imzalanır, SBOM
-# tasdiki eklenir (infra/k8s/kyverno-verify-images.yaml ikisini de doğrular). Konsol tek imaj: ortam yapılandırması
+# T-081: API ve konsol imajları BİR KEZ kurulup etiketsiz digest olarak GHCR'ye itilir; Trivy o digest'i tarar,
+# cosign ile anahtarsız (OIDC) imzalanır, SBOM tasdiki eklenir, ancak sonra etiketlenir (taranan = imzalanan =
+# dağıtılan; infra/k8s/kyverno-verify-images.yaml ikisini de doğrular). Konsol tek imaj: ortam yapılandırması
 # çalışma zamanında /config.json (infra/console/Caddyfile). main'e her birleştirmede ve v* etiketlerinde. Doğrulama:
 #   cosign verify ghcr.io/<owner>/yanimda-{api,console}@<digest> \
 #     --certificate-identity-regexp 'https://github.com/<owner>/yanimda/.github/workflows/release-image.yml@.*' \
@@ -30,11 +31,12 @@ jobs:
             dockerfile: apps/api/Dockerfile
           - image: yanimda-console
             dockerfile: infra/console/Dockerfile
+    # attestations: write yok: GitHub tasdik API'si (actions/attest-*) kullanılmıyor; SBOM tasdiki cosign ile kayıt
+    # defterine (GHCR, packages: write) ve Rekor'a (id-token) gider.
     permissions:
       contents: read
       packages: write # GHCR
       id-token: write # cosign anahtarsız imza (Fulcio/Rekor)
-      attestations: write
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
     steps:
@@ -50,28 +52,27 @@ jobs:
             type=sha,format=long
             type=ref,event=tag
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-      - name: İmajı kur (yerel, taramadan önce itilmez)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          load: true
-          tags: ${{ matrix.image }}:scan
-      - name: Trivy (yüksek/kritik açıkta itme yok)
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.56.2 \
-            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress "${{ matrix.image }}:scan"
+      # TEK derleme: taranan, imzalanan ve etiketlenen aynı digest. Önce yalnız digest ile (etiketsiz) itilir; Trivy o
+      # digest'i kayıt defterinden tarar; geçerse imzalanır, SBOM tasdiki eklenir ve ancak SONRA etiketler (main, sha,
+      # v*) bu digest'e bağlanır. Tarama düşerse etiketsiz, imzasız digest kalır: Kyverno (infra/k8s) çalıştırmaz.
       - id: push
-        name: İt
+        name: Kur ve digest olarak it (etiketsiz)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
+      - name: Trivy (itilen digest; yüksek/kritik açıkta imza ve etiket yok)
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD aquasec/trivy:0.56.2 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress \
+            "${IMAGE}@${{ steps.push.outputs.digest }}"
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
         with: { cosign-release: v2.4.1 }
       - name: cosign imza (anahtarsız, digest üzerinden)
@@ -89,3 +90,12 @@ jobs:
           cosign verify "${IMAGE}@${{ steps.push.outputs.digest }}" \
             --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+      - name: Etiketleri taranmış ve imzalı digest'e bağla
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          args=()
+          while IFS= read -r t; do [ -n "$t" ] && args+=(-t "$t"); done <<<"$TAGS"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${DIGEST}"
+          echo "### ${{ matrix.image }}: \`${IMAGE}@${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"

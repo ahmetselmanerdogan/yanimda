@@ -214,7 +214,7 @@ API durumsuz Bearer token kullanır (çerez yok); konsol `oidc-client-ts` PKCE.
 | 6.2.6 | Nonce tekrar edilmez | ✅ | Her şifrelemede rastgele 96 bit IV. |
 | 6.3.1 | CSPRNG | ✅ | `randomBytes`, `randomInt`. |
 | 6.3.2 | GUID'ler rastgele | ✅ | `uuidv4`/`uuidv7` (kimlikler sır değil). |
-| 6.4.1 | Sır yönetim çözümü | ⚠️ | Kubernetes: External Secrets + Vault, üretimde zorunlu (`templates/externalsecrets.yaml`, üretim doğrulaması). Tek VPS compose kurulumu `.env.prod` dosyası okur. Kanıt: `altyapi-kanit.md`. |
+| 6.4.1 | Sır yönetim çözümü | ⚠️ | Kubernetes: External Secrets + Vault, üretimde zorunlu (`templates/externalsecrets.yaml`, üretim doğrulaması). Tek VPS compose kurulumu servis başına dosya okur (`infra/.env.prod.<servis>`, her kap yalnız kendi sırları; ön kontrol `scripts/prod-preflight.sh`). Kanıt: `altyapi-kanit.md`. |
 | 6.4.2 | Anahtar materyali uygulamaya açık değil (HSM/KMS) | ❌ | Anahtarlar (`FIELD_ENC_KEYS`, `DEVICE_TOKEN_SECRETS`) hâlâ süreç belleğinde; zarf şifreleme (KMS) gerekli. |
 
 ## V7 Hata yönetimi ve log
@@ -336,7 +336,7 @@ gerekmez. CPaaS webhook'ları: imza zorunlu, `timingSafeEqual` (`cpaas.ts:70-80`
 | 14.3.3 | Sürüm bilgisi sızmaz | ✅ | `x-powered-by` kapalı (`configureHttpSecurity`), Caddy `-Server`. |
 | 14.4.1 | Content-Type + charset | ✅ | `application/problem+json` (`problem.filter.ts:43`), TwiML `text/xml; charset=utf-8`. |
 | 14.4.2 | API yanıtlarında `Content-Disposition` | ✅ | Varsayılan `Content-Disposition: attachment; filename="api.json"`; kayıt indirme kendi değerini yazar. |
-| 14.4.3 | CSP | ✅ | Konsol CSP (`infra/caddy/Caddyfile`: `default-src 'self'`, Keycloak + Twilio kökenleri); API `default-src 'none'`. Aile web (Next.js) yalnız `frame-ancestors`/`object-src`/`base-uri`; Helm ingress'te CSP yok. |
+| 14.4.3 | CSP | ✅ | Konsol CSP konsol imajında (`infra/console/Caddyfile`; compose ve Helm aynı politika): `default-src 'self'`, `script-src 'self'`, `frame-ancestors 'none'`; `connect-src`/`frame-src`/`form-action` kökenleri `CONSOLE_OIDC_AUTHORITY`/`CONSOLE_API_BASE`'den `infra/console/entrypoint.sh` ile türetilir (`/config.json` ile aynı değerler; geçersiz/boş değerde kap açılmaz), Twilio kökenleri; ayrıca X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy (mikrofon yalnız aynı köken). Test: `scripts/test-console-runtime.sh` (CI). API `default-src 'none'`. Aile web (Next.js) yalnız `frame-ancestors`/`object-src`/`base-uri` (dış Caddy; Helm ingress'te henüz yok). |
 | 14.4.4 | `X-Content-Type-Options: nosniff` | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
 | 14.4.5 | HSTS | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
 | 14.4.6 | `Referrer-Policy` | ✅ | Caddy `security_headers` parçası (`infra/caddy/Caddyfile`). API'nin kendisi başlık koymaz (G-5). |
@@ -391,7 +391,9 @@ Altyapı maddeleri:
 
 Hedef (≥ %90) yine karşılanmıyor. Ayrıca `docker-compose.prod.yml`
 `env_file: [.env.prod]` kullanıyor: "`.env` üretimde yok" kuralıyla çelişmemesi için dosya repo dışında, dağıtım
-anında sır deposundan üretilmeli ve 600 izinli olmalı (`sirlar.md` §2–3).
+anında sır deposundan üretilmeli ve 600 izinli olmalı (`sirlar.md` §2–3). (Sonra, 2026-11-18: tek dosya servis
+başına `infra/.env.prod.<servis>` dosyalarına bölündü — API kapları Keycloak/yedek/izleme sırlarını almaz; izin,
+yer tutucu ve sır uzunluğu `scripts/prod-preflight.sh` ile dağıtımdan önce denetlenir.)
 
 ## T-081 ikinci tur (2026-11-11) — puana dahil
 
@@ -430,7 +432,7 @@ Kalan (puanı düşürenler):
 | ID | Durum | Neden / ne gerekir |
 | --- | --- | --- |
 | 6.4.2 | ❌ | Anahtarlar süreç belleğinde; KMS zarf şifreleme (uygulama işi) |
-| 6.4.1 | ⚠️ | Tek VPS compose `.env.prod` okur; Kubernetes yolu ✅ |
+| 6.4.1 | ⚠️ | Tek VPS compose servis başına dosya okur (sır yöneticisi değil); Kubernetes yolu ✅ |
 | 1.6.2, 2.10.1, 2.10.3 | ⚠️ | Statik sağlayıcı anahtarları (Twilio, S3, FCM); iş yükü kimliği / Vault dinamik kimlik |
 | 1.8.2 | ⚠️ | Ad, telefon, adres alan düzeyinde şifresiz (G-10 kararı) |
 | 1.9.1, 9.2.2 | ⚠️ | Vekil → uygulama ve Prometheus → metrik iç HTTP; servis ağı (mesh) gerekir |

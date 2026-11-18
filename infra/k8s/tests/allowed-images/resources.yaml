@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata: { name: ok-pod, namespace: yanimda-staging }
+spec:
+  initContainers:
+    - { name: kc-init, image: 'quay.io/keycloak/keycloak:26.0' }
+  containers:
+    - {
+        name: api,
+        image: 'ghcr.io/ahmetselmanerdogan/yanimda-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      }
+    - { name: redis, image: 'redis:7.4-alpine' }
+    - { name: node, image: 'node:26-alpine' }
+    - { name: ts, image: 'timescale/timescaledb:2.17.2-pg16' }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: bad-pod, namespace: yanimda-staging }
+spec:
+  containers:
+    - { name: api, image: 'ghcr.io/ahmetselmanerdogan/yanimda-api:main' }
+    - { name: evil, image: 'docker.io/evil/redis:7.4' }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: typo-pod, namespace: yanimda-staging }
+spec:
+  containers:
+    - { name: kc, image: 'quay.io/keycloak/keycloak-evil:26.0' }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: other-ns, namespace: default }
+spec:
+  containers:
+    - { name: evil, image: 'docker.io/evil/redis:7.4' }

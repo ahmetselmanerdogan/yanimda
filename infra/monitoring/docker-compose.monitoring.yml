@@ -1,10 +1,12 @@
 # T-083 izleme (tek compose): Prometheus + Alertmanager + Grafana + Loki/Promtail + dışa aktarıcılar + Pushgateway
 # + Uptime Kuma (durum sayfası). Uygulama compose'unun "yanimda" ağına katılır (önce o ayağa kalkmalı).
 #
-#   docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml up -d
+#   scripts/prod-preflight.sh && docker compose --env-file infra/.env.prod --env-file infra/.env.prod.monitoring \
+#     -f infra/monitoring/docker-compose.monitoring.yml up -d
 #
-# Hiçbir arayüz genel ağa açılmaz: Grafana/Prometheus/Alertmanager yalnız 127.0.0.1 (SSH tüneli). Uptime Kuma
-# durum sayfası Caddy üzerinden status.<DOMAIN>. Alertmanager sırları ./secrets/ altında dosya (git'e girmez).
+# Sırlar (.env.prod.monitoring) yalnız değişken çözümünde kullanılır; her değer yalnız onu adıyla anan kaba gider
+# (env_file yok). Hiçbir arayüz genel ağa açılmaz: Grafana/Prometheus/Alertmanager yalnız 127.0.0.1 (SSH tüneli).
+# Uptime Kuma durum sayfası Caddy üzerinden status.<DOMAIN>. Alertmanager sırları ./secrets/ altında dosya.
 name: yanimda-monitoring
 
 x-logging: &logging
@@ -15,12 +17,27 @@ services:
   prometheus:
     image: prom/prometheus:v2.55.1
     restart: unless-stopped
+    # Blackbox hedefleri depodaki şablonlardan (targets/*.yml.tmpl) DOMAIN/ENVIRONMENT ile her açılışta üretilir
+    # (/prometheus/file_sd); elle kopyalanan örnek dosya yok.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        rm -rf /prometheus/file_sd && mkdir -p /prometheus/file_sd &&
+        for f in /etc/prometheus/targets/*.yml.tmpl; do
+        sed -e "s#@DOMAIN@#$$DOMAIN#g" -e "s#@ENVIRONMENT@#$$ENVIRONMENT#g" "$$f" > "/prometheus/file_sd/$$(basename "$$f" .tmpl)";
+        done &&
+        exec /bin/prometheus "$$@"
+      - prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=20GB
       - --web.enable-lifecycle
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN gerekli (.env.prod)}
+      ENVIRONMENT: ${ENVIRONMENT:-staging}
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -124,7 +141,7 @@ services:
     logging: *logging
 
   # Yönetilen Postgres: bağlantı + iş metrikleri (outbox birikimi, kuyruk bekleme, CPaaS/bildirim hata oranı).
-  # T-081: DSN sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem (.env.prod.example); iç CA infra/tls/.
+  # T-081: DSN sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem (.env.prod.monitoring.example); iç CA infra/tls/.
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
     restart: unless-stopped

@@ -27,8 +27,8 @@ dosyadır. Repoda kanıtı olmayan ayarlar (GitHub dal koruması, mobil imzalama
 | Doğrulama (gece / haftalık) | Yük ve kaos testleri | `.github/workflows/load.yml`, `load-v1.yml`; `docs/test-reports/` | rapor |
 | Doğrulama (dönemsel) | Dış sızma testi: canlıya çıkıştan önce, sonra yılda bir ve büyük mimari değişiklikte | `docs/security/sizma-testi-plani.md` | v1.0 kapısı |
 | Doğrulama | ASVS L2 öz değerlendirme; açıklar (G-1…) öncelikli | `docs/security/asvs-l2.md` | görev kabulü |
-| Bağımlılık | Dependabot haftalık (npm gruplu, GitHub Actions, API Dockerfile tabanı); güvenlik uyarıları anında; kilit dosyası `--frozen-lockfile`; sabit sürümlü imajlar | `.github/dependabot.yml`, `pnpm-lock.yaml`, `ci.yml` | evet |
-| Sürüm | main / `v*` etiketi: Trivy geçmeden itme yok → GHCR → cosign anahtarsız imza (GitHub OIDC) → SPDX SBOM tasdiki → imza doğrulaması; BuildKit provenance + SBOM | `.github/workflows/release-image.yml` | evet |
+| Bağımlılık | Dependabot haftalık (npm gruplu, GitHub Actions, Dockerfile tabanları ve compose imajları; altyapı imajlarında ana sürüm atlanır, planlı yükseltilir); güvenlik uyarıları anında; kilit dosyası `--frozen-lockfile`; sabit sürümlü imajlar; Keycloak sürümü tek kaynaktan (`infra/keycloak/Dockerfile`, eşlik testi `keycloak.test.mjs`); haftalık Trivy taraması tüm compose/Helm imajlarında (zorunlu kontrol değil) | `.github/dependabot.yml`, `.github/workflows/image-scan.yml`, `pnpm-lock.yaml`, `ci.yml` | evet |
+| Sürüm | main / `v*` etiketi, API ve konsol: tek derleme → etiketsiz digest olarak GHCR → Trivy bu digest'i tarar (HIGH/CRITICAL'da imza ve etiket yok) → cosign anahtarsız imza (GitHub OIDC) → SPDX SBOM tasdiki → imza doğrulaması → etiketler (main, sha, v*) digest'e bağlanır; BuildKit provenance + SBOM | `.github/workflows/release-image.yml` | evet |
 | Sürüm | Değişiklik günlüğü | `CHANGELOG.md` | sürüm başına |
 | İşletim | Güvenlik olayı metriği + uyarı, Keycloak olay kaydı, log saklama 14 gün, yedek + geri yükleme tatbikatı | `tehdit-modeli.md` "İzleme", `infra/monitoring/alerts.yml`, `infra/backup/` | evet |
 | İşletim | Sır rotasyonu ve sızıntı müdahalesi | `docs/security/sirlar.md` | olay başına |
@@ -70,7 +70,7 @@ dışarıdan bildirim. Kabul edilen riskler `risk-kabulleri.md`'ye sahip onayıy
 | # | İş |
 | --- | --- |
 | D-1 | ~~GitHub dal koruması~~ kural seti kuruldu (yukarıda). Açık: ikinci geliştirici gelince 1 onay şartı; imzalı commit |
-| D-2 | Dağıtımda imza doğrulaması: compose / Helm imajı digest ile çeker ama `cosign verify` dağıtım adımında yok (yalnız sürüm işinde) |
+| D-2 | Dağıtımda imza doğrulaması. **Kubernetes**: Kyverno `infra/k8s/kyverno-verify-images.yaml` kabulde cosign imzası + SPDX tasdiki ister (release-image.yml kimliği) ve `kyverno-allowed-images.yaml` izin listesi dışı imajı reddeder — politikalar repoda, kümeye kurulumu doğrulanmadı. **Compose açık**: `cosign verify` yalnız README dağıtım adımında elle; ön kontrol (`scripts/prod-preflight.sh`) digest sabitlenmemişse uyarır, imzayı doğrulamaz |
 | D-3 | Mobil depolar için aynı tablo (imzalama anahtarları, Play App Signing, App Store Connect, MASVS denetimi) |
 | D-4 | `SECURITY.md` (dışarıdan açık bildirimi kanalı) |
-| D-5 | Konsol ve aile web imajları için de cosign + SBOM (bugün yalnız API imajı) |
+| D-5 | ~~Konsol imajı için cosign + SBOM~~ yapıldı (3198942: API ve konsol aynı `release-image.yml` matrisinde imzalı + SPDX tasdikli; tek derleme, itilen digest taranır). Açık: aile web imajı (apps/family-web henüz yayın imajı üretmiyor) |

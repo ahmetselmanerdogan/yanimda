@@ -1,0 +1,26 @@
+# kyverno-allowed-images.yaml testi (CI "infra" işi; kümesiz): kyverno test infra/k8s/tests
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: yanimda-allowed-images
+policies: [../../kyverno-allowed-images.yaml]
+resources: [resources.yaml]
+results:
+  # yanimda-* digest, Keycloak initContainer, kısa Docker Hub adları (redis, node, timescale) → izinli
+  - policy: yanimda-allowed-images
+    rule: allowed-images
+    kind: Pod
+    resources: [ok-pod]
+    result: pass
+  # izin listesi dışı imaj (docker.io/evil/redis)
+  - policy: yanimda-allowed-images
+    rule: allowed-images
+    kind: Pod
+    resources: [bad-pod]
+    result: fail
+  # benzer ad (quay.io/keycloak/keycloak-evil)
+  - policy: yanimda-allowed-images
+    rule: allowed-images
+    kind: Pod
+    resources: [typo-pod]
+    result: fail

@@ -1,14 +1,34 @@
 # Konsol statik sunucusu (kapta, root değil, :8080). TLS ve /v1 yönlendirmesi dıştaki Caddy/Ingress'te.
 # Tek imaj, ortam başına yapılandırma: /config.json kap ortamından yapılandırma yüklenirken üretilir
 # (CONSOLE_OIDC_AUTHORITY zorunlu, CONSOLE_OIDC_CLIENT_ID varsayılan "console", CONSOLE_API_BASE boş = aynı köken /v1);
-# konsol açılmadan önce okur (apps/console/src/lib/config.ts).
+# konsol açılmadan önce okur (apps/console/src/lib/config.ts). Değerleri infra/console/entrypoint.sh doğrular (boş /
+# geçersiz → kap açılmaz) ve CSP kökenlerini (CONSOLE_CSP_*) AYNI değerlerden türetir.
+#
+# Güvenlik başlıkları burada: hem compose (dış Caddy CSP koymaz, geçirir) hem Helm (ingress-nginx başlık eklemez)
+# aynı imajdan aynı politikayı alır. T-081 CSP (ASVS 14.4.3): satır içi betik yok (Vite derlemesi); stil özniteliği
+# (React style) için yalnız style-src 'unsafe-inline'. connect-src: aynı köken (REST), aynı köken wss (/v1/ws/queue),
+# OIDC kökeni (token/yenileme), CONSOLE_API_BASE verildiyse onun https+wss kökeni, Twilio Voice SDK sinyali.
+# frame-src OIDC (sessiz yenileme iframe'i), form-action OIDC (çıkış). Permissions-Policy: mikrofon yalnız aynı köken
+# (softphone), diğer güçlü API'ler kapalı.
 {
 	admin off
 	auto_https off
 	persist_config off
 }
 
+(security_headers) {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{host} {$CONSOLE_CSP_CONNECT} https://*.twilio.com wss://*.twilio.com; media-src 'self' blob: https://sdk.twilio.com https://media.twiliocdn.com; frame-src {$CONSOLE_CSP_OIDC_ORIGIN}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' {$CONSOLE_CSP_OIDC_ORIGIN}; frame-ancestors 'none'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), screen-wake-lock=()"
+		-Server
+	}
+}
+
 :8080 {
+	import security_headers
 	root * /srv
 	encode zstd gzip
 	@assets path /assets/*
@@ -21,7 +41,7 @@
 	handle /config.json {
 		header Cache-Control "no-store"
 		header Content-Type "application/json"
-		respond `{"oidcAuthority":"{$CONSOLE_OIDC_AUTHORITY}","oidcClientId":"{$CONSOLE_OIDC_CLIENT_ID:console}","apiBase":"{$CONSOLE_API_BASE}"}` 200
+		respond `{"oidcAuthority":"{$CONSOLE_OIDC_AUTHORITY}","oidcClientId":"{$CONSOLE_OIDC_CLIENT_ID}","apiBase":"{$CONSOLE_API_BASE}"}` 200
 	}
 	handle {
 		try_files {path} /index.html

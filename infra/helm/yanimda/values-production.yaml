@@ -16,8 +16,9 @@ api:
   # Secret (Vault: yanimda/yanimda/yanimda-api) DATABASE_URL ...?sslmode=verify-full, REDIS_URL rediss://<acl>:…@…
   env:
     NODE_ENV: production
-    # Migration açılışta (advisory lock). Ayrı migrator rolü/Job'u: sirlar.md §6.2 (izleyen görev).
-    DB_MIGRATE_ON_START: 'true'
+    # Migration API pod'larında DEĞİL: ayrı kanca Job'u (migrations.job; templates/migrate-job.yaml). Ayrı migrator
+    # veritabanı rolü: sirlar.md §6.2 (izleyen görev; bugün Job API'nin DATABASE_URL'ini kullanır).
+    DB_MIGRATE_ON_START: 'false'
     SIMULATOR_ENABLED: 'false'
     OIDC_AUDIENCE: yanimda-api
     OIDC_REQUIRE_MFA: 'true'
@@ -29,6 +30,10 @@ api:
     RECORDING_RETENTION_DAYS: '365'
     CPAAS_PROVIDER: twilio
     CPAAS_WEBHOOK_BASE: https://api.yanimda.example
+
+migrations:
+  job:
+    enabled: true
 
 console:
   image:

@@ -12,3 +12,9 @@ modules:
       preferred_ip_protocol: ip4
       fail_if_not_ssl: true
       valid_status_codes: [401]
+  # İç ağ hazırlık uçları (compose "yanimda" ağı; düz HTTP): prometheus.yml blackbox-internal
+  http_2xx_internal:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4

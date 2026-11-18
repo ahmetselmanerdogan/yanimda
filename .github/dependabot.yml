@@ -1,4 +1,8 @@
 # T-081: bağımlılık güncellemeleri (haftalık, gruplu). Güvenlik yamaları ayrıca anında açılır (Dependabot alerts).
+# Altyapı imajlarında (docker, docker-compose) ana sürüm (semver-major) atlanır: veri biçimi / yapılandırma kıran
+# yükseltmeler (Postgres, Keycloak, Prometheus 3 …) planlı ve elle yapılır. Haftalık Trivy taraması:
+# .github/workflows/image-scan.yml. Keycloak sürümünün tek kaynağı infra/keycloak/Dockerfile (eşlik testi:
+# infra/keycloak/keycloak.test.mjs); compose girdileri Keycloak'ı atlar, güncelleme oradan tek PR olarak gelir.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -20,20 +24,52 @@ updates:
     directory: /apps/api
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: docker
     directory: /infra/backup
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: docker
     directory: /infra/console
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  # Dış ters vekil (Caddy; konsol imajıyla aynı sürüm tutulur)
+  - package-ecosystem: docker
+    directory: /infra/caddy
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  # Keycloak sürüm sabiti (tek kaynak; Helm/compose eşliği PR'da elle güncellenir, test kırmızı kalır)
+  - package-ecosystem: docker
+    directory: /infra/keycloak
+    schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
+    commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   # Compose imaj etiketleri (docker-compose.yml, docker-compose.prod.yml; izleme yığını)
   - package-ecosystem: docker-compose
     directory: /infra
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: quay.io/keycloak/keycloak
   - package-ecosystem: docker-compose
     directory: /infra/monitoring
     schedule: { interval: weekly, day: monday, time: '06:00', timezone: Europe/Istanbul }
     commit-message: { prefix: 'deps' }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']

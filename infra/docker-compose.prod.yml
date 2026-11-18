@@ -1,21 +1,26 @@
 # T-083 staging / üretim (tek VPS). Veritabanı ve Redis yönetilen hizmettir (Terraform: infra/terraform);
-# bu dosya yalnız durumsuz uygulama süreçlerini ve ters vekili çalıştırır. Sır yok: tüm değerler .env.prod'dan
-# (şablon: infra/.env.prod.example; dosya VPS'te 0600, git'e girmez).
+# bu dosya yalnız durumsuz uygulama süreçlerini ve ters vekili çalıştırır. Repoda sır yok. Değerler:
+#   infra/.env.prod            dağıtım değişkenleri (--env-file ile değişken çözümü; hiçbir kaba env_file değil, sırsız)
+#   infra/.env.prod.<servis>   servis başına sırlar, YALNIZ o servisin kabına env_file: api (api, worker, migrate),
+#                              keycloak, synthetic, backup. İzleme: .env.prod.monitoring (izleme compose'u).
+# Şablonlar infra/.env.prod*.example; dosyalar VPS'te 0600, depoya girmez. Önce ön kontrol (infra/README.md "Dağıtım"):
 #
-#   docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
-#   docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml --profile family-web up -d   # aile web hazır olunca
+#   scripts/prod-preflight.sh && docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d --build
+#   ... --profile family-web up -d   # aile web hazır olunca
 #
 # İzleme ayrı dosyada (aynı "yanimda" ağına katılır): infra/monitoring/docker-compose.monitoring.yml
 name: yanimda
 
 # T-081 (ASVS 9.2.2, 1.9.2): yönetilen Postgres/Redis sunucu CA paketi (RDS + DCS CA, PEM). İstemciler sunucuyu
 # doğrular: DATABASE_URL ...sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem, REDIS_URL rediss://,
-# Keycloak JDBC verify-full. Dosya ortama özgü, git dışı (infra/tls/).
+# Keycloak JDBC verify-full. Dosya ortama özgü, depo dışı (infra/tls/).
 x-internal-ca: &internal_ca ${INTERNAL_CA_FILE:-./tls/ca.pem}:/etc/yanimda/tls/ca.pem:ro
 
+# API imajı: digest ile sabitlenir (ör. ghcr.io/org/yanimda-api@sha256:…); migrate, api ve worker AYNI imaj.
 x-api: &api
-  image: ${API_IMAGE:?API_IMAGE gerekli (ör. ghcr.io/org/yanimda-api:1.2.3)}
-  env_file: [.env.prod]
+  image: ${API_IMAGE:?API_IMAGE gerekli (ör. ghcr.io/org/yanimda-api@sha256:…)}
+  # Yalnız API'nin okuduğu değişkenler; Keycloak yönetici/DB, yedek ve izleme sırları bu kaplara verilmez.
+  env_file: [.env.prod.api]
   restart: unless-stopped
   read_only: true
   tmpfs: [/tmp]
@@ -42,6 +47,22 @@ x-api: &api
     start_period: 60s
 
 services:
+  # Şema migration'ı: tek seferlik, api/worker'dan ÖNCE ve aynı imajla (apps/api/src/db/cli.ts migrate; advisory
+  # lock). Başarısızsa yeni api/worker kapları açılmaz (service_completed_successfully). Genişlet/daralt kuralı ve
+  # geri dönüş: infra/README.md "Migration ve geri dönüş".
+  migrate:
+    <<: *api
+    command: ['node', 'dist/db/cli.js', 'migrate']
+    restart: 'no'
+    healthcheck: { disable: true }
+    environment:
+      NODE_ENV: production
+      PGSSLMODE: verify-full
+      NODE_EXTRA_CA_CERTS: /etc/yanimda/tls/ca.pem
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 512m }
+
   # Genel HTTP API (2 kopya). Outbox işçisi kapalı: ayrı "worker" süreci kirayı tutar. Sıcak yedek isteniyorsa
   # API_OUTBOX_WORKER=on → kopyalar da kirayı bekler (event.outbox_lease), işçi ölürse 30 sn'de devralır.
   api:
@@ -51,11 +72,15 @@ services:
       PORT: '3000'
       METRICS_PORT: '9464'
       OUTBOX_WORKER: ${API_OUTBOX_WORKER:-off}
+      # Migration yalnız "migrate" servisinde (env dosyasındaki değeri ezer)
+      DB_MIGRATE_ON_START: 'false'
       # T-081: Caddy arkasında gerçek istemci IP'si (hız sınırı, IP başına anahtar).
       TRUST_PROXY: '1'
       # T-081: URL'de sslmode olmasa da Postgres TLS + sunucu doğrulaması; rediss:// için aynı CA.
       PGSSLMODE: verify-full
       NODE_EXTRA_CA_CERTS: /etc/yanimda/tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
     deploy:
       replicas: 2
       resources:
@@ -70,14 +95,18 @@ services:
       PORT: '3000'
       METRICS_PORT: '9464'
       OUTBOX_WORKER: 'on'
+      DB_MIGRATE_ON_START: 'false'
       PGSSLMODE: verify-full
       NODE_EXTRA_CA_CERTS: /etc/yanimda/tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
     deploy:
       resources:
         limits: { cpus: '1', memory: 768m }
 
   # Operatör konsolu: statik Vite derlemesi (infra/console/Dockerfile), :8080, root değil. Tek imaj: ortam
-  # bilgisi kap ortamından /config.json olarak üretilir (Caddyfile); sır yok.
+  # bilgisi kap ortamından /config.json olarak üretilir ve CSP buna göre türetilir (infra/console/entrypoint.sh);
+  # sır yok. CONSOLE_OIDC_AUTHORITY boş/geçersizse kap açılmaz.
   console:
     image: ${CONSOLE_IMAGE:?CONSOLE_IMAGE gerekli}
     restart: unless-stopped
@@ -86,7 +115,7 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     environment:
-      CONSOLE_OIDC_AUTHORITY: https://auth.${DOMAIN}/realms/operations
+      CONSOLE_OIDC_AUTHORITY: https://auth.${DOMAIN:?DOMAIN gerekli}/realms/operations
       CONSOLE_OIDC_CLIENT_ID: console
       # Boş: aynı köken /v1 (Caddy console.<domain>/v1 → api)
       CONSOLE_API_BASE: ''
@@ -115,7 +144,8 @@ services:
 
   # Kimlik (T-020). Veritabanı: aynı yönetilen Postgres'te ayrı "keycloak" veritabanı ve kullanıcısı.
   # Realm'ler ilk açılışta içe aktarılır (varsa atlanır). Realm yer tutucuları (yönlendirme adresleri, sslRequired,
-  # SMTP) aşağıdaki YANIMDA_* değişkenlerinden (T-081, ASVS 5.1.5). Tema + kara liste: infra/keycloak.
+  # SMTP) YANIMDA_* değişkenlerinden (T-081, ASVS 5.1.5). Tema + kara liste: infra/keycloak.
+  # Sırlar (KC_DB_*, KC_BOOTSTRAP_*, SMTP, hizmet hesabı istemci sırları) yalnız bu kaba: .env.prod.keycloak.
   # Kök FS yazılabilir (Quarkus yeniden derleme çıktısı); Helm'de salt okunur (initContainer + emptyDir).
   keycloak:
     image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
@@ -124,35 +154,21 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     logging: *logging
+    env_file: [.env.prod.keycloak]
     environment:
       YANIMDA_KC_SSL_REQUIRED: all
       YANIMDA_CONSOLE_URL: https://console.${DOMAIN}
       YANIMDA_CONSOLE_EXTRA_REDIRECT: https://console.${DOMAIN}/*
       YANIMDA_FAMILY_WEB_URL: https://aile.${DOMAIN}
       YANIMDA_FAMILY_APP_EXTRA_REDIRECT: app.yanimda.family:/oauth2redirect
-      # consumers realm hizmet hesabı istemci sırları (realm-consumers.json ${YANIMDA_*_CLIENT_SECRET}): API
-      # (KEYCLOAK_SIGNUP_CLIENT_SECRET) ve sentetik sonda (SYNTHETIC_CLIENT_SECRET) ile aynı değer; tıklamasız kurulum.
-      YANIMDA_SIGNUP_CLIENT_SECRET: ${KEYCLOAK_SIGNUP_CLIENT_SECRET:?KEYCLOAK_SIGNUP_CLIENT_SECRET gerekli}
-      YANIMDA_SYNTHETIC_CLIENT_SECRET: ${SYNTHETIC_CLIENT_SECRET:?SYNTHETIC_CLIENT_SECRET gerekli}
-      YANIMDA_KC_SMTP_HOST: ${KC_SMTP_HOST:?KC_SMTP_HOST gerekli}
-      YANIMDA_KC_SMTP_PORT: ${KC_SMTP_PORT:-587}
-      YANIMDA_KC_SMTP_FROM: ${KC_SMTP_FROM:-noreply@${DOMAIN}}
       YANIMDA_KC_SMTP_STARTTLS: 'true'
       YANIMDA_KC_SMTP_AUTH: 'true'
-      YANIMDA_KC_SMTP_USER: ${KC_SMTP_USER:?KC_SMTP_USER gerekli}
-      YANIMDA_KC_SMTP_PASSWORD: ${KC_SMTP_PASSWORD:?KC_SMTP_PASSWORD gerekli}
       KC_DB: postgres
-      # sslmode=verify-full&sslrootcert=/etc/yanimda/tls/ca.pem (.env.prod.example)
-      KC_DB_URL: ${KC_DB_URL:?KC_DB_URL gerekli}
-      KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME gerekli}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD gerekli}
       KC_HOSTNAME: https://auth.${DOMAIN:?DOMAIN gerekli}
       KC_HTTP_ENABLED: 'true'
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: 'true'
       KC_METRICS_ENABLED: 'true'
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?KC_BOOTSTRAP_ADMIN_USERNAME gerekli}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD gerekli}
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
       - ./keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro
@@ -175,9 +191,11 @@ services:
         limits: { cpus: '1', memory: 1g }
 
   # TLS sonlandırma ve yönlendirme; sertifikalar otomatik (ACME), caddy_data biriminde.
-  # T-081: salt okunur kök, yalnız 80/443 bağlama yetkisi (yerelde docker --read-only --cap-drop ALL ile doğrulandı).
+  # T-081: salt okunur kök, yalnız 80/443 bağlama yetkisi. İmaj infra/caddy/Dockerfile: konsol imajıyla aynı Caddy
+  # sürümü, golang.org/x/net yamalı (resmi ikili Trivy HIGH). `up -d --build` yerelde kurar.
   caddy:
-    image: caddy:2.8.4-alpine
+    build: { context: ./caddy }
+    image: yanimda-caddy:local
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
@@ -204,7 +222,7 @@ services:
       console: { condition: service_started }
 
   # Sentetik izleme (T-083 §5): 5 dk'da bir TEST SOS'u + sağlık uçları. Ayrıntı: infra/README.md "Sentetik".
-  # Uygulama sırları (.env.prod) bu kaba verilmez; yalnız sondanın değişkenleri.
+  # Uygulama sırları bu kaba verilmez; yalnız sondanın değişkenleri (sır: .env.prod.synthetic).
   synthetic:
     image: node:26-alpine
     restart: unless-stopped
@@ -212,16 +230,15 @@ services:
     read_only: true
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
+    env_file: [.env.prod.synthetic]
     environment:
       SYNTHETIC_API_URL: ${SYNTHETIC_API_URL:-https://api.${DOMAIN}}
       SYNTHETIC_OIDC_ISSUER: ${SYNTHETIC_OIDC_ISSUER:-https://auth.${DOMAIN}/realms/consumers}
       SYNTHETIC_CLIENT_ID: ${SYNTHETIC_CLIENT_ID:-yanimda-synthetic}
-      SYNTHETIC_CLIENT_SECRET: ${SYNTHETIC_CLIENT_SECRET:?SYNTHETIC_CLIENT_SECRET gerekli}
       SYNTHETIC_PERSON_IDS: ${SYNTHETIC_PERSON_IDS:?SYNTHETIC_PERSON_IDS gerekli}
       SYNTHETIC_TIMEOUT_SEC: ${SYNTHETIC_TIMEOUT_SEC:-60}
       SYNTHETIC_ENV: ${ENVIRONMENT:-staging}
       PUSHGATEWAY_URL: ${PUSHGATEWAY_URL:-http://pushgateway:9091}
-      UPTIME_KUMA_PUSH_URL: ${UPTIME_KUMA_PUSH_URL:-}
       SYNTHETIC_INTERVAL_SEC: ${SYNTHETIC_INTERVAL_SEC:-300}
     volumes: ['./synthetic/probe.mjs:/probe/probe.mjs:ro']
     command: ['sh', '-c', 'while true; do node /probe/probe.mjs || true; sleep "$${SYNTHETIC_INTERVAL_SEC}"; done']
@@ -237,18 +254,9 @@ services:
     read_only: true
     # Döküm çalışma dizini (pg-backup.sh WORKDIR=/tmp) diskte; kök FS salt okunur. BACKUP_DATABASE_URL verify-full.
     volumes: ['backup_work:/tmp', *internal_ca]
-    # Uygulama sırları verilmez; yalnız yedek değişkenleri. Dökümü okuma yetkili ayrı kullanıcı alır (README).
-    environment:
-      BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL gerekli}
-      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET gerekli}
-      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
-      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-pg/staging}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-35}
-      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:?BACKUP_S3_ACCESS_KEY gerekli}
-      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:?BACKUP_S3_SECRET_KEY gerekli}
-      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-tr-west-1}
-      PUSHGATEWAY_URL: ${PUSHGATEWAY_URL:-http://pushgateway:9091}
-      BACKUP_AT: ${BACKUP_AT:-03:15}
+    # Uygulama sırları verilmez; yalnız yedek değişkenleri (.env.prod.backup). Dökümü okuma yetkili ayrı kullanıcı
+    # alır (README).
+    env_file: [.env.prod.backup]
     command: ['/opt/backup/schedule.sh']
     logging: *logging
 

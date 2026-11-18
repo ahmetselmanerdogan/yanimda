@@ -1,0 +1,84 @@
+{{- /*
+Şema migration'ı (T-083): API pod'larından ÖNCE, API ile AYNI imajla (yanimda.image → aynı digest) tek seferlik Job.
+Helm: pre-install/pre-upgrade kancası; başarısızsa sürüm durur, eski pod'lar çalışmayı sürdürür. Argo CD: Sync
+kancası, dalga -1 (ExternalSecret'lar dalga -2 → Secret hazır, Deployment'lar dalga 0). Komut: apps/api/src/db/cli.ts
+migrate (advisory lock; aynı anda iki koşu sıraya girer). API pod'larında DB_MIGRATE_ON_START=false (values-*.yaml).
+İlk kurulum (sırlar sürümün kendi ExternalSecret'larından gelir ve kanca anında Secret yoktur):
+infra/README.md "Migration ve geri dönüş". Geri alma (down.sql) bu Job'da YOK: yalnız ileri.
+*/ -}}
+{{- if and .Values.api.enabled .Values.migrations.job.enabled }}
+{{- $ctx := dict "root" . "component" "migrate" }}
+{{- $m := .Values.migrations.job }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "yanimda.component" $ctx }}
+  labels:
+    {{- include "yanimda.labels" $ctx | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: {{ $m.backoffLimit }}
+  activeDeadlineSeconds: {{ $m.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $m.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "yanimda.selectorLabels" $ctx | nindent 8 }}
+        yanimda.app/db-client: "true"
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "yanimda.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+        runAsUser: 1000
+        runAsGroup: 1000
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "yanimda.image" .Values.api.image | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["node", "dist/db/cli.js", "migrate"]
+          securityContext:
+            {{- include "yanimda.containerSecurityContext" true | nindent 12 }}
+          # Yalnız API Secret'ı (DATABASE_URL); Keycloak/yedek/izleme sırları bağlanmaz.
+          envFrom:
+            - secretRef:
+                name: {{ .Values.api.existingSecret }}
+          env:
+            - name: NODE_ENV
+              value: production
+            {{- if .Values.global.internalCa.configMap }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ include "yanimda.internalCaPath" . | quote }}
+            - name: PGSSLMODE
+              value: verify-full
+            {{- end }}
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- include "yanimda.internalCaMount" . | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- include "yanimda.internalCaVolume" . | nindent 8 }}
+{{- end }}

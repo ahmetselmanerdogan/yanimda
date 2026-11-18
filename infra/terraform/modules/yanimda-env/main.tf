@@ -227,7 +227,7 @@ resource "huaweicloud_rds_instance" "db" {
 }
 
 # T-081 (ASVS 9.2.2, 1.9.1): yalnız TLS'li bağlantı (hostssl) ve yalnız uygulama alt ağından, SCRAM ile. İstemciler
-# sslmode=verify-full + RDS CA ile sunucuyu doğrular (.env.prod.example, Helm global.internalCa).
+# sslmode=verify-full + RDS CA ile sunucuyu doğrular (.env.prod.<servis>.example, Helm global.internalCa).
 resource "huaweicloud_rds_pg_hba" "tls_only" {
   instance_id = huaweicloud_rds_instance.db.id
 

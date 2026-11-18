@@ -33,8 +33,11 @@ api:
   image:
     repository: ghcr.io/example/yanimda-api
     tag: '0.0.0'
+    # Doluysa (sha256:…) tag yerine kullanılır: api, worker ve migration Job'u aynı digest. Geri dönüş = önceki digest.
+    digest: ''
     pullPolicy: IfNotPresent
-  # Gizli anahtarlar (Secret'ta olmalı; envFrom ile tümü kaba verilir; kök .env.example ve infra/.env.prod.example;
+  # Gizli anahtarlar (Secret'ta olmalı; envFrom ile tümü YALNIZ api/worker/migrate kaplarına verilir; Keycloak, yedek
+  # ve izleme sırları bu Secret'a konmaz; kök .env.example ve infra/.env.prod.api.example;
   # apps/api/test/contract-parity.spec.ts üretim listesini denetler):
   #   DATABASE_URL, REDIS_URL, FIELD_ENC_KEYS, DEVICE_TOKEN_SECRET, DEVICE_TOKEN_SECRETS, BLE_ADDRESS_PEPPER,
   #   SIGNUP_TOKEN_SECRET, KEYCLOAK_SIGNUP_CLIENT_SECRET (T-060 web kaydı; Keycloak realm içe aktarımı da okur),
@@ -51,6 +54,8 @@ api:
   # FAMILY_WEB_URL boşsa https://aile.<domain>, PUBLIC_API_URL ve CPAAS_WEBHOOK_BASE boşsa https://api.<domain>.
   env:
     NODE_ENV: production
+    # Geliştirme varsayılanı: küme içi TimescaleDB sürümle birlikte kurulduğu için migration açılışta. Yönetilen
+    # veritabanında (staging/production) 'false' + migrations.job.enabled (kanca Job'u).
     DB_MIGRATE_ON_START: 'true'
     DATABASE_POOL_MAX: '10'
     # 0038: kopya başına paralel outbox bölümü (32 bölüm kopyalar arasında dağılır)
@@ -94,6 +99,19 @@ api:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# Şema migration'ı (templates/migrate-job.yaml): Helm pre-install/pre-upgrade, Argo CD Sync dalga -1 kancası; API ile
+# aynı imaj ve yalnız api.existingSecret. Açıkken api.env.DB_MIGRATE_ON_START 'false' olmalı (production'da zorunlu,
+# templates/validate.yaml). Küme içi timescaledb ile kapalı tutulur (kanca anında veritabanı henüz yok).
+migrations:
+  job:
+    enabled: false
+    backoffLimit: 1
+    activeDeadlineSeconds: 900
+    ttlSecondsAfterFinished: 86400
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
 
 # Outbox işçisi (aynı imaj, OUTBOX_WORKER=on). Olay geçiş metrikleri (signal_to_screen_seconds) bu süreçte ölçülür.
 worker:

@@ -48,7 +48,7 @@ jobs:
             -v "$PWD/infra/keycloak:/opt/keycloak/data/import:ro" \
             -v "$PWD/infra/keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro" \
             -v "$PWD/infra/keycloak/password-blacklists:/opt/keycloak/data/password-blacklists:ro" \
-            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+            "$(sed -n 's/^FROM //p' infra/keycloak/Dockerfile)" start-dev --import-realm
           for _ in $(seq 1 90); do
             curl -sf http://localhost:8080/realms/operations/.well-known/openid-configuration >/dev/null && exit 0
             sleep 2
