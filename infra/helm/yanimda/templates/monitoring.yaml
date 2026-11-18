@@ -11,7 +11,8 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  # job etiketi = bileşen (api / worker): infra/monitoring/alerts.yml ifadeleriyle aynı.
+  # job etiketi = bileşen (api / worker / keycloak): infra/monitoring/alerts.yml ifadeleriyle aynı (KeycloakDown
+  # up{job="keycloak"}). Her Service yalnız kendinde olan adlı portla kazınır.
   jobLabel: app.kubernetes.io/component
   selector:
     matchExpressions:
@@ -20,11 +21,17 @@ spec:
         values: [{{ .Release.Name | quote }}]
       - key: app.kubernetes.io/component
         operator: In
-        values: [api, worker]
+        values: [api, worker{{ if .Values.keycloak.enabled }}, keycloak{{ end }}]
   endpoints:
     - port: metrics
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
+    {{- if .Values.keycloak.enabled }}
+    # Keycloak yönetim portu (9000; KC_METRICS_ENABLED). NetworkPolicy yalnız izleme ad alanına açık.
+    - port: management
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+    {{- end }}
 {{- end }}
 {{- if .Values.prometheusRule.enabled }}
 ---

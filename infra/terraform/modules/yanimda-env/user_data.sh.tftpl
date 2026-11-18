@@ -1,6 +1,6 @@
 #!/bin/bash
 # T-083 VPS ilk açılış: Docker Engine + compose eklentisi, veri diski ${data_mount}, temel sertleştirme.
-# Uygulama dosyaları ve .env.prod buraya kopyalanmaz (sır yok); dağıtım infra/README.md'de.
+# Uygulama dosyaları ve .env.prod* buraya kopyalanmaz (sır yok); dağıtım infra/README.md'de.
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -52,7 +52,7 @@ sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/ssh
 systemctl reload ssh || systemctl reload sshd || true
 
 # T-083 haftalık geri yükleme tatbikatı (infra/backup/restore-drill.sh): Pazar 04:00 UTC, günlük yedekten (03:15)
-# sonra. Döküm yedek kabıyla indirilir (aws CLI + OBS kimlikleri .env.prod'dan, compose eşlemesiyle); geri yükleme ana
+# sonra. Döküm yedek kabıyla indirilir (aws CLI + OBS kimlikleri .env.prod.backup'tan, env_file); geri yükleme ana
 # makinede ağsız geçici TimescaleDB kabında. Sonuç restore_drill_* metrikleri (Pushgateway, yanimda ağı) →
 # RestoreDrillFailed/Stale/TooSlow uyarıları. Depo yolu /etc/default/yanimda-restore-drill (YANIMDA_REPO).
 # Elle: systemctl start yanimda-restore-drill.service && journalctl -u yanimda-restore-drill
@@ -79,12 +79,36 @@ TMPDIR="$work/tmp" DRILL_DUMP_FILE="$work/fetch/db.dump" DRILL_MANIFEST_FILE="$m
   PUSHGATEWAY_URL=http://pushgateway:9091 PUSHGATEWAY_DOCKER_NETWORK=yanimda infra/backup/restore-drill.sh
 SH
 chmod 0750 /usr/local/sbin/yanimda-restore-drill
+# OnFailure bildirimi: sarmalayıcı restore-drill.sh dışında düşse de (compose run, indirme, docker) başarısızlık
+# metriği gider (RestoreDrillFailed) ve journald'a err düzeyinde kayıt düşer. restore-drill.sh kendi hatalarını
+# EXIT tuzağıyla zaten iter; çift gönderim zararsız (aynı gauge).
+cat > /usr/local/sbin/yanimda-restore-drill-failed <<'SH'
+#!/bin/bash
+set -uo pipefail
+printf '# TYPE restore_drill_success gauge\nrestore_drill_success 0\n# TYPE restore_drill_last_run_timestamp_seconds gauge\nrestore_drill_last_run_timestamp_seconds %s\n' "$(date +%s)" |
+  docker run --rm -i --network yanimda --entrypoint curl yanimda-backup:local \
+    -fsS --max-time 10 --data-binary @- http://pushgateway:9091/metrics/job/restore_drill ||
+  logger -p user.err -t yanimda-restore-drill "Pushgateway'e başarısızlık metriği yazılamadı (RestoreDrillStale yakalar)"
+logger -p user.err -t yanimda-restore-drill "haftalık geri yükleme tatbikatı BAŞARISIZ: journalctl -u yanimda-restore-drill"
+SH
+chmod 0750 /usr/local/sbin/yanimda-restore-drill-failed
+cat > /etc/systemd/system/yanimda-restore-drill-failed.service <<'UNIT'
+[Unit]
+Description=Yanımda geri yükleme tatbikatı başarısızlık bildirimi (OnFailure)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yanimda-restore-drill-failed
+UNIT
 cat > /etc/systemd/system/yanimda-restore-drill.service <<'UNIT'
 [Unit]
 Description=Yanımda haftalık geri yükleme tatbikatı (T-083)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+OnFailure=yanimda-restore-drill-failed.service
 
 [Service]
 Type=oneshot

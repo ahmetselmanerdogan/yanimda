@@ -28,6 +28,9 @@ name="yanimda-restore-drill-$$"
 started=$(date +%s)
 
 log() { printf '%s restore-drill: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+# Sonuç metriği bir kez gönderilir. fail() dışındaki her hata (set -e: cp, docker cp, pg_restore -l, aws …) da
+# EXIT tuzağında restore_drill_success 0 olarak itilir; aksi halde RestoreDrillFailed hiç ateşlenmezdi.
+pushed=0
 fail() {
   log "BAŞARISIZ: $*"
   push_metrics 0
@@ -53,6 +56,7 @@ push_body() {
 
 push_metrics() {
   local ok="$1" elapsed=$(($(date +%s) - started))
+  pushed=1
   [ -n "${PUSHGATEWAY_URL:-}" ] || return 0
   {
     echo "# TYPE restore_drill_success gauge"
@@ -64,12 +68,21 @@ push_metrics() {
   } | push_body "${PUSHGATEWAY_URL%/}/metrics/job/restore_drill" || log "uyarı: Pushgateway'e yazılamadı"
 }
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/restore-drill.XXXXXX")
+work=""
 cleanup() {
-  docker rm -f -v "$name" >/dev/null 2>&1 || true
-  rm -rf "$work"
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ "$pushed" = 0 ]; then
+    log "BAŞARISIZ: beklenmeyen hata (çıkış ${rc})"
+    push_metrics 0
+  fi
+  if [ -z "${DRILL_FETCH_DIR:-}" ]; then
+    docker rm -f -v "$name" >/dev/null 2>&1 || true
+  fi
+  [ -z "$work" ] || rm -rf "$work"
+  exit "$rc"
 }
 trap cleanup EXIT
+work=$(mktemp -d "${TMPDIR:-/tmp}/restore-drill.XXXXXX")
 
 psql_drill() { docker exec -i "$name" psql -h 127.0.0.1 -U postgres -d drill -XAtq -v ON_ERROR_STOP=1 "$@"; }
 

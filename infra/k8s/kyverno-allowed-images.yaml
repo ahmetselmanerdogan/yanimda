@@ -1,0 +1,60 @@
+# ASVS 14.2.4, 10.3.2: yanimda ad alanlarında YALNIZ izin listesindeki imajlar çalışır. Kendi imajlarımız
+# (ghcr.io/ahmetselmanerdogan/yanimda-*; kyverno-verify-images.yaml cosign imzasını ve SBOM tasdikini de ister) +
+# chart'ın kullandığı üçüncü taraf imajlar (infra/helm/yanimda/values.yaml): Keycloak, TimescaleDB, Redis, MinIO
+# (küme içi veri depoları yalnız geliştirme/staging; production'da templates/validate.yaml kapatır), sentetik sonda
+# (node). Başka imaj (yazım hatası, typosquat, elle `kubectl run`) kabulde reddedilir. image_normalize kayıt defteri
+# önekini ekler ("timescale/timescaledb:2.17" → "docker.io/timescale/timescaledb:2.17"). Chart'a yeni üçüncü taraf imaj
+# eklenince bu liste aynı PR'da güncellenir. Test (kümesiz): kyverno test infra/k8s/tests (CI "infra" işi).
+#   kubectl apply -f infra/k8s/kyverno-allowed-images.yaml
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: yanimda-allowed-images
+  annotations:
+    policies.kyverno.io/title: Yanımda imaj izin listesi
+    policies.kyverno.io/description: yanimda ad alanlarında yalnız yanimda-* (GHCR) ve chart'ın listelenmiş üçüncü taraf imajları.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: allowed-images
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              # yanimda-prod: infra/k8s/argocd-yanimda-staging.yaml üretim notundaki ad alanı
+              namespaces: [yanimda-staging, yanimda, yanimda-prod]
+      preconditions:
+        all:
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: NotEquals
+            value: DELETE
+      validate:
+        message: >-
+          Kaplardan birinin imajı izin listesinde değil (yanimda-* GHCR veya chart'ın üçüncü taraf imajları;
+          infra/k8s/kyverno-allowed-images.yaml).
+        foreach:
+          - list: request.object.spec.[ephemeralContainers, initContainers, containers][]
+            deny:
+              conditions:
+                all:
+                  - key: '{{ image_normalize(element.image) }}'
+                    operator: AnyNotIn
+                    value:
+                      - ghcr.io/ahmetselmanerdogan/yanimda-*
+                      - quay.io/keycloak/keycloak:*
+                      - quay.io/keycloak/keycloak@*
+                      - docker.io/timescale/timescaledb:*
+                      - docker.io/timescale/timescaledb@*
+                      # Docker Hub resmi imajları: image_normalize sürüme göre library/ önekini koyar ya da koymaz
+                      - docker.io/library/redis:*
+                      - docker.io/library/redis@*
+                      - docker.io/redis:*
+                      - docker.io/redis@*
+                      - docker.io/library/node:*
+                      - docker.io/library/node@*
+                      - docker.io/node:*
+                      - docker.io/node@*
+                      - docker.io/bitnamilegacy/minio:*
+                      - docker.io/bitnamilegacy/minio@*

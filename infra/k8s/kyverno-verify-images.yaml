@@ -20,7 +20,8 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [yanimda-staging, yanimda]
+              # yanimda-prod: infra/k8s/argocd-yanimda-staging.yaml üretim notundaki ad alanı
+              namespaces: [yanimda-staging, yanimda, yanimda-prod]
       verifyImages:
         - imageReferences: ['ghcr.io/ahmetselmanerdogan/yanimda-api*', 'ghcr.io/ahmetselmanerdogan/yanimda-console*']
           mutateDigest: true

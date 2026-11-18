@@ -56,11 +56,10 @@ api.{$DOMAIN} {
 }
 
 # Konsol: statik dosyalar + aynı kökenden /v1 (REST + WebSocket /v1/ws/queue) → CORS gerekmez.
-# T-081 CSP (ASVS 14.4.3): satır içi betik yok (Vite derlemesi); stil özniteliği (React style) için yalnız
-# style-src 'unsafe-inline'. Keycloak (auth.) giriş/yenileme; Twilio Voice SDK sinyal (wss) ve zil sesleri.
+# T-081 CSP (ASVS 14.4.3) ve Permissions-Policy konsol imajında (infra/console/Caddyfile; Helm ile aynı politika,
+# kökenler CONSOLE_OIDC_AUTHORITY / CONSOLE_API_BASE'den türetilir). Burada eklenmez: çift CSP kesişir.
 console.{$DOMAIN} {
 	import security_headers
-	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://console.{$DOMAIN} https://auth.{$DOMAIN} https://*.twilio.com wss://*.twilio.com; media-src 'self' blob: https://sdk.twilio.com https://media.twiliocdn.com; frame-src https://auth.{$DOMAIN}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://auth.{$DOMAIN}; frame-ancestors 'none'"
 	encode zstd gzip
 	handle /v1/* {
 		import api_upstream

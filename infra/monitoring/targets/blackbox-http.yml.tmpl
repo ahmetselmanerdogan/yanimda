@@ -1,0 +1,10 @@
+# Depoda tutulan hedef şablonu: Prometheus açılışta alan adı ve ortam yer tutucularını .env.prod değerleriyle doldurup
+# /prometheus/file_sd/ altına yazar (docker-compose.monitoring.yml). 2xx + TLS beklenir. Ek hedefler bu dizinde
+# blackbox-http-<ad>.yml olarak (şablonsuz) da okunur.
+- targets:
+    - https://console.@DOMAIN@/
+    - https://auth.@DOMAIN@/realms/consumers/.well-known/openid-configuration
+    - https://auth.@DOMAIN@/realms/operations/.well-known/openid-configuration
+    - https://status.@DOMAIN@/
+  labels:
+    env: '@ENVIRONMENT@'

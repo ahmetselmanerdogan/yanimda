@@ -1,6 +1,17 @@
 # T-083 uyarı kuralları. severity: critical → PagerDuty + Telegram + e-posta; warning → Telegram + e-posta.
 # Eşikler başlangıç değeridir; staging'de 7 gün gözlemden sonra ayarlanır.
 groups:
+  # Ölü adam anahtarı: HER ZAMAN ateşler. Alertmanager yalnız "heartbeat" alıcısına (dış deadman servisi, ör.
+  # Healthchecks.io) dakikada bir iletir; sinyal kesilirse DIŞ servis sayfalar → Prometheus, Alertmanager, VPS veya
+  # ağ ölümü sessiz kalmaz. Alıcı: monitoring/alertmanager.yml "heartbeat", URL secrets/heartbeat_url (README).
+  - name: yanimda-meta
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels: { severity: none }
+        annotations:
+          summary: İzleme hattı canlı (ölü adam anahtarı; susturulmaz, yalnız heartbeat alıcısına gider)
+
   - name: yanimda-sla
     rules:
       # Kuyruk gecikmesi: gerçek (TEST olmayan) olay operatör kuyruğunda 20 sn'den uzun bekliyor (hedef üstlenme 10 sn).
@@ -111,11 +122,31 @@ groups:
         annotations:
           summary: Hiçbir API kopyası ayakta değil
       - alert: EndpointDown
-        expr: probe_success == 0
+        expr: probe_success{job=~"blackbox-http|blackbox-api"} == 0
         for: 3m
         labels: { severity: critical }
         annotations:
           summary: Dış uç erişilemiyor {{ $labels.instance }}
+      # Keycloak düşerse operatör girişi ve token yenileme durur (konsol oturumları süre dolunca kapanır). Kazıma
+      # (compose: prometheus.yml keycloak:9000; Helm: ServiceMonitor management portu) veya iç hazırlık sondası.
+      - alert: KeycloakDown
+        expr: >-
+          up{job="keycloak"} == 0 or absent(up{job="keycloak"})
+          or probe_success{job="blackbox-internal", service="keycloak"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Keycloak erişilemiyor veya hazır değil (operatör girişi / token yenileme)
+      # Pushgateway düşerse sentetik, yedek ve tatbikat metrikleri bayatlar (Synthetic*/Backup*/RestoreDrill* Stale
+      # uyarıları gecikmeli ve yanıltıcı olur). K8s'te kube-prometheus-stack iş adı "prometheus-pushgateway".
+      - alert: PushgatewayDown
+        expr: >-
+          up{job=~"pushgateway|prometheus-pushgateway"} == 0 or absent(up{job=~"pushgateway|prometheus-pushgateway"})
+          or probe_success{job="blackbox-internal", service="pushgateway"} == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Pushgateway kazınamıyor; sentetik / yedek / tatbikat metrikleri güncellenmiyor
       - alert: TlsCertExpiringSoon
         expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
         for: 1h

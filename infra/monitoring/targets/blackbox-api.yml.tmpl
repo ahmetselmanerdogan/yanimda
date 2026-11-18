@@ -1,0 +1,6 @@
+# Depoda tutulan hedef şablonu: Prometheus açılışta alan adı ve ortam yer tutucularını .env.prod değerleriyle doldurup
+# /prometheus/file_sd/ altına yazar (docker-compose.monitoring.yml). Kimliksiz hazırlık ucu → 200 beklenir.
+- targets:
+    - https://api.@DOMAIN@/v1/ready
+  labels:
+    env: '@ENVIRONMENT@'
