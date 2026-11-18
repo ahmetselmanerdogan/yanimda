@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Members } from '@/components/Members';
-import { accountError, type Billing, billingPayload, EMPTY_BILLING } from '@/lib/account';
+import { accountError, type Billing, billingPayload, EMPTY_BILLING, subscriptionOrNull } from '@/lib/account';
 import { api, ApiError } from '@/lib/api';
 import { openCheckout } from '@/lib/checkout';
 import { dataExportError, exportBlob, saveBlob } from '@/lib/data-export';
@@ -47,7 +47,7 @@ export function Account() {
             name: p.displayName,
             owner: p.myRole === 'OWNER',
             myRole: p.myRole === 'OWNER' || p.myRole === 'MEMBER' ? p.myRole : null,
-            sub: await api.subscription(at, p.id).catch(() => null),
+            sub: await subscriptionOrNull(api.subscription(at, p.id)),
           })),
         ),
       );
