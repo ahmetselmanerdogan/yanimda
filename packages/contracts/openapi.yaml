@@ -1691,8 +1691,9 @@ paths:
         sahte ortak FAKE_PENDANT üretimde yalnız `PARTNER_FAKE_ENABLED=true` ile açılır.
         İmza: `X-Partner-Timestamp` (unix sn, ±300 sn), `X-Partner-Nonce` (teslim başına tek, 8–128 karakter),
         `X-Partner-Signature: v1=<hex>` = HMAC-SHA256(sır, "<ts>.<nonce>.<ham gövde>"). Geçersiz / pencere dışı 401;
-        aynı nonce ikinci kez 409 (hiçbir şey yazılmaz; işlem 5xx ile biterse nonce serbest kalır). idempotencyKey
-        üretici olay kimliğinden türetilir: aynı olay yeni teslimle gelirse `duplicates`. Sinyal başına ret (yalnız o
+        aynı nonce başarılı teslimden sonra 409 (hiçbir şey yazılmaz; gövde hatası 4xx veya 5xx nonce’u serbest
+        bırakır). idempotencyKey üretici olay kimliğinden türetilir: aynı olay yeni teslimle gelirse `duplicates`.
+        Sinyal başına ret (yalnız o
         olay; denetime yazılır): UNKNOWN_DEVICE (bağlantı yok / cihaz kaldırıldı), EVENT_INVALID (okunamayan olay),
         UNSUPPORTED_SIGNAL (modelin profili dışında, ör. radyo kolyeden konum veya C sınıfından düşme), SCHEMA_INVALID.
         Yeni yazılan her olayın gecikmesi (olay anı → alım) ortak gecikmesine (S2.7) örnek olur.

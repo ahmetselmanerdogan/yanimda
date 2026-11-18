@@ -424,6 +424,23 @@ describe('İmzalı webhook (S2.6: imza, tekrar koruması, idempotency)', () => {
     expect(await h.rows(`SELECT 1 FROM event.event`)).toHaveLength(1);
   });
 
+  it('gövde hatası (400) nonce’u yakmaz: düzeltilmiş gövde aynı nonce ile kabul edilir; başarıdan sonra 409', async () => {
+    await link('FP-FIX');
+    const e = ev('SOS', 'FP-FIX');
+    const send = (body: string) =>
+      webhook.ingest('FAKE_PENDANT', {
+        rawBody: Buffer.from(body),
+        headers: signed(body, { nonce: 'fix-nonce-0001' }),
+      });
+    expect(await status(send(JSON.stringify([e])))).toBe(400); // şema: nesne değil
+    expect(await status(send('{bozuk'))).toBe(400); // JSON değil
+    expect(await status(send(JSON.stringify({ events: [] })))).toBe(400); // boş
+    const fixed = JSON.stringify({ events: [e] });
+    expect(await send(fixed)).toMatchObject({ accepted: 1 });
+    expect(await status(send(fixed))).toBe(409);
+    expect(await h.rows(`SELECT 1 FROM signal.signal`)).toHaveLength(1);
+  });
+
   it('sinyal başına ret: bilinmeyen cihaz, okunamayan olay, profil dışı sinyal (radyo kolyede konum) — SOS yine yazılır; retler denetimde', async () => {
     await link('FP-RAD', 'FAKE_PENDANT_RADIO');
     const sos = ev('SOS', 'FP-RAD');

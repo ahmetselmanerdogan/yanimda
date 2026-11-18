@@ -116,14 +116,16 @@ export class PartnerWebhookService {
       await this.audit(partner, 'partner.webhook_replay', {});
       throw fail(ConflictException, 'A-ERR-REPLAY');
     }
+    // Nonce yalnız başarılı teslimde tüketilir (tekrar koruması). Hata (gövde 4xx: JSON değil / şema / boş parti;
+    // 5xx) nonce'u bırakır: ortak gövdeyi düzeltip aynı nonce ile yeniden imzalayabilir, geçici hatada yeniden dener.
+    // process() 4xx'i yan etkiden (sinyal yazımı) önce atar; sinyaller ayrıca idempotencyKey ile tekildir.
     try {
       return await this.process(adapter, input.rawBody, now);
     } catch (e) {
-      if (!(e instanceof HttpException) || e.getStatus() >= 500)
-        await this.db
-          .delete(partnerDelivery)
-          .where(and(eq(partnerDelivery.partner, partner), eq(partnerDelivery.nonce, nonce)))
-          .catch(() => undefined);
+      await this.db
+        .delete(partnerDelivery)
+        .where(and(eq(partnerDelivery.partner, partner), eq(partnerDelivery.nonce, nonce)))
+        .catch(() => undefined);
       throw e;
     }
   }
