@@ -67,7 +67,7 @@ jobs:
       - name: PII log denetimi (T-081; uçtan uca + kaos API log'ları)
         run: pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../test-results/logs
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: e2e-chaos, path: test-results/, if-no-files-found: ignore }
 
   console-e2e:
@@ -140,7 +140,7 @@ jobs:
       - name: PII log denetimi (T-081; konsol akışları boyunca API log'u)
         run: pnpm --filter @yanimda/api exec tsx test/e2e/pii-audit-cli.ts ../../test-results-api.log
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: console-e2e
           path: |
@@ -166,7 +166,7 @@ jobs:
       - name: gitleaks (git geçmişi; bilinen sahte test sırları .gitleaksignore'da)
         run: docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:v8.21.2 git --no-banner --redact -v .
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: semgrep-sarif, path: semgrep.sarif, if-no-files-found: ignore }
 
   infra:
