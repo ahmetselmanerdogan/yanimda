@@ -496,6 +496,12 @@ export function errorText(e: unknown): string {
   return e instanceof ApiError ? e.message : t('O-UI-NETWORK');
 }
 
+/** RFC 7807 problem+json → ApiError (katalog `code`, `detail`); gövde JSON değilse durum kodu. */
+export async function problemError(r: Response): Promise<ApiError> {
+  const p = (await r.json().catch(() => ({}))) as { detail?: string; title?: string; code?: string };
+  return new ApiError(r.status, p.detail ?? p.title ?? String(r.status), p.code);
+}
+
 export type TokenSource = () => Promise<string | null>;
 
 /** API istemcisi: her istekte güncel operatör token'ı; hata RFC 7807 → ApiError. */
@@ -510,10 +516,7 @@ export function createApi(token: TokenSource, base: string = runtimeConfig().api
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    if (!r.ok) {
-      const p = (await r.json().catch(() => ({}))) as { detail?: string; title?: string; code?: string };
-      throw new ApiError(r.status, p.detail ?? p.title ?? String(r.status), p.code);
-    }
+    if (!r.ok) throw await problemError(r);
     return (r.status === 204 ? undefined : await r.json()) as T;
   }
   const ev = (id: string) => `/events/${encodeURIComponent(id)}`;
@@ -622,7 +625,7 @@ export function createApi(token: TokenSource, base: string = runtimeConfig().api
           headers: t ? { authorization: `Bearer ${t}` } : {},
         },
       );
-      if (!r.ok) throw new ApiError(r.status, String(r.status));
+      if (!r.ok) throw await problemError(r);
       return URL.createObjectURL(await r.blob());
     },
   };
