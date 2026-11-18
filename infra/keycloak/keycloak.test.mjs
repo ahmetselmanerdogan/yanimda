@@ -143,11 +143,18 @@ test('consumers hizmet hesapları: gizli istemci, sır ortamdan (prod compose/He
     assert.equal(c.directAccessGrantsEnabled, false, clientId);
     assert.ok(!c.implicitFlowEnabled, clientId);
   }
-  // Üretimde geliştirme varsayılanı kalmaz: prod compose `:?` ile zorunlu, Helm her zaman secretKeyRef.
+  // Üretimde geliştirme varsayılanı kalmaz: prod compose'da keycloak kabı sırrı yalnız .env.prod.keycloak'tan alır
+  // (şablonda anahtar var) ve dağıtım ön kontrolü (scripts/prod-preflight.sh) boş/kısa değeri reddeder; Helm her
+  // zaman secretKeyRef.
   const compose = readFileSync(join(here, '../docker-compose.prod.yml'), 'utf8');
+  const kcEnv = readFileSync(join(here, '../.env.prod.keycloak.example'), 'utf8');
+  const preflight = readFileSync(join(here, '../../scripts/prod-preflight.sh'), 'utf8');
   const helm = readFileSync(join(here, '../helm/yanimda/templates/keycloak.yaml'), 'utf8');
+  assert.match(compose, /\n {2}keycloak:\n(?: {4}.*\n)*? {4}env_file: \[\.env\.prod\.keycloak\]\n/, 'compose env_file');
   for (const env of Object.values(secrets)) {
-    assert.match(compose, new RegExp(`^\\s+${env}: \\$\\{[A-Z_]+:\\?`, 'm'), `compose ${env}`);
+    assert.match(kcEnv, new RegExp(`^${env}=`, 'm'), `.env.prod.keycloak.example ${env}`);
+    assert.ok(preflight.includes(`minlen "$f" ${env} 32`), `prod-preflight ${env}`);
+    assert.doesNotMatch(compose, new RegExp(`${env}: \\$\\{[A-Z_]+:-`), `compose ${env} varsayılansız`);
     assert.match(helm, new RegExp(`- name: ${env}\\n\\s+valueFrom:\\n\\s+secretKeyRef:`), `helm ${env}`);
     assert.doesNotMatch(helm, new RegExp(`\\{\\{-? if[^}]*\\}\\}\\s*- name: ${env}`), `helm ${env} koşulsuz`);
   }
@@ -188,4 +195,22 @@ test('operator-token: form adresi çözülür, TOTP RFC 6238 (SHA1) ile uyumlu, 
   const { verifier, challenge } = pkce();
   assert.match(verifier, /^[A-Za-z0-9_-]{43}$/);
   assert.match(challenge, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test('Keycloak sürümü tek kaynaktan: infra/keycloak/Dockerfile FROM = Helm, dev/prod compose, .env.prod.example', () => {
+  const root = join(here, '..', '..');
+  const read = (p) => readFileSync(join(root, p), 'utf8');
+  const pin = /^FROM (\S+)$/m.exec(read('infra/keycloak/Dockerfile'))?.[1] ?? '';
+  assert.match(pin, /^quay\.io\/keycloak\/keycloak:\d+\.\d+/);
+  const kc = /^keycloak:\n[\s\S]*?\n {2}image:\n {4}repository: (\S+)\n {4}tag: '([^']+)'/m.exec(
+    read('infra/helm/yanimda/values.yaml'),
+  );
+  assert.equal(kc && `${kc[1]}:${kc[2]}`, pin, 'helm values.yaml keycloak.image');
+  assert.ok(read('infra/docker-compose.yml').includes(`image: ${pin}\n`), 'dev compose');
+  assert.ok(read('infra/docker-compose.prod.yml').includes(`\${KEYCLOAK_IMAGE:-${pin}}`), 'prod compose varsayılanı');
+  assert.ok(read('infra/.env.prod.example').includes(`KEYCLOAK_IMAGE=${pin}\n`), '.env.prod.example');
+  // İş akışları sürümü sabit yazmaz, Dockerfile'dan okur.
+  for (const wf of ['.github/workflows/ci.yml', '.github/workflows/security.yml']) {
+    assert.doesNotMatch(read(wf), /quay\.io\/keycloak\/keycloak:\d/, wf);
+  }
 });

@@ -91,7 +91,7 @@ jobs:
             -v "$PWD/infra/keycloak:/opt/keycloak/data/import:ro" \
             -v "$PWD/infra/keycloak/themes/yanimda:/opt/keycloak/themes/yanimda:ro" \
             -v "$PWD/infra/keycloak/password-blacklists:/opt/keycloak/data/password-blacklists:ro" \
-            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+            "$(sed -n 's/^FROM //p' infra/keycloak/Dockerfile)" start-dev --import-realm
           for i in $(seq 1 90); do curl -sf http://localhost:8080/realms/operations/.well-known/openid-configuration >/dev/null && break; sleep 2; done
       - name: Test operatörü ve sırlar (iş başına rastgele)
         run: |
@@ -194,8 +194,21 @@ jobs:
           if $H template yanimda yanimda -f yanimda/values-production.yaml --set redis.enabled=true >/dev/null 2>&1; then
             echo "::error::values-production + redis.enabled=true reddedilmeliydi"; exit 1
           fi
+          # Migration ayrı kanca Job'unda: production'da Job zorunlu; Job yokken açılış migration'ı kapatılamaz
+          if $H template yanimda yanimda -f yanimda/values-production.yaml --set migrations.job.enabled=false >/dev/null 2>&1; then
+            echo "::error::values-production + migrations.job.enabled=false reddedilmeliydi"; exit 1
+          fi
+          if $H template yanimda yanimda --set api.env.DB_MIGRATE_ON_START=false >/dev/null 2>&1; then
+            echo "::error::migrations.job kapalı + DB_MIGRATE_ON_START=false reddedilmeliydi"; exit 1
+          fi
+          # Migration Job'u API ile aynı imaj (digest) ve yalnız API Secret'ı
+          out=$($H template yanimda yanimda -f yanimda/values-production.yaml --set api.image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef)
+          [ "$(grep -c 'image: "ghcr.io/example/yanimda-api@sha256:0123456789abcdef' <<<"$out")" -ge 3 ] \
+            || { echo "::error::api/worker/migrate aynı digest'i kullanmıyor"; exit 1; }
           # Küme düzeyi bildirimler (Argo CD, Kyverno; CRD şemaları yoksa atlanır)
           cat infra/k8s/*.yaml | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0 -
+          # Kyverno imaj izin listesi (kümesiz; izinli / yabancı / benzer adlı imaj)
+          docker run --rm -v "$PWD/infra/k8s:/k8s:ro" ghcr.io/kyverno/kyverno-cli:v1.12.5 test /k8s/tests
       - name: Keycloak realm / tema / kara liste (T-081; ağsız)
         run: |
           docker run --rm -v "$PWD":/w:ro -w /w node:26-alpine node infra/keycloak/generate.mjs --check
@@ -209,19 +222,23 @@ jobs:
           docker run --rm -v "$M":/m:ro grafana/loki:3.2.1 -config.file=/m/loki-config.yml -verify-config
           docker run --rm -v "$M":/m:ro grafana/promtail:3.2.1 -config.file=/m/promtail-config.yml -check-syntax
           docker run --rm -v "$M":/m:ro prom/blackbox-exporter:v0.25.0 --config.file=/m/blackbox.yml --config.check
-          docker run --rm -e DOMAIN=ci.example.test -e ACME_EMAIL=ci@example.test -v "$PWD/infra/caddy/Caddyfile":/etc/caddy/Caddyfile:ro caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-          docker run --rm -v "$PWD/infra/console/Caddyfile":/etc/caddy/Caddyfile:ro caddy:2.11.9-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-      - name: Compose config (örnek ortam dosyasıyla; sır yok)
-        run: |
-          cp infra/.env.prod.example infra/.env.prod
-          docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml config -q
-          docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml --profile family-web config -q
-          docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml config -q
-          rm infra/.env.prod
+          # Dış Caddy: infra/caddy/Dockerfile ile aynı sürüm (doğrulama için resmi imaj yeterli; ikili yalnız x/net yaması)
+          CADDY_IMAGE=$(sed -nE 's/^FROM (caddy:[^ ]+-alpine)$/\1/p' infra/caddy/Dockerfile)
+          docker run --rm -e DOMAIN=ci.example.test -e ACME_EMAIL=ci@example.test -v "$PWD/infra/caddy/Caddyfile":/etc/caddy/Caddyfile:ro "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Konsol kabı (entrypoint doğrulaması, CSP / güvenlik başlıkları, /config.json)
+        run: scripts/test-console-runtime.sh
+      - name: Üretim ortam dosyaları ön kontrolü (şablonlar reddedilir, üretilmiş geçerli set geçer) + compose config
+        run: scripts/test-prod-preflight.sh
       - name: Shellcheck, sentetik sonda, Dockerfile denetimleri
         run: |
-          docker run --rm -v "$PWD/infra":/mnt:ro koalaman/shellcheck:v0.10.0 backup/pg-backup.sh backup/restore-drill.sh backup/schedule.sh
-          docker run --rm -v "$PWD/scripts":/mnt:ro koalaman/shellcheck:v0.10.0 load-v1.sh dev-up.sh security/spki-pin.sh
+          docker run --rm -v "$PWD/infra":/mnt:ro koalaman/shellcheck:v0.10.0 backup/pg-backup.sh backup/restore-drill.sh backup/schedule.sh console/entrypoint.sh
+          docker run --rm -v "$PWD/scripts":/mnt:ro koalaman/shellcheck:v0.10.0 load-v1.sh dev-up.sh security/spki-pin.sh \
+            prod-preflight.sh test-prod-preflight.sh test-console-runtime.sh
+          # Geri yükleme tatbikatı: beklenmeyen hata (set -e) da başarısızlık olarak raporlanır (EXIT tuzağı)
+          if DRILL_DUMP_FILE=/nonexistent/ci.dump infra/backup/restore-drill.sh 2>drill.err; then
+            echo "::error::restore-drill.sh olmayan dökümle başarılı döndü"; exit 1
+          fi
+          grep -q 'BAŞARISIZ: beklenmeyen hata' drill.err || { cat drill.err; echo "::error::EXIT tuzağı çalışmadı"; exit 1; }
           # VPS cloud-init (terraform templatefile; tatbikat timer'ı dahil): değişkenler örnekle, $${ → ${ çözülüp denetlenir
           sed -e 's#[$]{data_mount}#/srv/yanimda#g' -e 's#[$]{ntp_servers}#100.125.0.251 100.125.0.252#g' -e 's#[$][$][{]#${#g' \
             infra/terraform/modules/yanimda-env/user_data.sh.tftpl | docker run --rm -i koalaman/shellcheck:v0.10.0 -
@@ -232,6 +249,7 @@ jobs:
             node:26-alpine sh -c 'node --check /p/probe.mjs && node /p/probe.mjs --dry'
           docker build --check -f infra/console/Dockerfile .
           docker build --check infra/backup
+          docker build --check infra/caddy
 
   image:
     name: API imajı · gerçek TimescaleDB duman · Trivy
@@ -276,7 +294,16 @@ jobs:
           echo "Reddedildi (çıkış $code)"
       - name: TimescaleDB uzantıları (infra/init.sql, docker-compose ile aynı)
         run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U yanimda -d yanimda < infra/init.sql
-      - name: İmaj açılıyor (migration'lar gerçek TimescaleDB'ye)
+      - name: Migration ayrı komutla (compose "migrate" servisi / Helm kanca Job'u ile aynı; salt okunur kök)
+        run: |
+          docker run --rm --network host --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            -e NODE_ENV=production -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda \
+            "$IMAGE" node dist/db/cli.js migrate
+          # İkinci koşu boş olmalı (tekrarlanabilir; aynı anda koşan kopyalar advisory lock ile sıraya girer)
+          out=$(docker run --rm --network host -e NODE_ENV=production \
+            -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda "$IMAGE" node dist/db/cli.js migrate)
+          [ "$out" = "uygulandı: (yok)" ] || { echo "::error::ikinci migrate koşusu boş değil: $out"; exit 1; }
+      - name: İmaj açılıyor (açılışta migration KAPALI; şema bir önceki adımda)
         run: |
           # T-041: cihaz token imza anahtarı (≥ 32 karakter); her koşuya özel, kaydedilmez
           echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/device-secret)"
@@ -286,7 +313,7 @@ jobs:
           echo "::add-mask::$(openssl rand -hex 32 | tee /tmp/signup-secret)"
           docker run -d --name api --network host \
             -e DATABASE_URL=postgres://yanimda:yanimda@localhost:5432/yanimda \
-            -e REDIS_URL=redis://localhost:6379 -e PORT=3000 \
+            -e REDIS_URL=redis://localhost:6379 -e PORT=3000 -e DB_MIGRATE_ON_START=false \
             -e FIELD_ENC_KEYS="ci:$(cat /tmp/field-key)" \
             -e SIGNUP_TOKEN_SECRET="$(cat /tmp/signup-secret)" \
             -e DEVICE_TOKEN_SECRET="$(cat /tmp/device-secret)" "$IMAGE"
