@@ -86,14 +86,25 @@ describe('saat kaydı (telefon üzerinden)', () => {
     expect(await status(svc.enrollCompanion(phone, { deviceId: PHONE }, T0))).toBe(400);
   });
 
-  it('kaldırılmış saat yeniden eşleşir; eski token geçersiz', async () => {
+  it('kaldırılmış saat telefonla yeniden eşleşmez (409 P-ERR-WATCH-REMOVED; yalnız aile yeniden ekler)', async () => {
     const first = await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
     await enrollment.revoke(WATCH, new Date(T0.getTime() + 1000));
     const later = new Date(T0.getTime() + 5000);
-    const again = await svc.enrollCompanion(phone, { deviceId: WATCH }, later);
-    expect(again.created).toBe(true);
+    const err = await svc.enrollCompanion(phone, { deviceId: WATCH }, later).catch((e: unknown) => e);
+    expect((err as { status?: number }).status).toBe(409);
+    expect((err as { getResponse: () => { code: string } }).getResponse().code).toBe('P-ERR-WATCH-REMOVED');
     expect(await status(enrollment.authenticate(`Bearer ${first.body.token}`, later))).toBe(401);
-    expect((await enrollment.authenticate(`Bearer ${again.body.token}`, later)).deviceId).toBe(WATCH);
+    const [row] = await h.rows<{ revoked_at: Date | null }>(
+      `SELECT revoked_at FROM device.device WHERE id = '${WATCH}'`,
+    );
+    expect(row!.revoked_at).not.toBeNull();
+    // Başka kişinin kaldırılmış saati bu kişiye geçmez.
+    await enrollment.revoke(OTHER_WATCH, later);
+    expect(await status(svc.enrollCompanion(phone, { deviceId: OTHER_WATCH }, later))).toBe(409);
+    const [other] = await h.rows<{ protected_person_id: string }>(
+      `SELECT protected_person_id FROM device.device WHERE id = '${OTHER_WATCH}'`,
+    );
+    expect(other!.protected_person_id).toBe(OTHER);
   });
 });
 

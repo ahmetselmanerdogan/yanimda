@@ -5093,6 +5093,10 @@
     "channel": "family",
     "text": "Cihaz bulunamadı"
   },
+  "F-ERR-DEVICE-RESTORE-WATCH-ONLY": {
+    "channel": "family",
+    "text": "Yalnız saat yeniden eklenebilir. Diğer cihazları yeniden kurun."
+  },
   "F-ERR-EVENT-NOT-FOUND": {
     "channel": "family",
     "text": "Olay bulunamadı"
@@ -5368,6 +5372,10 @@
   "P-ERR-SELF-AS-WATCH": {
     "channel": "phone",
     "text": "Telefon kendini saat olarak kaydedemez"
+  },
+  "P-ERR-WATCH-REMOVED": {
+    "channel": "phone",
+    "text": "Bu saat aileniz tarafından kaldırıldı. Yeniden eklemek için aile uygulamasını kullanın."
   },
   "P-ERR-STEP-REQUIRED": {
     "channel": "phone",

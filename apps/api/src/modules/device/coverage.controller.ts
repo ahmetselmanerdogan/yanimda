@@ -40,6 +40,7 @@ import { adminTokenEnabled, AdminTokenGuard } from '../rules/admin-token.guard';
 import { BridgedDeviceService } from './bridged.service';
 import { DeviceService } from './device.service';
 import type { PromptRequest } from './device.types';
+import { assertDeviceLimits, classOf } from './device-limits';
 import { EnrollmentService } from './enrollment.service';
 import { delivered, type PushOutcome } from './push.port';
 
@@ -99,7 +100,7 @@ export class CoverageAccessGuard implements CanActivate {
 }
 
 type PersonOp = 'read' | 'plan';
-type DeviceOp = 'patch' | 'delete' | 'intent' | 'command';
+type DeviceOp = 'patch' | 'delete' | 'intent' | 'command' | 'restore';
 
 /** Yetki kuralları (erişimi olmayan kişi / cihaz 404, rolü yetmeyen 403). */
 @Injectable()
@@ -126,13 +127,21 @@ export class CoverageAccess {
     }
   }
 
-  /** Cihazın kişisi (etkin cihaz; kaldırma için kaldırılmış da bulunur). */
+  /**
+   * Cihazın kişisi (etkin cihaz; kaldırma ve yeniden ekleme için kaldırılmış da bulunur). Yeniden ekleme yalnız aile
+   * (sahip karar: aile / yönetici kaldırdığı saat yalnız aile yeniden ekleyince döner).
+   */
   async device(a: CoverageActor, deviceId: string, op: DeviceOp): Promise<string> {
     if (!UUID.test(deviceId)) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
+    if (op === 'restore' && a.kind !== 'FAMILY') throw fail(ForbiddenException, 'A-ERR-FORBIDDEN');
     const [d] = await this.db
       .select({ personId: device.protectedPersonId })
       .from(device)
-      .where(op === 'delete' ? eq(device.id, deviceId) : and(eq(device.id, deviceId), isNull(device.revokedAt)));
+      .where(
+        op === 'delete' || op === 'restore'
+          ? eq(device.id, deviceId)
+          : and(eq(device.id, deviceId), isNull(device.revokedAt)),
+      );
     if (!d) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
     switch (a.kind) {
       case 'ADMIN':
@@ -184,11 +193,22 @@ export class CoverageController {
     return this.protection.coverage.history(id, d);
   }
 
-  /** GET /v1/protected-persons/{id}/devices */
+  /**
+   * GET /v1/protected-persons/{id}/devices — etkin cihazlar. `includeRemoved=true`: ardından kaldırılmış cihazlar
+   * (`removedAt`; en yeni kaldırılan önce, en çok 20) — aile "Yeniden ekle" sunar (POST /devices/{id}/restore).
+   */
   @Get(':id/devices')
-  async devices(@Param('id') id: string, @Req() req: ActorRequest) {
+  async devices(
+    @Param('id') id: string,
+    @Req() req: ActorRequest,
+    @Query('includeRemoved') includeRemoved?: string,
+  ): Promise<DeviceSummary[]> {
+    if (includeRemoved !== undefined && !['', 'true', 'false'].includes(includeRemoved))
+      throw fail(BadRequestException, 'A-ERR-FIELD-BOOLEAN', { field: 'includeRemoved' });
     await this.access.person(actorOf(req), id, 'read');
-    return this.protection.coverage.devices(id);
+    const active = await this.protection.coverage.devices(id);
+    if (includeRemoved !== 'true') return active;
+    return [...active.map((d) => ({ ...d, removedAt: null })), ...(await this.protection.coverage.removedDevices(id))];
   }
 
   /** GET /v1/protected-persons/{id}/charging-plan */
@@ -285,6 +305,56 @@ export class DeviceManageController {
       id: subOf(actorOf(req)),
     });
     this.log.log('Cihaz kaldırıldı; kapsama yeniden hesaplandı');
+  }
+
+  /**
+   * POST /v1/devices/{id}/restore — aile, kaldırılmış saati yeniden ekler (yalnız WEAROS_WATCH; kişiyi görmeyen
+   * 404, operasyon / yönetici / cihaz 403). enrolledAt yenilenir: kaldırmadan önceki token'lar geçersiz kalır; saat
+   * yeni token'ı telefonun bir sonraki `POST /devices/{telefon}/companions` çağrısında alır. Sınırlar (S1.7) geçerli.
+   * Zaten etkin saat: değişiklik yok, 200.
+   */
+  @Post(':id/restore')
+  @HttpCode(200)
+  async restore(@Param('id') id: string, @Req() req: ActorRequest): Promise<DeviceSummary> {
+    const a = actorOf(req);
+    const personId = await this.access.device(a, id, 'restore');
+    const deviceId = id.toLowerCase();
+    const now = new Date();
+    const restored = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ kind: device.kind, revokedAt: device.revokedAt })
+        .from(device)
+        .where(eq(device.id, deviceId))
+        .for('update');
+      if (!row) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
+      if (!row.revokedAt) return false;
+      if (row.kind !== 'WEAROS_WATCH') throw fail(ConflictException, 'F-ERR-DEVICE-RESTORE-WATCH-ONLY');
+      await assertDeviceLimits(tx, personId, await classOf(tx, row.kind), deviceId);
+      await tx
+        .update(device)
+        .set({
+          revokedAt: null,
+          retiredAt: null,
+          enrolledAt: now,
+          pushProvider: null,
+          pushToken: null,
+          pushSandbox: null,
+        })
+        .where(eq(device.id, deviceId));
+      await tx.insert(auditLog).values({
+        actorKind: actorKindOf(a),
+        actorId: subOf(a),
+        action: 'device.restored',
+        entityType: 'device',
+        entityId: deviceId,
+        data: null,
+      });
+      return true;
+    });
+    if (restored) this.log.log('Kaldırılmış saat aile tarafından yeniden eklendi');
+    const s = (await this.protection.coverage.devices(personId)).find((d) => d.id === deviceId);
+    if (!s) throw fail(NotFoundException, 'F-ERR-DEVICE-NOT-FOUND');
+    return { ...s, removedAt: null };
   }
 
   /** POST /v1/devices/{id}/charging-intent — kişinin kendi cihazı veya aile. 202 { until }. */

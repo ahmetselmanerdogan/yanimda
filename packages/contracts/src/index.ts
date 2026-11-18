@@ -192,6 +192,11 @@ export interface DeviceSummary {
   voiceNumberLast2?: string | null;
   /** T-089 (S7.1, S4.8): son sinyali yaşlının telefonu üzerinden (BLE köprüsü) geldi — "telefon üzerinden". */
   bridged?: boolean;
+  /**
+   * GET /protected-persons/{id}/devices?includeRemoved=true: kaldırılma zamanı (etkin cihazda null). Alan yoksa cihaz
+   * etkindir. Kaldırılmış WEAROS_WATCH aile tarafından yeniden eklenebilir (POST /devices/{id}/restore).
+   */
+  removedAt?: string | null;
 }
 
 /** GET /protected-persons/{id}/coverage */
