@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Konsol kabı çalışma zamanı testi (CI "infra" işi; Docker gerekir): infra/console/entrypoint.sh + Caddyfile, konsol
-# imajıyla aynı Caddy tabanında (Dockerfile'dan okunur) ve aynı ENTRYPOINT/kullanıcıyla, sahte bir index.html ile
-# küçük bir test imajına kurulur (tam Vite derlemesi gerekmez) ve salt okunur kök + cap_drop ALL ile çalıştırılır.
+# Konsol kabı çalışma zamanı testi (CI "infra" işi; Docker gerekir): GERÇEK konsol imajının sunucu katmanı
+# (infra/console/Dockerfile --target server: yamalı Caddy ikilisi, Caddyfile, entrypoint.sh, kullanıcı 65532) kurulur,
+# üstüne sahte bir index.html eklenir (Vite derlemesi gerekmez) ve compose/Helm gibi salt okunur kök + cap_drop ALL
+# + no-new-privileges ile çalıştırılır.
 #   - CONSOLE_OIDC_AUTHORITY boş / tırnaklı / satır sonlu / ters bölülü → kap açılmaz (çıkış 64)
 #   - geçerli değerler → /config.json geçerli JSON ve değerler aynen; CSP connect-src/frame-src/form-action OIDC
 #     kökenini (ve CONSOLE_API_BASE verildiyse https+wss kökenini) içerir; frame-ancestors 'none', X-Frame-Options
@@ -9,26 +10,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE=$(sed -nE 's/^FROM (caddy:[^ ]+-alpine) AS runtime$/\1/p' "$ROOT/infra/console/Dockerfile")
-[ -n "$IMAGE" ] || {
-  echo "infra/console/Dockerfile runtime imajı okunamadı"
-  exit 1
-}
 ctx=$(mktemp -d)
 name="console-runtime-test-$$"
+base="yanimda-console-server-test:$$"
 tag="yanimda-console-runtime-test:$$"
-trap 'docker rm -f "$name" >/dev/null 2>&1 || true; docker rmi -f "$tag" >/dev/null 2>&1 || true; rm -rf "$ctx"' EXIT
-cp "$ROOT/infra/console/Caddyfile" "$ROOT/infra/console/entrypoint.sh" "$ctx/"
+trap 'docker rm -f "$name" >/dev/null 2>&1 || true; docker rmi -f "$tag" "$base" >/dev/null 2>&1 || true; rm -rf "$ctx"' EXIT
+docker build -q --target server -f "$ROOT/infra/console/Dockerfile" -t "$base" "$ROOT" >/dev/null
 echo '<!doctype html><title>t</title>' >"$ctx/index.html"
 cat >"$ctx/Dockerfile" <<EOF
-FROM $IMAGE
-ENV XDG_CONFIG_HOME=/tmp/config XDG_DATA_HOME=/tmp/data
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/console-entrypoint
+FROM $base
 COPY --chmod=0644 index.html /srv/index.html
-USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/console-entrypoint"]
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 EOF
 docker build -q -t "$tag" "$ctx" >/dev/null
 failures=0
@@ -66,7 +57,13 @@ rejects "geçersiz API kökü" -e CONSOLE_OIDC_AUTHORITY=https://auth.x.test/rea
 check() { # API kökü (boş olabilir)
   local api="$1" port hdr cfg
   run -e CONSOLE_OIDC_AUTHORITY=https://auth.ci.test/realms/operations -e CONSOLE_API_BASE="$api"
-  port=$(docker port "$name" 8080/tcp | head -n1 | sed 's/.*://')
+  sleep 1
+  if ! port=$(docker port "$name" 8080/tcp 2>/dev/null | head -n1 | sed 's/.*://') || [ -z "$port" ]; then
+    fail "kap açılmadı (api=$api; ör. ikili dosya yetkisi + cap_drop ALL)"
+    docker logs "$name" 2>&1 | tail -n 5
+    docker rm -f "$name" >/dev/null
+    return 0
+  fi
   for _ in $(seq 1 30); do
     if curl -sf "http://127.0.0.1:$port/" >/dev/null; then break; fi
     sleep 0.5
