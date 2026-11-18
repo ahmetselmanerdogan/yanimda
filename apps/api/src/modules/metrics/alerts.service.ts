@@ -84,12 +84,17 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
       .onConflictDoNothing();
   }
 
-  /** Kuyrukta önceliğinin üstlenme hedefini aşan olay → kuyruğa her girişte tek O-QUEUE-UNCLAIMED. */
+  /**
+   * Kuyrukta önceliğinin üstlenme hedefini aşan olay → kuyruğa her girişte tek O-QUEUE-UNCLAIMED. M-20 (sahip kararı):
+   * alarm olmayan olay gerçek alarma yükseltildiyse saat yükseltme anından (escalated_at) başlar — bekleme süresi
+   * ve tekilleştirme anahtarı max(kuyruğa son giriş, escalated_at).
+   */
   async sweep(now = new Date()): Promise<number> {
     const rows = (
       (await this.db.execute(sql`
         SELECT e.id::text AS id, e.type, e.priority, coalesce(e.escalated_at, e.created_at) AS since,
-               (SELECT max(t.at) FROM event.transition t WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_QUEUE') AS queued
+               greatest((SELECT max(t.at) FROM event.transition t
+                         WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_QUEUE'), e.escalated_at) AS queued
         FROM event.event e
         WHERE e.state = 'OPERATOR_QUEUE' AND NOT e.is_test`)) as unknown as Rows<{
         id: string;

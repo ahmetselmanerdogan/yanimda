@@ -55,6 +55,7 @@ const setupKey = (deviceId: string) => `device:setup:${deviceId}`;
 /**
  * Telefon ↔ saat bağı (B-03) ve kurulum ilerlemesi (B-02, T-042):
  * - Telefon, eşleşik saatini aynı kişiye kaydeder (`POST /devices/{telefon}/companions`); saatte kod yazılmaz.
+ *   Kaldırılmış saat 409 P-ERR-WATCH-REMOVED: yalnız aile yeniden ekler (`POST /devices/{saat}/restore`).
  * - Telefon token'ı aynı kişinin etkin saat(ler)inin sinyallerini köprüleyebilir (saat cihaz kimliğiyle; adaptör
  *   WEAROS_WATCH). Başka kişi, iptal edilmiş saat veya telefon olmayan token → o sinyal reddedilir (yazılmaz);
  *   partinin geri kalanı yazılır. Partide kabul edilebilir sinyal yoksa 403.
@@ -109,29 +110,17 @@ export class CompanionService {
           .for('update');
         const cls = await classOf(tx, 'WEAROS_WATCH');
         const fields = { ...base, modelId: cls.modelId, category: cls.category, tier: cls.tier, retiredAt: null };
-        // T-085 (S1.7): yeni veya yeniden etkinleşen saat kişi başına sınırlara takılabilir.
-        if (!row || row.revokedAt) await assertDeviceLimits(tx, p.protectedPersonId, cls, id);
+        // T-085 (S1.7): yeni saat kişi başına sınırlara takılabilir.
         if (!row) {
+          await assertDeviceLimits(tx, p.protectedPersonId, cls, id);
           await tx.insert(device).values({ id, ...fields, enrolledAt: now });
-          return true;
-        }
-        if (row.revokedAt) {
-          // Kaldırılmış saat yeniden eşleşir; eski token'ları geçersiz kalır (enrolledAt yenilenir).
-          await tx
-            .update(device)
-            .set({
-              ...fields,
-              enrolledAt: now,
-              revokedAt: null,
-              pushProvider: null,
-              pushToken: null,
-              pushSandbox: null,
-            })
-            .where(eq(device.id, id));
           return true;
         }
         if (row.personId !== p.protectedPersonId || row.kind !== 'WEAROS_WATCH')
           throw fail(ConflictException, 'P-ERR-DEVICE-EXISTS');
+        // Aile / yönetici kaldırdıysa saat yalnız aile yeniden ekleyince döner (POST /devices/{id}/restore);
+        // telefonun yeniden eşleştirmesi kaldırılmış saati diriltmez.
+        if (row.revokedAt) throw fail(ConflictException, 'P-ERR-WATCH-REMOVED');
         // Aynı kişinin etkin saati: yeniden deneme (yanıt yolda kayboldu) veya telefon yeniden kuruldu → yeni token.
         await tx
           .update(device)

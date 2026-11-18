@@ -347,6 +347,53 @@ export class CoverageService {
     return deviceSummaries(this.db, this.pack, protectedPersonId, now, { facts: factsOf(row), state: row });
   }
 
+  /**
+   * GET /protected-persons/{id}/devices?includeRemoved=true: kaldırılmış cihazlar (en yeni kaldırılan önce, en çok 20).
+   * Son durum bayat sayılır: çevrimdışı, pil / şarj / sıra yok; son görülme ve takma ad korunur.
+   */
+  async removedDevices(protectedPersonId: string): Promise<DeviceSummary[]> {
+    await this.assertKnown(protectedPersonId);
+    const r = (await this.db.execute(sql`
+      SELECT d.id::text AS id, d.kind, coalesce(d.category, m.category) AS category,
+             coalesce(d.tier, m.tier) AS tier, d.body_location, d.nickname, d.last_seen_at, d.revoked_at
+      FROM ${device} d LEFT JOIN device.device_model m ON m.id = coalesce(d.model_id, d.kind)
+      WHERE d.protected_person_id = ${protectedPersonId}::uuid AND d.revoked_at IS NOT NULL
+      ORDER BY d.revoked_at DESC, d.id LIMIT 20`)) as unknown as {
+      rows: {
+        id: string;
+        kind: string;
+        category: DeviceCategory | null;
+        tier: DeviceTier | null;
+        body_location: string | null;
+        nickname: string | null;
+        last_seen_at: Date | string | null;
+        revoked_at: Date | string;
+      }[];
+    };
+    return r.rows.map((x) => {
+      const category: DeviceCategory = x.category ?? (x.kind.endsWith('PHONE') ? 'PHONE' : 'WATCH');
+      return {
+        id: x.id,
+        kind: x.kind,
+        category,
+        tier: x.tier ?? DEFAULT_TIER[category],
+        bodyLocation: (x.body_location as DeviceSummary['bodyLocation']) ?? null,
+        nickname: x.nickname,
+        online: false,
+        lastSeenAt: iso(x.last_seen_at),
+        batteryPct: null,
+        charging: false,
+        chargingSince: null,
+        onBody: null,
+        estimatedHoursLeft: null,
+        voiceOrder: null,
+        voiceOrderManual: false,
+        voiceNumberLast2: null,
+        removedAt: iso(x.revoked_at),
+      };
+    });
+  }
+
   /** GET /supervisor/coverage (S4.11): seviye başına kişi; akşam planlı şarj (pencere içinde başlayan şarj boşluğu). */
   async supervisorSummary(now = new Date()): Promise<SupervisorCoverage> {
     const r = (await this.db.execute(sql`

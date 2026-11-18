@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import type { ExecutionContext } from '@nestjs/common';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { OpenApiBody } from '../src/common/openapi-body';
 import { bridgeAddressKey } from '../src/modules/device/bridged.service';
 import { CompanionService } from '../src/modules/device/companion.service';
 import {
@@ -257,6 +258,13 @@ describe('POST /devices/enroll', () => {
       protectedPersonId: PERSON,
       kind: 'IOS_PHONE',
     });
+  });
+
+  it('boşluklu kod (kopyala-yapıştır) kırpılır ve kabul edilir; şema da kabul eder', async () => {
+    const { code } = await svc.createInvite(PERSON, T0);
+    const body = enrollBody(` ${code}\n`);
+    expect(new OpenApiBody('enrollDevice').transform(body)).toBe(body);
+    expect((await svc.enroll(body, '1.1.1.1', later(1))).created).toBe(true);
   });
 
   it('yanlış kod 400 (kabul)', async () => {

@@ -3,7 +3,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { CompanionService } from '../src/modules/device/companion.service';
 import { verifyDeviceToken } from '../src/modules/device/device-token';
-import { type DevicePrincipal, EnrollmentService, operatorInfo } from '../src/modules/device/enrollment.service';
+import {
+  type DevicePrincipal,
+  EnrollmentService,
+  operatorCallerIdWarning,
+  operatorInfo,
+} from '../src/modules/device/enrollment.service';
 import { ProtectionService } from '../src/modules/event/protection.service';
 import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
 import { SignalController } from '../src/modules/signal/signal.controller';
@@ -86,14 +91,25 @@ describe('saat kaydı (telefon üzerinden)', () => {
     expect(await status(svc.enrollCompanion(phone, { deviceId: PHONE }, T0))).toBe(400);
   });
 
-  it('kaldırılmış saat yeniden eşleşir; eski token geçersiz', async () => {
+  it('kaldırılmış saat telefonla yeniden eşleşmez (409 P-ERR-WATCH-REMOVED; yalnız aile yeniden ekler)', async () => {
     const first = await svc.enrollCompanion(phone, { deviceId: WATCH }, T0);
     await enrollment.revoke(WATCH, new Date(T0.getTime() + 1000));
     const later = new Date(T0.getTime() + 5000);
-    const again = await svc.enrollCompanion(phone, { deviceId: WATCH }, later);
-    expect(again.created).toBe(true);
+    const err = await svc.enrollCompanion(phone, { deviceId: WATCH }, later).catch((e: unknown) => e);
+    expect((err as { status?: number }).status).toBe(409);
+    expect((err as { getResponse: () => { code: string } }).getResponse().code).toBe('P-ERR-WATCH-REMOVED');
     expect(await status(enrollment.authenticate(`Bearer ${first.body.token}`, later))).toBe(401);
-    expect((await enrollment.authenticate(`Bearer ${again.body.token}`, later)).deviceId).toBe(WATCH);
+    const [row] = await h.rows<{ revoked_at: Date | null }>(
+      `SELECT revoked_at FROM device.device WHERE id = '${WATCH}'`,
+    );
+    expect(row!.revoked_at).not.toBeNull();
+    // Başka kişinin kaldırılmış saati bu kişiye geçmez.
+    await enrollment.revoke(OTHER_WATCH, later);
+    expect(await status(svc.enrollCompanion(phone, { deviceId: OTHER_WATCH }, later))).toBe(409);
+    const [other] = await h.rows<{ protected_person_id: string }>(
+      `SELECT protected_person_id FROM device.device WHERE id = '${OTHER_WATCH}'`,
+    );
+    expect(other!.protected_person_id).toBe(OTHER);
   });
 });
 
@@ -233,9 +249,22 @@ describe('telefon yapılandırması', () => {
       operatorInfo({ OPERATOR_CALLER_IDS: '+90 212 000 00 00, bozuk, +902160000000', OPERATOR_DISPLAY_NAME: 'Ayşe' }),
     ).toEqual({
       name: 'Ayşe',
-      callerIds: ['+90 212 000 00 00', '+902160000000'],
+      callerIds: ['+902120000000', '+902160000000'],
     });
     expect(operatorInfo({ TWILIO_FROM_NUMBER: '+15005550006' }).callerIds).toEqual(['+15005550006']);
+    // Liste verilse de CPaaS'ın gösterdiği giden numara ve masa hattı eklenir (E.164, tekil).
+    const env = {
+      OPERATOR_CALLER_IDS: '0212 000 00 00, +908501112233',
+      TWILIO_FROM_NUMBER: '+908501112233',
+      CPAAS_AGENT_NUMBER: '+902161112233',
+    };
+    expect(operatorInfo(env).callerIds).toEqual(['+902120000000', '+908501112233', '+902161112233']);
+    const warn = operatorCallerIdWarning(env);
+    expect(warn).toContain('2 numara');
+    expect(warn).toContain('1 tanesi');
+    expect(warn).not.toMatch(/\d{7}/); // log'a numara yazılmaz
+    expect(operatorCallerIdWarning({ ...env, OPERATOR_CALLER_IDS: '+908501112233,+902161112233' })).toBeNull();
+    expect(operatorCallerIdWarning({ TWILIO_FROM_NUMBER: '+908501112233' })).toBeNull(); // liste yok: uyarı yok
     await h.pg
       .exec(`INSERT INTO profile.contact (id, protected_person_id, role, priority, display_name, phone_e164) VALUES
       ('00000000-0000-0000-0000-00000000c001', '${PERSON}', 'CONTACT', 2, 'İkinci', '+905550000002'),

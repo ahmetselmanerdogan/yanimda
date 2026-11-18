@@ -109,13 +109,16 @@ export class LadderService implements OnModuleInit, OnModuleDestroy {
   /**
    * Kuyrukta bekleyen gerçek P1'ler: kuyruğa girişten `unclaimedSupervisorSec` sonra amir uyarısı (girişe bir kez),
    * bayrak açıksa `unclaimedVoiceContact.afterSec` sonra 1. yakına sesli mesaj (olaya bir kez). Yapılan iş sayısı.
+   * M-20 (sahip kararı): TEST / geri arama gibi olay gerçek alarma yükseltildiyse saat yükseltme anından başlar —
+   * giriş zamanı (ve tekilleştirme anahtarı) max(kuyruğa son giriş, escalated_at).
    */
   async sweep(now = new Date()): Promise<number> {
     const p = ladderOf(this.rules.current());
     const rows = (
       (await this.db.execute(sql`
         SELECT e.id::text AS id, e.type, e.protected_person_id AS person,
-               (SELECT max(t.at) FROM event.transition t WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_QUEUE') AS queued
+               greatest((SELECT max(t.at) FROM event.transition t
+                         WHERE t.event_id = e.id AND t.to_state = 'OPERATOR_QUEUE'), e.escalated_at) AS queued
         FROM event.event e
         WHERE e.state = 'OPERATOR_QUEUE' AND e.priority = 1 AND NOT e.is_test`)) as unknown as Rows<{
         id: string;

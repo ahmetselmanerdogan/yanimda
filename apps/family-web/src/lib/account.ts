@@ -18,6 +18,19 @@ export function accountError(
   return { code: e instanceof ApiError ? errorCode(e.status, step) : 'F-WEB-ERROR', relogin: false };
 }
 
+/**
+ * Kişi başına abonelik okuması: aboneliği olmayan / okunamayan kişi kartı null ile gösterilir, ama 401 (oturum düştü)
+ * yutulmaz — çağıran (load) yeniden giriş kapısını gösterir.
+ */
+export async function subscriptionOrNull<T>(p: Promise<T>): Promise<T | null> {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) throw e;
+    return null;
+  }
+}
+
 export interface Billing {
   city: string;
   address: string;

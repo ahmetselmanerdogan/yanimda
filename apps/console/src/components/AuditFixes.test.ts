@@ -13,7 +13,7 @@ import { DRILL_CHAINS } from '../lib/training';
 import { stepLabel } from './CoverageBoard';
 import { DispatchPanel, etaInput } from './Dispatch';
 import { PersonPanel } from './Panels';
-import { optionId, QueueList } from './Queue';
+import { optionId, QueueList, revealOption } from './Queue';
 
 /** Ön yüz denetim bulguları (konsol): hata metni, kuyruk klavyesi, katalog dışı metin, prosedür ve SW uyumu. */
 const SRC = join(__dirname, '..');
@@ -87,6 +87,13 @@ describe('kuyruk listbox klavyeyle erişilebilir', () => {
   it('seçim yoksa veya listede değilse aria-activedescendant yok', () => {
     expect(render(null)).not.toContain('aria-activedescendant');
     expect(render('gone')).not.toContain('aria-activedescendant');
+  });
+  it('klavyeyle seçilen satır görünür alana kaydırılır (en yakın kenar); scrollIntoView yoksa (jsdom) hata yok', () => {
+    const calls: unknown[] = [];
+    revealOption({ scrollIntoView: (o?: boolean | ScrollIntoViewOptions) => void calls.push(o) });
+    expect(calls).toEqual([{ block: 'nearest' }]);
+    expect(() => revealOption({} as Element)).not.toThrow();
+    expect(() => revealOption(null)).not.toThrow();
   });
 });
 

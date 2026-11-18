@@ -256,6 +256,76 @@ describe('PATCH / DELETE device', () => {
   });
 });
 
+describe('Kaldırılmış saati aile yeniden ekler (POST /devices/{id}/restore)', () => {
+  const phone = { deviceId: PHONE, protectedPersonId: PERSON, kind: 'ANDROID_PHONE' };
+  const companion = () => new CompanionService(h.db, h.redis as never, h.outbox, enrollment);
+
+  it('kaldırılan saat telefonla geri gelmez (409 P-ERR-WATCH-REMOVED); aile ekler → telefon yeni token alır', async () => {
+    const old = enrollment.issueToken(
+      { deviceId: WATCH, protectedPersonId: PERSON, kind: 'WEAROS_WATCH' },
+      new Date(Date.now() - 60_000),
+    ).token;
+    await devices.remove(WATCH, req(ALICE));
+    expect(await problemCode(companion().enrollCompanion(phone, { deviceId: WATCH }))).toBe('409:P-ERR-WATCH-REMOVED');
+    const [still] = await h.rows<{ revoked_at: Date | null }>('SELECT revoked_at FROM device.device WHERE id = $1', [
+      WATCH,
+    ]);
+    expect(still!.revoked_at).not.toBeNull();
+
+    // Aile listesinde kaldırılmış görünür (varsayılan liste değişmez).
+    expect((await persons.devices(PERSON, req(ALICE))).map((d) => d.id)).toEqual([PHONE]);
+    const all = await persons.devices(PERSON, req(CAROL), 'true');
+    expect(all.map((d) => [d.id, d.removedAt === null])).toEqual([
+      [PHONE, true],
+      [WATCH, false],
+    ]);
+    expect(all[1]).toMatchObject({ kind: 'WEAROS_WATCH', online: false, voiceOrder: null });
+    expect(await status(persons.devices(PERSON, req(ALICE), 'evet'))).toBe(400);
+
+    const s = await devices.restore(WATCH, req(CAROL));
+    expect(s).toMatchObject({ id: WATCH, removedAt: null });
+    const audits = await h.rows<{ actor_id: string }>(
+      "SELECT actor_id FROM audit.log WHERE action = 'device.restored' AND entity_id = $1",
+      [WATCH],
+    );
+    expect(audits).toEqual([{ actor_id: 'fam-carol' }]);
+    expect(await status(enrollment.authenticate(`Bearer ${old}`))).toBe(401); // eski token geçersiz kalır
+    await new Promise((r) => setTimeout(r, 1100)); // token iat (sn) yeniden eklemeden sonra
+    const again = await companion().enrollCompanion(phone, { deviceId: WATCH });
+    expect(again.created).toBe(false);
+    expect((await enrollment.authenticate(`Bearer ${again.body.token}`)).deviceId).toBe(WATCH);
+    expect((await persons.devices(PERSON, req(ALICE))).map((d) => d.id).sort()).toEqual([WATCH, PHONE].sort());
+    // Etkin saati yeniden eklemek değişiklik yapmaz (token'lar geçerli kalır).
+    expect(await status(devices.restore(WATCH, req(ALICE)))).toBe('ok');
+    expect(await status(enrollment.authenticate(`Bearer ${again.body.token}`))).toBe('ok');
+  });
+
+  it('yalnız kişiyi gören aile: başka aile 404, operasyon / cihaz 403; saat olmayan cihaz 409; sınır 409', async () => {
+    await devices.remove(WATCH, req(ALICE));
+    expect(await problemCode(devices.restore(WATCH, req(BOB)))).toBe('404:F-ERR-DEVICE-NOT-FOUND');
+    expect(await problemCode(devices.restore(WATCH, req(SUP)))).toBe('403:A-ERR-FORBIDDEN');
+    expect(await problemCode(devices.restore(WATCH, req({ kind: 'ADMIN' })))).toBe('403:A-ERR-FORBIDDEN');
+    expect(await problemCode(devices.restore(WATCH, req({ kind: 'DEVICE', personId: PERSON, deviceId: PHONE })))).toBe(
+      '403:A-ERR-FORBIDDEN',
+    );
+    expect(await problemCode(devices.restore('00000000-0000-0000-0000-00000000ffff', req(ALICE)))).toBe(
+      '404:F-ERR-DEVICE-NOT-FOUND',
+    );
+    await devices.remove(PHONE, req(ALICE));
+    expect(await problemCode(devices.restore(PHONE, req(ALICE)))).toBe('409:F-ERR-DEVICE-RESTORE-WATCH-ONLY');
+    // Kaldırılmışken 3 A sınıfı saat eklendi → yeniden ekleme sınıra takılır.
+    await h.pg.exec(`INSERT INTO device.device (id, protected_person_id, kind) VALUES
+      ('00000000-0000-0000-0000-00000000e001', '${PERSON}', 'WEAROS_WATCH'),
+      ('00000000-0000-0000-0000-00000000e002', '${PERSON}', 'WEAROS_WATCH'),
+      ('00000000-0000-0000-0000-00000000e003', '${PERSON}', 'WEAROS_WATCH')`);
+    expect(await problemCode(devices.restore(WATCH, req(ALICE)))).toBe('409:F-DEVICE-LIMIT');
+    const [d] = await h.rows<{ revoked_at: Date | null }>('SELECT revoked_at FROM device.device WHERE id = $1', [
+      WATCH,
+    ]);
+    expect(d!.revoked_at).not.toBeNull();
+  });
+});
+
 describe('Cihaz sınırları (S1.7) → 409 F-DEVICE-LIMIT + aileye bildirim', () => {
   const ID = (n: number) => `00000000-0000-0000-0000-00000000d${String(n).padStart(3, '0')}`;
   const limitNotices = () =>

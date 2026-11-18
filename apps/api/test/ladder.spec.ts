@@ -667,6 +667,29 @@ describe('S5.2 T+0 ve S5.3 üstlenilmeyen P1 (LadderService)', () => {
     expect(t('O-P1-UNCLAIMED', 'tr', { type: 'SOS' })).toContain('SOS');
   });
 
+  it('M-20: TEST → SOS yükseltmesinde 90 sn yükseltme anından sayılır (eski kuyruk girişi hemen uyarı vermez)', async () => {
+    await person();
+    const id = await queued('TEST');
+    const old = new Date(Date.now() - 30 * 60_000);
+    await h.pg.query(`UPDATE event.transition SET at = $2 WHERE event_id = $1 AND to_state = 'OPERATOR_QUEUE'`, [
+      id,
+      old,
+    ]);
+    await h.pg.query('UPDATE event.event SET escalated_at = $2 WHERE id = $1', [id, old]);
+    await queued('SOS'); // açık TEST olayına eklenir → SOS, P1; saatler yeniden başlar
+    const [{ escalated_at: up }] = await h.rows<{ escalated_at: Date; type: string }>(
+      'SELECT escalated_at, type FROM event.event WHERE id = $1',
+      [id],
+    );
+    expect(new Date(up).getTime()).toBeGreaterThan(old.getTime() + 60_000);
+    const plus = (s: number) => new Date(new Date(up).getTime() + s * 1000);
+    expect(await ladder.sweep(plus(5))).toBe(0);
+    expect(await ladder.sweep(plus(90))).toBe(1);
+    expect(await ladder.sweep(plus(200))).toBe(0);
+    const [a] = await h.rows<{ dedupe_key: string }>('SELECT dedupe_key FROM event.supervisor_alert');
+    expect(a!.dedupe_key).toBe(`p1-unclaimed:${id}:${new Date(up).toISOString()}`);
+  });
+
   it('bayrak açıkken 180 sn üstlenilmeyen P1 → 1. yakına bir kez sesli mesaj (V-NO-OPERATOR, yalnız ses)', async () => {
     const on: RulePack = {
       ...pack,

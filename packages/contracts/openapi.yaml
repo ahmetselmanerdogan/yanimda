@@ -1518,9 +1518,19 @@ paths:
         (`voiceOrderManual: true`), sonra şu an takılı giyilebilirler > ev ünitesi > telefon, her grupta en son görülen
         önce; şarjdaki, çıkarılmış veya çevrimdışı cihazlar telefondan sonra (S1.8). Sesli görüşmesi olmayan cihazda
         null. Yetki `/coverage` ile aynı.
+        `includeRemoved=true`: etkin cihazlardan (her biri `removedAt: null`) sonra kaldırılmış cihazlar gelir
+        (`removedAt` kaldırılma zamanı; en yeni kaldırılan önce, en çok 20; çevrimdışı, pil / şarj / sıra null).
+        Varsayılan (`false`) yanıt değişmez, `removedAt` alanı yoktur. Kaldırılmış `WEAROS_WATCH` aile tarafından
+        `POST /devices/{id}/restore` ile yeniden eklenebilir; diğer cihazlar yeniden kurulur (davet kodu / eşleştirme).
       operationId: listDevices
       security: [{ deviceToken: [] }, { userToken: [] }, { operatorToken: [] }, { adminToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/PersonId' }]
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+        - name: includeRemoved
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: Kaldırılmış cihazları da listele (aile "Yeniden ekle")
       responses:
         '200':
           description: Cihazlar
@@ -1592,6 +1602,31 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /devices/{id}/restore:
+    post:
+      summary: Kaldırılmış saati yeniden ekle (yalnız aile). T-085 (S1.9)
+      description: |
+        Aile / yönetici tarafından kaldırılmış saat (DELETE /devices/{id}) yalnız aile yeniden ekleyince döner; telefonun
+        `POST /devices/{telefon}/companions` çağrısı kaldırılmış saati diriltmez (409 `P-ERR-WATCH-REMOVED`). Gövde
+        yok. Yalnız kişiyi gören aile (OWNER / MEMBER); operasyon, yönetici ve cihaz token'ı 403 (`A-ERR-FORBIDDEN`),
+        erişimi olmayan veya bilinmeyen cihaz 404 (`F-ERR-DEVICE-NOT-FOUND`). Yalnız `WEAROS_WATCH`; diğer kaldırılmış
+        cihaz 409 `F-ERR-DEVICE-RESTORE-WATCH-ONLY`. Kişi başına cihaz sınırları (S1.7) aşılırsa 409 `F-DEVICE-LIMIT`.
+        Kaldırma işareti temizlenir, `enrolledAt` yenilenir (kaldırmadan önce verilmiş token'lar 401 kalır), push token
+        silinir, denetime `device.restored`. Saat yeni token'ı telefonun bir sonraki saat kaydında alır (aynı kişinin
+        etkin saati → 200 + yeni token). Zaten etkin cihaz: değişiklik yok, 200. Yanıt güncel cihaz kartı
+        (`removedAt: null`).
+      operationId: restoreDevice
+      security: [{ userToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Cihaz kartı
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceSummary' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /devices/{id}/commands:
     post:
       summary: Operatörün cihaz komutu — çaldır, soru gönder, konum iste, test. T-089 (S7.1, S8.3)
@@ -1656,8 +1691,9 @@ paths:
         sahte ortak FAKE_PENDANT üretimde yalnız `PARTNER_FAKE_ENABLED=true` ile açılır.
         İmza: `X-Partner-Timestamp` (unix sn, ±300 sn), `X-Partner-Nonce` (teslim başına tek, 8–128 karakter),
         `X-Partner-Signature: v1=<hex>` = HMAC-SHA256(sır, "<ts>.<nonce>.<ham gövde>"). Geçersiz / pencere dışı 401;
-        aynı nonce ikinci kez 409 (hiçbir şey yazılmaz; işlem 5xx ile biterse nonce serbest kalır). idempotencyKey
-        üretici olay kimliğinden türetilir: aynı olay yeni teslimle gelirse `duplicates`. Sinyal başına ret (yalnız o
+        aynı nonce başarılı teslimden sonra 409 (hiçbir şey yazılmaz; gövde hatası 4xx veya 5xx nonce’u serbest
+        bırakır). idempotencyKey üretici olay kimliğinden türetilir: aynı olay yeni teslimle gelirse `duplicates`.
+        Sinyal başına ret (yalnız o
         olay; denetime yazılır): UNKNOWN_DEVICE (bağlantı yok / cihaz kaldırıldı), EVENT_INVALID (okunamayan olay),
         UNSUPPORTED_SIGNAL (modelin profili dışında, ör. radyo kolyeden konum veya C sınıfından düşme), SCHEMA_INVALID.
         Yeni yazılan her olayın gecikmesi (olay anı → alım) ortak gecikmesine (S2.7) örnek olur.
@@ -1710,7 +1746,7 @@ paths:
                 partner: { type: string, example: FAKE_PENDANT }
                 model: { type: string, example: FAKE_PENDANT_CELL }
                 vendorDeviceId:
-                  { type: string, pattern: '^[!-~]{1,200}$', description: Yazdırılabilir ASCII, boşluksuz }
+                  { type: string, pattern: '^[!-~]{1,200}$', description: 'Yazdırılabilir ASCII, boşluksuz' }
                 vendorAccountId: { type: string, pattern: '^[!-~]{1,200}$' }
                 bodyLocation:
                   oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }]
@@ -2185,7 +2221,10 @@ paths:
               type: object
               required: [inviteCode, deviceId, kind]
               properties:
-                inviteCode: { type: string, pattern: '^\d{6}$' }
+                inviteCode:
+                  type: string
+                  pattern: '^\s*\d{6}\s*$'
+                  description: 6 hane; baştaki / sondaki boşluk kabul edilir (sunucu kırpar)
                 deviceId: { type: string, format: uuid }
                 kind: { enum: [WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE] }
                 model: { type: string, maxLength: 100 }
@@ -2295,7 +2334,10 @@ paths:
                     description: T-054 operatörün arayan numaraları (telefon hoparlör + rehber) ve gösterilen adı
                     properties:
                       name: { type: [string, 'null'] }
-                      callerIds: { type: array, items: { type: string } }
+                      callerIds:
+                        type: array
+                        items: { type: string }
+                        description: E.164, tekil; OPERATOR_CALLER_IDS ∪ giden arama numarası ∪ masa hattı
                   familyContact:
                     type: [object, 'null']
                     description: Telefon ana ekranı aile kısayolu (ilk yakın); saate gönderilmez
@@ -2338,9 +2380,10 @@ paths:
       description: |
         Telefon token'ı ile (yol = telefonun kendi kimliği). Saat kendi UUID'sini üretir, Data Layer ile telefona
         iletir; telefon burada aynı kişiye WEAROS_WATCH olarak kaydeder ve saat token'ını Data Layer ile saate verir.
-        Aynı kişinin etkin saati yeniden → 200 + yeni token; kaldırılmış saat yeniden etkinleşir (eski token'lar 401);
-        başka kişinin cihazı 409 (telefon yaşlıya P-SETUP-WATCH-OTHER gösterir, saat eşli sayılmaz); telefon olmayan
-        token 403.
+        Aynı kişinin etkin saati yeniden → 200 + yeni token; aile / yönetici tarafından kaldırılmış saat 409
+        `P-ERR-WATCH-REMOVED` (yalnız aile `POST /devices/{id}/restore` ile yeniden ekler; sonra bu çağrı 200 + yeni
+        token); başka kişinin cihazı 409 `P-ERR-DEVICE-EXISTS` (telefon yaşlıya P-SETUP-WATCH-OTHER gösterir, saat eşli
+        sayılmaz); telefon olmayan token 403.
       operationId: enrollCompanion
       security: [{ deviceToken: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -3304,7 +3347,7 @@ components:
           properties:
             offered: { type: integer }
             accepted: { type: integer }
-            missed: { type: integer, description: Süresinde açılmayan (olay kuyruğa döndü, operatör molaya) }
+            missed: { type: integer, description: 'Süresinde açılmayan (olay kuyruğa döndü, operatör molaya)' }
             acceptP50Sec: { type: [number, 'null'] }
     OverflowFlag:
       type: object
@@ -3606,7 +3649,7 @@ components:
         silent: { enum: ['true', 'false'] }
         code: { type: string, example: W-CHARGE-DONE }
         notificationId: { type: string }
-        forDeviceId: { type: string, description: Mesaj bu saat içindir; telefon göstermez, saate iletir }
+        forDeviceId: { type: string, description: 'Mesaj bu saat içindir; telefon göstermez, saate iletir' }
     DeviceSummary:
       type: object
       description: T-085 cihaz kartı (docs/07 S7.4)
@@ -3634,7 +3677,7 @@ components:
           type: string
           description: 'Cihaz türü (WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE, SIMULATOR; T-085 OEM: ortak kodu, ör. FAKE_PENDANT)'
         category: { $ref: '#/components/schemas/DeviceCategory' }
-        tier: { enum: [A, B, C], description: A alarm, B canlı izlem, C eğilim (S2.1) }
+        tier: { enum: [A, B, C], description: 'A alarm, B canlı izlem, C eğilim (S2.1)' }
         bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
         nickname: { type: [string, 'null'] }
         online: { type: boolean }
@@ -3655,6 +3698,11 @@ components:
         bridged:
           type: boolean
           description: T-089 (S7.1, S4.8) son sinyali yaşlının telefonu üzerinden (BLE köprüsü) geldi — "telefon üzerinden"
+        removedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Yalnız `includeRemoved=true` listesinde: kaldırılma zamanı, etkin cihazda null. Alan yoksa cihaz etkindir.
     CoverageView:
       type: object
       required: [level, since, reasons, capabilities, devices]
@@ -3815,7 +3863,7 @@ components:
               level: { $ref: '#/components/schemas/CoverageLevel' }
               hold: { type: boolean }
         daily: { type: array, items: { $ref: '#/components/schemas/CoverageDay' } }
-        summary: { description: Günlerin toplamı (CoverageDay alanları, date hariç), type: object }
+        summary: { description: 'Günlerin toplamı (CoverageDay alanları, date hariç)', type: object }
     LadderStepStat:
       type: object
       required: [step, attempted, reached, unreached, offlineSkipped, unreachableRate, stalledHere]
@@ -4324,7 +4372,7 @@ components:
       required: [eventId, windowMin, bucketMin, series, baseline, quality, alerts, highlight, noteCode]
       properties:
         eventId: { type: string, format: uuid }
-        windowMin: { type: integer, description: Pencere (dk; kural paketi vitals.view.windowMin, 120) }
+        windowMin: { type: integer, description: 'Pencere (dk; kural paketi vitals.view.windowMin, 120)' }
         bucketMin: { type: integer, description: Ortanca dilimi (dk; 5) }
         series:
           type: array

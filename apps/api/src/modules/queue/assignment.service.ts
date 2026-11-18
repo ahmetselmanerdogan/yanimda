@@ -6,7 +6,7 @@ import {
   type OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { safeError } from '../../common/safe-error';
 import { DB, type Db, type Tx } from '../../db/client';
@@ -171,19 +171,26 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
     return true;
   }
 
-  /** Süresi dolan teklifler; kuyruğa iade edilen sayı. */
+  /**
+   * Süresi dolan teklifler; kuyruğa iade edilen sayı. Teklif satırı, olayın iadesi, mola ve denetim tek transaction'da
+   * olay kilidi altında: satır gerçekten MISSED'e dönmediyse (operatör bu arada açtı → ACCEPTED, başka sunucu
+   * sonuçlandırdı) iade, mola ve O-ASSIGN-MISSED yok.
+   */
   private async expireOffers(now: Date): Promise<number> {
     const due = await this.rows<{ id: number; event_id: string; operator_id: string }>(sql`
       SELECT id, event_id::text AS event_id, operator_id FROM event.assignment
       WHERE outcome IS NULL AND expires_at <= ${now.toISOString()}::timestamptz ORDER BY id`);
     let missed = 0;
     for (const a of due) {
-      const back = await this.events.revokeAssignment(a.event_id, a.operator_id, now);
-      await this.db.transaction(async (tx) => {
-        await tx.execute(sql`
-          UPDATE event.assignment SET outcome = ${back ? 'MISSED' : 'SUPERSEDED'}, decided_at = ${now.toISOString()}::timestamptz
-          WHERE id = ${a.id} AND outcome IS NULL`);
-        if (!back) return;
+      let decided = false;
+      const back = await this.events.revokeAssignment(a.event_id, a.operator_id, now, async (tx, mine) => {
+        decided = true;
+        const flipped = await tx
+          .update(assignment)
+          .set({ outcome: mine ? 'MISSED' : 'SUPERSEDED', decidedAt: now })
+          .where(and(eq(assignment.id, a.id), isNull(assignment.outcome)))
+          .returning({ id: assignment.id });
+        if (!flipped.length || !mine) return false;
         const moved = await tx
           .update(operator)
           .set({ status: 'BREAK', statusAt: now, statusBy: 'system' })
@@ -197,7 +204,14 @@ export class AssignmentService implements OnApplicationBootstrap, OnModuleDestro
             entityId: a.operator_id,
             data: { status: 'BREAK', reason: 'ASSIGN_MISSED', eventId: a.event_id },
           });
+        return true;
       });
+      // Olay yok (silinmiş): teklif yine sonuçlanır, her turda yeniden taranmasın.
+      if (!decided)
+        await this.db
+          .update(assignment)
+          .set({ outcome: 'SUPERSEDED', decidedAt: now })
+          .where(and(eq(assignment.id, a.id), isNull(assignment.outcome)));
       if (back) missed++;
     }
     return missed;

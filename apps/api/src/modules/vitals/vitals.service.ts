@@ -169,8 +169,10 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
   }
 
   /**
-   * Abonelikler core şeridinde: bayrak kapalıyken anında döner ve hiçbir satır yazılmaz (side şeridi her sinyal için
-   * event.outbox_side satırı yazardı). Hata fırlatılırsa işçi zarfı yeniden teslim eder (olay motoru idempotent).
+   * Sinyal aboneliği core şeridinde: bayrak kapalıyken anında döner ve hiçbir satır yazılmaz (side şeridi her sinyal
+   * için event.outbox_side satırı yazardı). Kapanış / yanlış alarm abonelikleri yan şeritte (`vitals.closed`,
+   * `vitals.false-alarm`): sessizlik yazımı hata verirse aynı kişinin sonraki satırları (SOS dahil) beklemez. Hata
+   * yutulmaz: side işçisi abone başına yeniden teslim eder (yazımlar idempotent: ON CONFLICT / coalesce).
    */
   subscribe(bus: LocalBus = globalBus) {
     for (const u of this.unsubs) u();
@@ -178,10 +180,13 @@ export class VitalsService implements OnModuleInit, OnApplicationBootstrap, OnMo
       bus.subscribe<Signal>(TOPICS.signalReceived, (e) => this.onSignal(e.payload)),
       bus.subscribe<{ id: string; confirmedOutcome?: string; closedAt?: string; protectedPersonId: string }>(
         TOPICS.eventClosed,
-        // Hata yutulmaz: işçi yeniden teslim eder (yazımlar idempotent: ON CONFLICT / coalesce).
         (e) => this.onEventClosed(e.payload),
+        { lane: 'side', name: 'vitals.closed' },
       ),
-      bus.subscribe<FalseAlarm>(TOPICS.eventFalseAlarm, (e) => this.onFalseAlarm(e.payload)),
+      bus.subscribe<FalseAlarm>(TOPICS.eventFalseAlarm, (e) => this.onFalseAlarm(e.payload), {
+        lane: 'side',
+        name: 'vitals.false-alarm',
+      }),
     ];
   }
 

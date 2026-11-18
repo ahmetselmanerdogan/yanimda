@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { accountError, billingPayload } from './account';
+import { accountError, billingPayload, subscriptionOrNull } from './account';
 import { ApiError } from './api';
 
 describe('Aboneliğim: işlem hataları', () => {
@@ -20,6 +20,20 @@ describe('Aboneliğim: işlem hataları', () => {
     const src = readFileSync(join(__dirname, '../app/hesap/Account.tsx'), 'utf8');
     expect(src.match(/accountError\(e, '(cancel|checkout)'\)/g)).toHaveLength(2);
     expect(src).not.toMatch(/e instanceof ApiError \? errorCode/);
+  });
+});
+
+describe('Aboneliğim: kişi başına abonelik okuması', () => {
+  it('401 yutulmaz (yeniden giriş kapısı); 404 / ağ hatası kartı aboneliksiz gösterir', async () => {
+    await expect(subscriptionOrNull(Promise.reject(new ApiError(401)))).rejects.toMatchObject({ status: 401 });
+    expect(await subscriptionOrNull(Promise.reject(new ApiError(404)))).toBeNull();
+    expect(await subscriptionOrNull(Promise.reject(new TypeError('Failed to fetch')))).toBeNull();
+    expect(await subscriptionOrNull(Promise.resolve({ status: 'ACTIVE' }))).toEqual({ status: 'ACTIVE' });
+  });
+  it('Account.tsx abonelik hatasını sessizce null yapmaz', () => {
+    const src = readFileSync(join(__dirname, '../app/hesap/Account.tsx'), 'utf8');
+    expect(src).toContain('subscriptionOrNull(api.subscription(');
+    expect(src).not.toMatch(/api\.subscription\([^)]*\)\.catch\(\(\) => null\)/);
   });
 });
 

@@ -347,17 +347,40 @@ describe('kurallar → olay (S6.4)', () => {
   });
 });
 
-describe('kapanış / yanlış alarm aboneleri: hata yutulmaz (S6.4)', () => {
-  it('sessizlik / yanlış alarm yazımı geçici hata verirse işçi yeniden teslim etsin diye abone reddeder', async () => {
+describe('kapanış / yanlış alarm aboneleri: yan şerit, hata yutulmaz (S6.4)', () => {
+  it('sessizlik / yanlış alarm yazımı geçici hata verirse side işçisi yeniden teslim etsin diye abone reddeder', async () => {
     await setup(on);
     const boom = new Error('ECONNRESET');
     vitals.onEventClosed = () => Promise.reject(boom);
     vitals.onFalseAlarm = () => Promise.reject(boom);
     const env = (payload: unknown) => ({ payload }) as never;
+    // Core şeridinde değil: kapanış zarfı core teslimiyle değer abonesine gitmez.
     await expect(
       bus.deliver('event.closed', env({ id: 'e', protectedPersonId: P, confirmedOutcome: 'OK' }), 'core'),
+    ).resolves.toBeUndefined();
+    expect(bus.sideNames('event.closed')).toContain('vitals.closed');
+    expect(bus.sideNames('event.false_alarm')).toContain('vitals.false-alarm');
+    await expect(
+      bus.deliverSide('vitals.closed', 'event.closed', env({ id: 'e', protectedPersonId: P, confirmedOutcome: 'OK' })),
     ).rejects.toBe(boom);
-    await expect(bus.deliver('event.false_alarm', env({ eventId: 'e' }), 'core')).rejects.toBe(boom);
+    await expect(bus.deliverSide('vitals.false-alarm', 'event.false_alarm', env({ eventId: 'e' }))).rejects.toBe(boom);
+  });
+
+  it('bozuk değer abonesi aynı kişinin sonraki SOS satırını bekletmez (core şeridi akar)', async () => {
+    await setup(on);
+    await send('SOS', t(0));
+    const [first] = await openEvents();
+    await events.claim(first!.id, 'op-1');
+    await events.closeByOperator(first!.id, 'op-1', 'OK');
+    vitals.onEventClosed = () => Promise.reject(new Error('değer yazımı bozuk'));
+    vitals.onFalseAlarm = () => Promise.reject(new Error('değer yazımı bozuk'));
+    await send('SOS', t(2)); // kapanış satırı ve yeni SOS aynı kişinin anahtarında, aynı turda
+    expect(await openEvents()).toEqual([expect.objectContaining({ type: 'SOS' })]);
+    const side = await h.rows<{ handler: string; attempts: number }>(
+      "SELECT handler, attempts FROM event.outbox_side WHERE handler = 'vitals.closed'",
+    );
+    expect(side).toEqual([expect.objectContaining({ handler: 'vitals.closed' })]);
+    expect(side[0]!.attempts).toBeGreaterThan(0); // yan şeritte yeniden denenir
   });
 });
 

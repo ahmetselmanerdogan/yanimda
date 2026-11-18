@@ -248,6 +248,58 @@ describe('sözleşme eşliği — yanıt şemaları ve sayımlar', () => {
     );
   });
 
+  it('YAML akış eşlemesi bozulmadı: özellik adları ve şema anahtarları düz, değerleri null değil', () => {
+    // `{ type: integer, description: a (b, c) }` gibi tırnaksız virgül eşlemeyi böler: `c)` anahtar, değer null olur.
+    const KEY = /^[A-Za-z0-9_$@.-]+$/;
+    const bad: string[] = [];
+    const walk = (n: unknown, path: string): void => {
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) return n.forEach((x, i) => walk(x, `${path}[${i}]`));
+      for (const [k, v] of Object.entries(n as Node)) {
+        if (k === 'properties' && v && typeof v === 'object' && !Array.isArray(v))
+          for (const [pk, pv] of Object.entries(v as Node)) {
+            if (!KEY.test(pk)) bad.push(`${path}.properties["${pk}"]`);
+            if (pv === null || typeof pv !== 'object') bad.push(`${path}.properties.${pk} = ${String(pv)}`);
+            else
+              for (const [sk, sv] of Object.entries(pv as Node))
+                if (!KEY.test(sk) || sv === null) bad.push(`${path}.properties.${pk}["${sk}"]`);
+          }
+        walk(v, `${path}.${k}`);
+      }
+    };
+    walk(doc, '');
+    expect(bad).toEqual([]);
+  });
+
+  it('setThresholds inactivityMin sınırları kural paketi INACTIVITY.thresholdMin min–max ile aynı', () => {
+    const pack = YAML.parse(readFileSync(join(ROOT, 'packages/rules/tr.yaml'), 'utf8')) as {
+      rules: { type: string; thresholdMin?: { min: number; max: number } }[];
+    };
+    const t = pack.rules.find((r) => r.type === 'INACTIVITY')!.thresholdMin!;
+    const op = at(doc.paths['/protected-persons/{id}/thresholds'], 'put');
+    expect(op.operationId).toBe('setThresholds');
+    const prop = at(op, 'requestBody', 'content', 'application/json', 'schema', 'properties', 'inactivityMin');
+    expect([prop.minimum, prop.maximum]).toEqual([t.min, t.max]);
+    expect(at(op).description).toContain(`(${t.min}–${t.max})`);
+  });
+
+  it('amir kapsama panosu dispatch112 olay türü contracts ile openapi’de aynı', () => {
+    const line = /dispatch112: \{([^}]*)\}\[\];/.exec(contracts)![1]!;
+    const ts = [.../eventType: ([^;]+);/.exec(line)![1]!.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]!);
+    const find = (n: unknown): Node | undefined => {
+      if (!n || typeof n !== 'object') return undefined;
+      const o = n as Node;
+      if (o.dispatch112) return o.dispatch112 as Node;
+      for (const v of Object.values(o)) {
+        const f = find(v);
+        if (f) return f;
+      }
+      return undefined;
+    };
+    const d = find(doc)!;
+    expect(sorted(ts)).toEqual(sorted(at(d, 'items', 'properties', 'eventType').enum as string[]));
+  });
+
   it('B5 cihaz adaptörlerinin sinyal türleri listesi signal.schema.json ve contracts SignalKind ile aynı', async () => {
     const { ALL_SIGNAL_KINDS } = await import('../src/modules/device/device.types');
     const schema = JSON.parse(

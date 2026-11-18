@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import type { QueueItem } from '../lib/api';
 import { t } from '../lib/i18n';
 import { isOffered, stateLabel } from '../lib/queue';
@@ -14,6 +16,11 @@ interface Props {
 /** Seçenek kimliği (aria-activedescendant); önek DOM kimliğini harfle başlatır. */
 export const optionId = (eventId: string) => `queue-opt-${eventId}`;
 
+/** Seçili satırı kaydırma alanında görünür yapar (en yakın kenar); scrollIntoView yoksa (jsdom) sessiz. */
+export function revealOption(el: Pick<Element, 'scrollIntoView'> | null | undefined): void {
+  if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+}
+
 /**
  * E-02 kuyruk (240 px): öncelik rengi, tip, kişi, yaş, kilit. Liste Tab ile odaklanır (tabIndex 0); seçili satır
  * aria-activedescendant ile duyurulur. Ok tuşları ve Enter konsolun genel klavye işleyicisindedir (E-10): odak
@@ -21,6 +28,10 @@ export const optionId = (eventId: string) => `queue-opt-${eventId}`;
  */
 export function QueueList({ items, selected, me, now, onSelect }: Props) {
   const active = selected && items.some((i) => i.eventId === selected) ? optionId(selected) : undefined;
+  // Klavyeyle (ok tuşları) seçilen satır görünür alanda kalsın; liste kaydırılmadan seçim gözden kaçmasın.
+  useEffect(() => {
+    if (active) revealOption(typeof document === 'undefined' ? null : document.getElementById(active));
+  }, [active]);
   return (
     <nav className="queue" aria-label={t('O-UI-QUEUE', { n: items.length })}>
       <h2 className="queue-title">{t('O-UI-QUEUE', { n: items.length })}</h2>
