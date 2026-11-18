@@ -59,6 +59,43 @@ describe('EventService + Timers (bellek içi)', () => {
     expect((await events.all())[0].state).toBe('CLOSED');
   });
 
+  it('erken iptalden sonra saatin cevapsız FALL’u (unconfirmed, aynı sourceSignalId) yeni olay açmaz', async () => {
+    const fall = sig('FALL');
+    await deliver(fall);
+    await deliver(sig('CANCEL', { payload: { sourceSignalId: fall.idempotencyKey } }));
+    const [closed] = await events.all();
+    expect(closed!.state).toBe('CLOSED');
+    // Telefon "İyiyim" ile kapattı; saatin sorusu sürdü ve süre dolunca FALL unconfirmed gönderdi.
+    await deliver(sig('FALL', { payload: { unconfirmed: true, sourceSignalId: fall.idempotencyKey } }));
+    // Aynı kaynağa bağlı (unconfirmed olmasa da) yeniden gönderim de yeni olay açmaz.
+    await deliver(sig('FALL', { payload: { sourceSignalId: fall.idempotencyKey } }));
+    // sourceSignalId'siz eski saat: 5 dk içinde iptal edilmiş düşme varsa unconfirmed FALL yeni olay açmaz.
+    await deliver(sig('FALL', { payload: { unconfirmed: true } }));
+    expect((await events.all()).map((e) => e.id)).toEqual([closed!.id]);
+    const audits = await h.rows<{ entity_id: string; data: { reason: string; kind: string } }>(
+      "SELECT entity_id, data FROM audit.log WHERE action = 'event.answer_ignored' ORDER BY at",
+    );
+    expect(audits).toHaveLength(3);
+    expect(audits.every((a) => a.entity_id === closed!.id && a.data.reason === 'ALREADY_CANCELLED')).toBe(true);
+  });
+
+  it('iptalle ilgisiz FALL yeni olay açar: yeni düşme, başka kaynak, 5 dk sonrası', async () => {
+    const fall = sig('FALL');
+    await deliver(fall);
+    await deliver(sig('CANCEL'));
+    await deliver(sig('FALL', { payload: { unconfirmed: true, sourceSignalId: 'baska-kaynak' } }));
+    expect(await events.all()).toHaveLength(2); // kaynağı iptal edilen olayda değil (ilk FALL ulaşmamış olabilir)
+    const second = (await events.all())[1]!;
+    await deliver(sig('CANCEL'));
+    await h.pg.query("UPDATE event.event SET closed_at = now() - interval '6 minutes'");
+    await deliver(sig('FALL', { payload: { unconfirmed: true, sourceSignalId: fall.idempotencyKey } }));
+    expect(await events.all()).toHaveLength(3);
+    expect((await events.get(second.id)).state).toBe('CLOSED');
+    await deliver(sig('CANCEL'));
+    await deliver(sig('FALL')); // yeni düşme (payload yok) her zaman olay açar
+    expect(await events.all()).toHaveLength(4);
+  });
+
   it('geç tetiklenen iş (iptalden sonra) durumu değiştirmez — yarış güvenli', async () => {
     await deliver(sig('FALL'));
     const [ev] = await events.all();

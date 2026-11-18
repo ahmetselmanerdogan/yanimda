@@ -130,6 +130,8 @@ const WELFARE_UPGRADABLE = new Set<EventType>([
   'CALLBACK',
   'FOLLOW_UP',
 ]);
+/** Erken iptalden sonra saatin cevapsız FALL'u bu süre içinde yeni olay açmaz (alreadyCancelledFall). */
+const CANCELLED_FALL_WINDOW_MS = 5 * 60_000;
 /** Gerçek alarm türleri: alarm olmayan açık olaya gelirse olayı yükseltir (attachToOpen). */
 const ALARM_TYPES = new Set<EventType>(['SOS', 'FALL', 'INACTIVITY']);
 /** Operatör kararını vermiş, yalnız kapatılmayı bekleyen durumlar: yeni gerçek alarm bunlara eklenmez, yeni olay açar. */
@@ -608,6 +610,7 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
         await this.auditIgnored(s, d.reason);
         break;
       case 'create':
+        if (d.type === 'FALL' && (await this.alreadyCancelledFall(s))) break;
         await this.create(d.type, {
           protectedPersonId: s.protectedPersonId,
           sourceId: s.idempotencyKey,
@@ -626,6 +629,38 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
     }
     if (s.location) await this.fuseLocation(s);
     await this.onCoverageUpdate(upd);
+  }
+
+  /**
+   * Erken iptalden sonra yinelenen düşme: saat soruyu kendi sayar ve süre dolunca FALL `payload.unconfirmed=true`
+   * (ilk FALL'un anahtarı `payload.sourceSignalId`) gönderir; kişi bu arada telefondan "İyiyim" dediyse olay
+   * kapanmıştır. Aynı kişinin son 5 dk içinde kullanıcı iptali / yanlış alarm ile kapanmış olayı varsa ve
+   * `sourceSignalId` o olayın kaynağıysa (yoksa: unconfirmed FALL ve kapanan olay FALL) yeni olay açılmaz; denetime
+   * `event.answer_ignored` (ALREADY_CANCELLED). Kaynağı eşleşmeyen FALL (ilk FALL sunucuya ulaşmamış olabilir) açılır.
+   */
+  private async alreadyCancelledFall(s: Signal): Promise<boolean> {
+    const src = typeof s.payload?.sourceSignalId === 'string' ? s.payload.sourceSignalId : undefined;
+    if (!src && s.payload?.unconfirmed !== true) return false;
+    const since = new Date(Date.now() - CANCELLED_FALL_WINDOW_MS).toISOString();
+    const r = (await this.db.execute(sql`
+      SELECT e.id::text AS id FROM event.event e
+      WHERE e.protected_person_id = ${s.protectedPersonId} AND e.state = 'CLOSED'
+        AND e.closed_at >= ${since}::timestamptz
+        AND (e.confirmed_outcome = 'FALSE_ALARM'
+             OR EXISTS (SELECT 1 FROM event.transition t WHERE t.event_id = e.id AND t.to_state = 'CANCELLED_BY_USER'))
+        AND ${src ? sql`${src} = ANY(e.source_signal_ids)` : sql`e.type = 'FALL'`}
+      ORDER BY e.closed_at DESC LIMIT 1`)) as unknown as { rows: { id: string }[] };
+    const id = r.rows[0]?.id;
+    if (!id) return false;
+    await this.db.insert(auditLog).values({
+      actorKind: 'SYSTEM',
+      action: 'event.answer_ignored',
+      entityType: 'event',
+      entityId: id,
+      data: { reason: 'ALREADY_CANCELLED', kind: s.kind, idempotencyKey: s.idempotencyKey },
+    });
+    this.log.warn(`Yinelenen düşme yok sayıldı (iptal edilmiş olay=${id})`);
+    return true;
   }
 
   /** Yok sayılan sinyal denetime (PII yok: yalnız tür ve sabit kod). */
