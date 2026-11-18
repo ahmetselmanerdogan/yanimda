@@ -124,7 +124,7 @@ Karar: "saat koruması / telefon koruması" yerine kişi başına bir **kapsama 
 
 Gece takılı bir kolye veya saat seviyeyi TAM tutar; bugünkü kod bunu ifade edemiyor. TEMEL ile YALNIZ TELEFON ayrı tutulur: takılı bir SOS düğmesi çekmecedeki telefondan çok daha iyidir ve bekleme süreleri farklıdır. Aile uygulaması için eski durum alanı bir sürüm boyunca türetilerek verilir.
 
-**S3.2 — Kapsama ne zaman yeniden hesaplanır?** Her cihaz durumu değişikliğinde ve dakikada bir taramada. A sınıfı cihaz son 15 dk içinde görülmediyse çevrimdışı, B sınıfı 30 dk. Konum 30 dk'dan eskiyse zayıf. Kapsama geçmişi tutulur; "uyanık zamanın yüzde kaçı korundu" buradan çıkar.
+**S3.2 — Kapsama ne zaman yeniden hesaplanır?** Her cihaz durumu değişikliğinde ve dakikada bir taramada. A sınıfı cihaz son 15 dk içinde görülmediyse çevrimdışı, B sınıfı 30 dk. Konum yaşı kapsamayı etkilemez (kural paketi v10'dan beri değerlendirilmez; konsol konum yaşını ayrıca gösterir). Kapsama geçmişi tutulur; "uyanık zamanın yüzde kaçı korundu" buradan çıkar.
 
 **S3.3 — Aynı düşmeyi kolye ve saat birlikte bildirirse?** Kişi başına tek açık olay kuralı zaten tekilleştirir; ikinci sinyal olaya kaynak olarak eklenir. Farklı vücut konumundaki iki cihaz 90 sn içinde düşme bildirirse olay **doğrulanmış** sayılır: kişiye soru süresi 60 sn yerine 30 sn olur (daha kısa değil), operatör "2 cihaz" ibaresini görür ve ilk sesli arama doğrulayan cihaza yapılır. Pencere geniş tutuldu çünkü kolye ve saat algoritmaları aynı düşmeyi farklı anlarda bildirir; geniş pencere yalnız yardımı hızlandırır.
 
@@ -365,7 +365,7 @@ Karar: olay motoru yine cihaz ve ülke bilmez. Yenilikler cihaz kataloğu, adapt
 **S8.4 — Kural paketine (tr.yaml) neler girer?**
 
 ```yaml
-coverage: { onlineMin: { A: 15, B: 30 }, locationStaleMin: 30 }
+coverage: { onlineMin: { A: 15, B: 30 } }
 battery: { planPct: 30, familyPct: 15, criticalPct: 10, deadPct: 5, planHour: "18:00" }
 charging: { defaultWindow: "19:00-21:00", chargeDonePct: 80, chargeDoneMin: 20,
             putOnMin: [15, 30], familyGapMin: 90, familyGapOffPlanMin: 60, maxGapMin: 120, intentMin: 90 }
