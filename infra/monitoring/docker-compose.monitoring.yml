@@ -155,7 +155,7 @@ services:
 
   # T-081: DCS salt okunur ACL hesabı + TLS (rediss://, iç CA ile doğrulama).
   redis-exporter:
-    image: oliver006/redis_exporter:v1.66.0
+    image: oliver006/redis_exporter:v1.97.0
     restart: unless-stopped
     environment:
       REDIS_ADDR: ${REDIS_EXPORTER_ADDR:?REDIS_EXPORTER_ADDR gerekli}
