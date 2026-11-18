@@ -72,6 +72,12 @@ describe('OpenAPI gövde doğrulaması', () => {
     // Android: tüm alanlar dolu kurulum durumu
     ok('putSetupState', { step: 'BATTERY', completed: false, missing: ['BATTERY', 'WATCH'], watchPaired: true });
     ok('chargingIntent', {});
+    // telefon: kopyala-yapıştır boşluklu davet kodu (servis kırpar; şema önce reddetmemeli)
+    const enroll = { deviceId: '0190a8e2-7c1d-7000-8000-000000000002', kind: 'ANDROID_PHONE' };
+    ok('enrollDevice', { ...enroll, inviteCode: ' 123456 ' });
+    ok('enrollDevice', { ...enroll, inviteCode: '123456\n' });
+    expect(bodyValidator('enrollDevice').validate({ ...enroll, inviteCode: '12 3456' })).toBe(false);
+    expect(bodyValidator('enrollDevice').validate({ ...enroll, inviteCode: '12345' })).toBe(false);
   });
 
   it('bilinmeyen operationId açılışta hata', () => {

@@ -2220,7 +2220,10 @@ paths:
               type: object
               required: [inviteCode, deviceId, kind]
               properties:
-                inviteCode: { type: string, pattern: '^\d{6}$' }
+                inviteCode:
+                  type: string
+                  pattern: '^\s*\d{6}\s*$'
+                  description: 6 hane; baştaki / sondaki boşluk kabul edilir (sunucu kırpar)
                 deviceId: { type: string, format: uuid }
                 kind: { enum: [WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE] }
                 model: { type: string, maxLength: 100 }
