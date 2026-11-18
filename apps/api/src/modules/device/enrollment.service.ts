@@ -28,6 +28,7 @@ import { inactivityThreshold } from '../event/decide';
 import { ProtectionService } from '../event/protection.service';
 import { chargingOf, loadRulePack, ruleFor, RULES, type RulesProvider, staticRules } from '../event/rules.loader';
 import { REDIS } from '../signal/idempotency.store';
+import { normalizePhone } from '../telephony/numbers';
 import { assertDeviceLimits, classOf, DeviceLimitError, notifyDeviceLimit } from './device-limits';
 import {
   DEVICE_TOKEN_REFRESH_BEFORE_SEC,
@@ -100,22 +101,49 @@ export interface DeviceConfig {
   };
   /**
    * Operatörün arayan numaraları (T-054: telefon bu numaradan gelen aramayı hoparlöre alır, rehbere "Yanımda"
-   * olarak ekler) ve ana ekranda gösterilen ad (P-HOME-OK `{operator}`). Ortam: OPERATOR_CALLER_IDS
-   * (virgüllü E.164; yoksa TWILIO_FROM_NUMBER), OPERATOR_DISPLAY_NAME.
+   * olarak ekler) ve ana ekranda gösterilen ad (P-HOME-OK `{operator}`). Ortam: OPERATOR_CALLER_IDS (virgüllü) ∪
+   * TWILIO_FROM_NUMBER ∪ CPAAS_AGENT_NUMBER (E.164, tekil), OPERATOR_DISPLAY_NAME.
    */
   operator: { name: string | null; callerIds: string[] };
   /** Telefon ana ekranı aile kısayolu: ilk sıradaki yakın (B-04). Yalnız telefonlara. */
   familyContact: { displayName: string | null; phone: string } | null;
 }
 
-/** Operatör arayan numaraları ve adı (ortamdan; .env.example). */
+/**
+ * Operatör arayan numaraları ve adı (ortamdan; .env.example). Telefon, operatör aramasını arayan numarasından tanır:
+ * CPaaS giden aramada TWILIO_FROM_NUMBER'ı gösterir, masa hattı CPAAS_AGENT_NUMBER'dır. Liste OPERATOR_CALLER_IDS
+ * (virgüllü) ∪ TWILIO_FROM_NUMBER ∪ CPAAS_AGENT_NUMBER, E.164'e çevrilmiş ve tekil; geçersizler atılır.
+ */
 export function operatorInfo(env: NodeJS.ProcessEnv = process.env): DeviceConfig['operator'] {
-  const raw = env.OPERATOR_CALLER_IDS || env.TWILIO_FROM_NUMBER || '';
-  const callerIds = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => /^\+?[0-9 ]{7,20}$/.test(s));
+  const callerIds = [
+    ...new Set(
+      [...listedCallerIds(env), normalizePhone(env.TWILIO_FROM_NUMBER), normalizePhone(env.CPAAS_AGENT_NUMBER)].filter(
+        (n): n is string => !!n,
+      ),
+    ),
+  ];
   return { name: env.OPERATOR_DISPLAY_NAME?.trim() || null, callerIds };
+}
+
+const listedCallerIds = (env: NodeJS.ProcessEnv) =>
+  (env.OPERATOR_CALLER_IDS ?? '')
+    .split(',')
+    .map((s) => normalizePhone(s))
+    .filter((n): n is string => !!n);
+
+/**
+ * Açılış uyarısı: OPERATOR_CALLER_IDS verilmiş ama giden arama numaralarını (TWILIO_FROM_NUMBER, CPAAS_AGENT_NUMBER)
+ * içermiyor — yapılandırma tutarsız (config yanıtına yine eklenir). Mesajda numara yok, yalnız sayılar.
+ */
+export function operatorCallerIdWarning(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!env.OPERATOR_CALLER_IDS?.trim()) return null;
+  const listed = new Set(listedCallerIds(env));
+  const outbound = [env.TWILIO_FROM_NUMBER, env.CPAAS_AGENT_NUMBER]
+    .map((v) => normalizePhone(v))
+    .filter((n): n is string => !!n);
+  const missing = new Set(outbound.filter((n) => !listed.has(n))).size;
+  if (!missing) return null;
+  return `OPERATOR_CALLER_IDS ${listed.size} numara içeriyor; giden arama numaralarından ${missing} tanesi listede yok (telefon yapılandırmasına eklenir)`;
 }
 
 const hashCode = (code: string) => createHash('sha256').update(`yanimda-invite:${code}`).digest('hex');
@@ -147,6 +175,8 @@ export class EnrollmentService {
   ) {
     this.rules = rules ?? staticRules(loadRulePack());
     this.secret = secret ?? deviceTokenKeyring();
+    const warn = operatorCallerIdWarning();
+    if (warn) this.log.warn(warn);
   }
 
   // MARK: Davet (T-040 parçası)

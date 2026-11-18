@@ -3,7 +3,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { CompanionService } from '../src/modules/device/companion.service';
 import { verifyDeviceToken } from '../src/modules/device/device-token';
-import { type DevicePrincipal, EnrollmentService, operatorInfo } from '../src/modules/device/enrollment.service';
+import {
+  type DevicePrincipal,
+  EnrollmentService,
+  operatorCallerIdWarning,
+  operatorInfo,
+} from '../src/modules/device/enrollment.service';
 import { ProtectionService } from '../src/modules/event/protection.service';
 import { loadRulePack, staticRules } from '../src/modules/event/rules.loader';
 import { SignalController } from '../src/modules/signal/signal.controller';
@@ -244,9 +249,22 @@ describe('telefon yapılandırması', () => {
       operatorInfo({ OPERATOR_CALLER_IDS: '+90 212 000 00 00, bozuk, +902160000000', OPERATOR_DISPLAY_NAME: 'Ayşe' }),
     ).toEqual({
       name: 'Ayşe',
-      callerIds: ['+90 212 000 00 00', '+902160000000'],
+      callerIds: ['+902120000000', '+902160000000'],
     });
     expect(operatorInfo({ TWILIO_FROM_NUMBER: '+15005550006' }).callerIds).toEqual(['+15005550006']);
+    // Liste verilse de CPaaS'ın gösterdiği giden numara ve masa hattı eklenir (E.164, tekil).
+    const env = {
+      OPERATOR_CALLER_IDS: '0212 000 00 00, +908501112233',
+      TWILIO_FROM_NUMBER: '+908501112233',
+      CPAAS_AGENT_NUMBER: '+902161112233',
+    };
+    expect(operatorInfo(env).callerIds).toEqual(['+902120000000', '+908501112233', '+902161112233']);
+    const warn = operatorCallerIdWarning(env);
+    expect(warn).toContain('2 numara');
+    expect(warn).toContain('1 tanesi');
+    expect(warn).not.toMatch(/\d{7}/); // log'a numara yazılmaz
+    expect(operatorCallerIdWarning({ ...env, OPERATOR_CALLER_IDS: '+908501112233,+902161112233' })).toBeNull();
+    expect(operatorCallerIdWarning({ TWILIO_FROM_NUMBER: '+908501112233' })).toBeNull(); // liste yok: uyarı yok
     await h.pg
       .exec(`INSERT INTO profile.contact (id, protected_person_id, role, priority, display_name, phone_e164) VALUES
       ('00000000-0000-0000-0000-00000000c001', '${PERSON}', 'CONTACT', 2, 'İkinci', '+905550000002'),

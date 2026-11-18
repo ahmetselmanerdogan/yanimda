@@ -2333,7 +2333,10 @@ paths:
                     description: T-054 operatörün arayan numaraları (telefon hoparlör + rehber) ve gösterilen adı
                     properties:
                       name: { type: [string, 'null'] }
-                      callerIds: { type: array, items: { type: string } }
+                      callerIds:
+                        type: array
+                        items: { type: string }
+                        description: E.164, tekil; OPERATOR_CALLER_IDS ∪ giden arama numarası ∪ masa hattı
                   familyContact:
                     type: [object, 'null']
                     description: Telefon ana ekranı aile kısayolu (ilk yakın); saate gönderilmez
