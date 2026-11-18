@@ -1302,12 +1302,22 @@ export class EventService implements OnModuleInit, OnApplicationBootstrap, OnMod
   }
 
   /**
-   * Cevapsız atama: olay hâlâ bu operatörde ve OPERATOR_ASSIGNED ise kuyruğa döner (amire O-ASSIGN-MISSED). Olay bu
+   * Cevapsız atama: olay hâlâ bu operatörde ve OPERATOR_ASSIGNED ise kuyruğa döner (amire O-ASSIGN-MISSED). `decide`
+   * (otomatik atama) aynı transaction'da teklif satırını sonuçlandırır; false dönerse (teklif bu arada kabul edildi)
+   * olaya dokunulmaz. Olay bu
    * arada el değiştirdiyse veya ilerlediyse dokunulmaz, false.
    */
-  async revokeAssignment(id: string, operatorId: string, now = new Date()) {
+  async revokeAssignment(
+    id: string,
+    operatorId: string,
+    now = new Date(),
+    decide?: (tx: Tx, mine: boolean) => Promise<boolean>,
+  ) {
     const r = await this.withEvent(id, async (u) => {
-      if (u.ev.state !== 'OPERATOR_ASSIGNED' || u.ev.operatorId !== operatorId) return false;
+      const mine = u.ev.state === 'OPERATOR_ASSIGNED' && u.ev.operatorId === operatorId;
+      // Teklif satırı olay kilidi altında sonuçlanır (kabul de bu kilitle yazılır): araya giren kabul varsa iade yok.
+      if (decide && !(await decide(u.tx, mine))) return false;
+      if (!mine) return false;
       u.ev.operatorId = undefined;
       u.ev.lockUntil = undefined;
       u.dirty = true;

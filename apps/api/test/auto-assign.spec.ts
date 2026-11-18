@@ -229,6 +229,44 @@ describe('otomatik atama', () => {
     expect((await status('op-1')).status).toBe('AVAILABLE');
   });
 
+  it('süre dolarken teklif kabul edildiyse (tarama ile iade arasında) iade, mola ve O-ASSIGN-MISSED yok', async () => {
+    await enable();
+    await operator('op-1');
+    const id = await raise('SOS', 'pp-1');
+    await svc().run(at(1));
+    const s = svc();
+    // Araya giren kabul: süresi dolan teklif okunduktan sonra, iadeden hemen önce operatör olayı açar.
+    const revoke = events.revokeAssignment.bind(events);
+    events.revokeAssignment = async (...args: Parameters<EventService['revokeAssignment']>) => {
+      await events.claim(id, 'op-1');
+      return revoke(...args);
+    };
+    expect(await s.run(at(30))).toMatchObject({ missed: 0 });
+    expect(await events.get(id)).toMatchObject({ state: 'OPERATOR_ASSIGNED', operatorId: 'op-1' });
+    expect((await status('op-1')).status).toBe('AVAILABLE');
+    expect((await alerts()).map((a) => a.code)).not.toContain('O-ASSIGN-MISSED');
+    const rows = await h.rows<{ outcome: string }>('SELECT outcome FROM event.assignment WHERE event_id = $1', [id]);
+    expect(rows).toEqual([{ outcome: 'ACCEPTED' }]);
+  });
+
+  it('teklif zaten sonuçlanmışsa (başka sunucu yazdı) ikinci tur mola / uyarı üretmez', async () => {
+    await enable();
+    await operator('op-1');
+    const id = await raise('SOS', 'pp-1');
+    await svc().run(at(1));
+    const [{ id: offer }] = await h.rows<{ id: number }>('SELECT id FROM event.assignment WHERE event_id = $1', [id]);
+    const revoke = events.revokeAssignment.bind(events);
+    events.revokeAssignment = async (...args: Parameters<EventService['revokeAssignment']>) => {
+      // Başka sunucunun turu: teklifi sonuçlandırdı (olay operatörde kaldı — yalnız satır kapandı).
+      await h.rows("UPDATE event.assignment SET outcome = 'SUPERSEDED', decided_at = now() WHERE id = $1", [offer]);
+      return revoke(...args);
+    };
+    expect(await svc().run(at(30))).toMatchObject({ missed: 0 });
+    expect((await status('op-1')).status).toBe('AVAILABLE');
+    expect((await alerts()).map((a) => a.code)).not.toContain('O-ASSIGN-MISSED');
+    expect(await events.get(id)).toMatchObject({ state: 'OPERATOR_ASSIGNED', operatorId: 'op-1' });
+  });
+
   it('iki API sunucusu aynı anda: her olay bir kez, her operatöre en çok bir olay', async () => {
     await enable();
     for (let i = 0; i < 4; i++) await operator(`op-${i}`, { idleSec: 1000 - i });
