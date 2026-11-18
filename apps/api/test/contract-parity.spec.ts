@@ -81,9 +81,9 @@ describe('sözleşme eşliği', () => {
   });
 
   /**
-   * Üretimde okunan (gizli veya ortama özgü) değişkenler: VPS compose şablonu (infra/.env.prod.example, api/worker
-   * `env_file`) ve Helm (values.yaml api.env/Secret anahtar listesi veya şablonlar) bunları bilmeli. Yeni bir üretim
-   * değişkeni eklenince buraya, .env.prod.example'a ve Helm'e birlikte eklenir.
+   * Üretimde okunan (gizli veya ortama özgü) değişkenler: VPS compose şablonu (infra/.env.prod.api.example; api/worker/
+   * migrate `env_file`) ve Helm (values.yaml api.env/Secret anahtar listesi veya şablonlar) bunları bilmeli. Yeni bir
+   * üretim değişkeni eklenince buraya, .env.prod.api.example'a ve Helm'e birlikte eklenir.
    */
   const PRODUCTION_REQUIRED = [
     // Veri, şifreleme, cihaz/kayıt token'ları
@@ -149,13 +149,13 @@ describe('sözleşme eşliği', () => {
     'VITALS_ENABLED',
   ];
 
-  it('üretim değişkenleri API kaynağında okunuyor, infra/.env.prod.example ve Helm’de var', () => {
+  it('üretim değişkenleri API kaynağında okunuyor, infra/.env.prod.api.example ve Helm’de var', () => {
     const source = files(SRC)
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
     expect(PRODUCTION_REQUIRED.filter((k) => !source.includes(k))).toEqual([]);
 
-    const prod = readFileSync(join(ROOT, 'infra/.env.prod.example'), 'utf8');
+    const prod = readFileSync(join(ROOT, 'infra/.env.prod.api.example'), 'utf8');
     const prodKeys = new Set([...prod.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!));
     expect(PRODUCTION_REQUIRED.filter((k) => !prodKeys.has(k))).toEqual([]);
 
@@ -169,6 +169,71 @@ describe('sözleşme eşliği', () => {
     expect(PRODUCTION_REQUIRED.filter((k) => !new RegExp(`\\b${k}\\b`).test(helm))).toEqual([]);
     // Üretimde yönetici kısa yolu yok (T-081 G-4): şablon dosyasında değer atanmış ADMIN_TOKEN olmamalı.
     expect(prod).not.toMatch(/^ADMIN_TOKEN=/m);
+  });
+
+  /**
+   * En az yetki (inceleme I1): API kapları yalnız API'nin okuduğu değişkenleri alır. Keycloak yönetici/DB/SMTP, yedek
+   * (S3/AWS, yedek DB kullanıcısı), Grafana/dışa aktarıcı ve sonda sırları API ortam şablonunda, compose'un api/worker/
+   * migrate env_file'ında ve Helm API Secret'ında yer almaz.
+   */
+  const FOREIGN_SECRET =
+    /^(KC_|YANIMDA_|BACKUP_|GRAFANA_|GF_|AWS_|PG_EXPORTER_|REDIS_EXPORTER_|SYNTHETIC_CLIENT_SECRET)/;
+
+  it('API ortam şablonunda Keycloak / yedek / izleme sırrı yok; API kodu bunları okumuyor', () => {
+    const keys = (p: string) =>
+      [...readFileSync(join(ROOT, p), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
+    const api = keys('infra/.env.prod.api.example');
+    expect(api.length).toBeGreaterThan(40);
+    expect(api.filter((k) => FOREIGN_SECRET.test(k))).toEqual([]);
+    // Başka servislerin sırları kendi şablonlarında (ve yalnız orada)
+    expect(keys('infra/.env.prod.keycloak.example')).toEqual(
+      expect.arrayContaining(['KC_DB_PASSWORD', 'KC_BOOTSTRAP_ADMIN_PASSWORD', 'YANIMDA_KC_SMTP_PASSWORD']),
+    );
+    expect(keys('infra/.env.prod.backup.example')).toEqual(expect.arrayContaining(['AWS_SECRET_ACCESS_KEY']));
+    expect(keys('infra/.env.prod.monitoring.example')).toEqual(expect.arrayContaining(['GRAFANA_ADMIN_PASSWORD']));
+    // Dağıtım (değişken çözümü) dosyası sırsız
+    expect(keys('infra/.env.prod.example').filter((k) => /PASSWORD|SECRET|TOKEN|_KEY$|_DSN$|_URL$/.test(k))).toEqual([
+      'PUSHGATEWAY_URL',
+    ]);
+    // API kaynağı başka servislerin sırlarını okumaz
+    const read = new Set(
+      files(SRC).flatMap((f) =>
+        [...readFileSync(f, 'utf8').matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]!),
+      ),
+    );
+    expect([...read].filter((k) => FOREIGN_SECRET.test(k))).toEqual([]);
+  });
+
+  it('compose: api/worker/migrate yalnız .env.prod.api alır; Helm API pod’ları yalnız API Secret’ını bağlar', () => {
+    const compose = YAML.parse(readFileSync(join(ROOT, 'infra/docker-compose.prod.yml'), 'utf8'), {
+      merge: true,
+    }) as { services: Record<string, { env_file?: string[]; environment?: Record<string, unknown> }> };
+    for (const s of ['api', 'worker', 'migrate']) {
+      const svc = compose.services[s]!;
+      expect(svc.env_file, s).toEqual(['.env.prod.api']);
+      expect(
+        Object.keys(svc.environment ?? {}).filter((k) => FOREIGN_SECRET.test(k)),
+        s,
+      ).toEqual([]);
+    }
+    expect(compose.services.keycloak!.env_file).toEqual(['.env.prod.keycloak']);
+    expect(compose.services.backup!.env_file).toEqual(['.env.prod.backup']);
+    // Hiçbir servis dağıtım dosyasını (tüm değişkenler) env_file olarak almaz
+    for (const [name, svc] of Object.entries(compose.services))
+      expect(svc.env_file ?? [], name).not.toContain('.env.prod');
+
+    // Helm: API Deployment'ları ve migration Job'u yalnız api.existingSecret'ı (envFrom/secretKeyRef) kullanır.
+    const tpl = (f: string) => readFileSync(join(ROOT, 'infra/helm/yanimda/templates', f), 'utf8');
+    for (const f of ['api.yaml', 'migrate-job.yaml']) {
+      const refs = [...tpl(f).matchAll(/secretRef:\s*\n\s*name: (.+)|secretKeyRef:\s*\n\s*name: (.+)/g)].map((m) =>
+        (m[1] ?? m[2])!.trim(),
+      );
+      expect(refs.length, f).toBeGreaterThan(0);
+      expect(
+        refs.filter((r) => !/\.Values\.api\.existingSecret/.test(r)),
+        f,
+      ).toEqual([]);
+    }
   });
 });
 

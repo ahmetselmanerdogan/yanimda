@@ -34,8 +34,14 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
+{{/* İmaj: digest verilmişse repository@digest (sürüm ve geri dönüş digest ile; API, worker ve migration Job'u AYNI
+değeri kullanır), yoksa repository:tag. Kyverno (infra/k8s) etiketi kabulde digest'e sabitler. */}}
 {{- define "yanimda.image" -}}
+{{- if .digest -}}
+{{- printf "%s@%s" .repository (toString .digest) -}}
+{{- else -}}
 {{- printf "%s:%s" .repository (toString .tag) -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "yanimda.imagePullSecrets" -}}

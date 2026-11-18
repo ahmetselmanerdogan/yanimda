@@ -6,6 +6,9 @@ T-081 (ASVS 14.1.5, 9.2.2, 1.14.5, 6.4.1): global.environment=production iken g�
 {{- if not (has $v.global.environment (list "development" "staging" "production")) }}
 {{- fail (printf "global.environment development|staging|production olmalı (gelen: %s)" $v.global.environment) }}
 {{- end }}
+{{- if and $v.api.enabled (not $v.migrations.job.enabled) (eq (toString (index $v.api.env "DB_MIGRATE_ON_START")) "false") }}
+{{- fail "migrations.job.enabled false iken api.env.DB_MIGRATE_ON_START \"false\" olamaz (şemayı kimse taşımaz)" }}
+{{- end }}
 {{- if eq $v.global.environment "production" }}
 {{- if or $v.timescaledb.enabled $v.redis.enabled $v.minio.enabled }}
 {{- fail "production: küme içi timescaledb/redis/minio kapalı olmalı (yönetilen, TLS'li, KMS şifreli hizmetler)" }}
@@ -27,6 +30,9 @@ T-081 (ASVS 14.1.5, 9.2.2, 1.14.5, 6.4.1): global.environment=production iken g�
 {{- end }}
 {{- if and $v.keycloak.enabled (not $v.keycloak.readOnlyRootFilesystem) }}
 {{- fail "production: keycloak.readOnlyRootFilesystem true olmalı" }}
+{{- end }}
+{{- if and $v.api.enabled (not $v.migrations.job.enabled) }}
+{{- fail "production: migrations.job.enabled true olmalı (migration API pod'larında değil, ayrı kanca Job'unda)" }}
 {{- end }}
 {{- if eq (toString (index $v.api.env "SIMULATOR_ENABLED")) "true" }}
 {{- fail "production: api.env.SIMULATOR_ENABLED true olamaz" }}

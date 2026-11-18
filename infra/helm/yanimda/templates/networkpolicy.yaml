@@ -3,7 +3,7 @@ NetworkPolicy'ler (T-083, T-081: ASVS 1.14.5, 1.14.1):
   Giriş (ingress):
   - Bu sürümün tüm pod'ları için varsayılan RED; aşağıdaki izinler tek tek açılır.
   - api/console/family-web/keycloak HTTP: yalnız Ingress denetleyicisi ad alanından.
-  - Postgres/Redis/MinIO: yalnız yanimda.app/db-client=true pod'larından (api, worker, keycloak).
+  - Postgres/Redis/MinIO: yalnız yanimda.app/db-client=true pod'larından (api, worker, migrate, keycloak).
   - Metrik portları (api/worker 9464, keycloak 9000): yalnız izleme ad alanından.
   - Keycloak kopyaları arası (replicas > 1): JGroups 7800/57800 yalnız Keycloak pod'larından.
   Çıkış (egress, networkPolicy.egress.enabled):
@@ -123,6 +123,13 @@ spec:
 {{- if $cidrs.https }}{{ $apiRules = append $apiRules (dict "to" $cidrs.https "ports" (list 443)) }}{{ end }}
 {{- $out = append $out (dict "component" "api" "rules" $apiRules) }}
 {{- if .Values.worker.enabled }}{{ $out = append $out (dict "component" "worker" "rules" $apiRules) }}{{ end }}
+{{- /* Migration Job'u: yalnız Postgres (5432) */}}
+{{- if .Values.migrations.job.enabled }}
+{{- $migRules := list }}
+{{- if .Values.timescaledb.enabled }}{{ $migRules = append $migRules (dict "to" (list $pod.timescaledb) "ports" (list 5432)) }}{{ end }}
+{{- if $cidrs.datastore }}{{ $migRules = append $migRules (dict "to" $cidrs.datastore "ports" (list 5432)) }}{{ end }}
+{{- $out = append $out (dict "component" "migrate" "rules" $migRules) }}
+{{- end }}
 {{- end }}
 {{- if .Values.keycloak.enabled }}
 {{- $kcOut := list }}
