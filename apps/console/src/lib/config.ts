@@ -24,6 +24,8 @@ function fromBuild(): RuntimeConfig {
 }
 
 let current: RuntimeConfig | undefined;
+/** Son okunan `/config.json` gövdesi; dosya sunulmadıysa (geliştirme, `vite preview`, Playwright) undefined. */
+let served: unknown;
 
 /** Yüklenmiş yapılandırma; `loadRuntimeConfig` çağrılmadıysa derleme değerleri. */
 export function runtimeConfig(): RuntimeConfig {
@@ -45,14 +47,42 @@ export async function loadRuntimeConfig(fetchFn: typeof fetch = (...a) => fetch(
   try {
     const r = await fetchFn(CONFIG_URL, { cache: 'no-store', headers: { accept: 'application/json' } });
     const json = r.ok && (r.headers.get('content-type') ?? '').includes('application/json');
-    current = json ? parseRuntimeConfig(await r.json()) : fromBuild();
+    served = json ? await r.json() : undefined;
+    current = json ? parseRuntimeConfig(served) : fromBuild();
   } catch {
+    served = undefined;
     current = fromBuild();
   }
   return current;
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
+
+/**
+ * Üretim derlemesinde ölümcül yapılandırma: `/config.json` sunulmuş ama `oidcAuthority` boş / yok / geçersiz ya da
+ * yerel makine (Caddy tanımsız CONSOLE_OIDC_AUTHORITY için "" yazar; sessizce http://localhost:8080'e düşmesin).
+ * Geliştirme ve dosyasız önizleme (`served` undefined: vite preview, Playwright) derleme değerleriyle sürer.
+ */
+export function configProblem(raw: unknown, prod: boolean): 'O-UI-CONFIG-MISSING' | null {
+  if (!prod || raw === undefined) return null;
+  const v = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).oidcAuthority : undefined;
+  const authority = typeof v === 'string' ? v.trim() : '';
+  if (!authority) return 'O-UI-CONFIG-MISSING';
+  try {
+    const host = new URL(authority).hostname.toLowerCase();
+    return LOCAL_HOSTS.has(host) || host.endsWith('.localhost') ? 'O-UI-CONFIG-MISSING' : null;
+  } catch {
+    return 'O-UI-CONFIG-MISSING';
+  }
+}
+
+/** Açılışta (main.tsx): yüklenen yapılandırma bu derlemede kullanılabilir mi. */
+export function runtimeConfigProblem(prod: boolean = import.meta.env.PROD): 'O-UI-CONFIG-MISSING' | null {
+  return configProblem(served, prod);
+}
+
 /** Testler için. */
 export function resetRuntimeConfig(): void {
   current = undefined;
+  served = undefined;
 }

@@ -649,6 +649,16 @@
     "channel": "console",
     "text": "Yanımda Operatör Konsolu"
   },
+  "O-UI-RELOAD": {
+    "channel": "console",
+    "text": "Konsol yüklenemedi; yeni sürüm yayınlanmış olabilir. Sayfayı yenileyin.",
+    "action": "Yenile"
+  },
+  "O-UI-CONFIG-MISSING": {
+    "channel": "console",
+    "text": "Konsol yapılandırması eksik (oturum açma adresi tanımlı değil). Sistem yöneticisine haber verin.",
+    "action": "Yenile"
+  },
   "O-UI-LOGIN": {
     "channel": "console",
     "text": "Operatör girişi gerekli.",
