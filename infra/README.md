@@ -20,16 +20,16 @@ hesabında **çalıştırılmadı**; yalnız statik doğrulama yapıldı (aşağ
    RDS PostgreSQL 16 HA (2 AZ, PITR) · DCS Redis HA · OBS: recordings (WORM) + backups (yaşam döngüsü)
 ```
 
-| Yol                                                               | İçerik                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terraform/modules/yanimda-env`                                   | VPC, güvenlik grupları, ECS + veri diski + EIP, RDS PG (HA, yedek/PITR, hesap, veritabanı, `timescaledb`/`pgcrypto`, yalnız `hostssl`), DCS Redis (TLS + ACL hesapları), OBS kovaları, DNS, KMS anahtarı (disk/RDS/OBS şifreleme), chrony |
-| `terraform/envs/staging`                                          | Staging kökü (S3/OBS uzak durum, `terraform.tfvars.example`, `backend.hcl.example`)                                                                                                                                                       |
-| `docker-compose.prod.yml`, `caddy/Caddyfile`, `.env.prod.example` | Uygulama süreçleri, TLS, sağlık kontrolleri, `restart: unless-stopped`                                                                                                                                                                    |
-| `console/`                                                        | Konsol imajı (Vite statik → Caddy, root değil, :8080)                                                                                                                                                                                     |
-| `monitoring/`                                                     | İzleme compose'u, Prometheus kuralları, Alertmanager, Loki/Promtail, Grafana provizyonu, postgres_exporter iş sorguları                                                                                                                   |
-| `backup/`                                                         | `pg-backup.sh`, `restore-drill.sh`, yedek kabı                                                                                                                                                                                            |
-| `synthetic/probe.mjs`                                             | Sentetik sonda (bağımlılıksız Node 20)                                                                                                                                                                                                    |
-| `helm/yanimda`                                                    | Faz 3 chart'ı (API, worker, konsol, aile web, Keycloak, Timescale, Redis, MinIO, CronJob, Ingress, NetworkPolicy, PDB, ServiceMonitor)                                                                                                    |
+| Yol                                                       | İçerik                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terraform/modules/yanimda-env`                           | VPC, güvenlik grupları, ECS + veri diski + EIP, RDS PG (HA, yedek/PITR, hesap, veritabanı, `timescaledb`/`pgcrypto`, yalnız `hostssl`), DCS Redis (TLS + ACL hesapları), OBS kovaları, DNS, KMS anahtarı (disk/RDS/OBS şifreleme), chrony |
+| `terraform/envs/staging`                                  | Staging kökü (S3/OBS uzak durum, `terraform.tfvars.example`, `backend.hcl.example`)                                                                                                                                                       |
+| `docker-compose.prod.yml`, `caddy/`, `.env.prod*.example` | Uygulama süreçleri, tek seferlik `migrate`, TLS (dış Caddy imajı), sağlık kontrolleri; servis başına ortam dosyası şablonları (ön kontrol: `scripts/prod-preflight.sh`)                                                                   |
+| `console/`                                                | Konsol imajı (Vite statik → Caddy, root değil, :8080; `entrypoint.sh` yapılandırma doğrulaması + CSP)                                                                                                                                     |
+| `monitoring/`                                             | İzleme compose'u, Prometheus kuralları, Alertmanager, Loki/Promtail, Grafana provizyonu, postgres_exporter iş sorguları                                                                                                                   |
+| `backup/`                                                 | `pg-backup.sh`, `restore-drill.sh`, yedek kabı                                                                                                                                                                                            |
+| `synthetic/probe.mjs`                                     | Sentetik sonda (bağımlılıksız Node 20)                                                                                                                                                                                                    |
+| `helm/yanimda`                                            | Faz 3 chart'ı (API, worker, konsol, aile web, Keycloak, Timescale, Redis, MinIO, CronJob, Ingress, NetworkPolicy, PDB, ServiceMonitor)                                                                                                    |
 
 ## Bulut seçimi: Huawei Cloud İstanbul (`tr-west-1`)
 
@@ -81,10 +81,18 @@ terraform init -backend-config=backend.hcl && terraform plan -out tf.plan && ter
 ## Uygulama dağıtımı (VPS, compose — çalıştırılmadı)
 
 ```sh
-# VPS'te (cloud-init Docker'ı kurar). Depo yalnız infra/ için gerekir; imajlar kayıt deposundan.
-cp infra/.env.prod.example infra/.env.prod && chmod 600 infra/.env.prod   # değerleri sır yöneticisinden doldurun
-docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
-docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml up -d
+# VPS'te (cloud-init Docker'ı kurar). Depo yalnız infra/ ve scripts/ için gerekir; imajlar kayıt deposundan.
+scripts/prod-preflight.sh --init      # eksik infra/.env.prod* dosyalarını şablondan 0600 oluşturur (var olana dokunmaz)
+#   → değerleri sır yöneticisinden doldurun (aşağıda "Sırlar"); API_IMAGE / CONSOLE_IMAGE digest ile
+# Her dağıtımda: ön kontrol geçmeden compose çalışmaz (CHANGE_ME, boş zorunlu, kısa sır, izin, paylaşılan sır eşliği)
+scripts/prod-preflight.sh && \
+  docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d --build
+scripts/prod-preflight.sh && \
+  docker compose --env-file infra/.env.prod --env-file infra/.env.prod.monitoring \
+    -f infra/monitoring/docker-compose.monitoring.yml up -d
+# İsteğe bağlı imza doğrulaması (Helm yolunda Kyverno zorlar; compose'da elle — docs/security/sdlc.md D-2):
+cosign verify "$API_IMAGE" --certificate-identity-regexp 'https://github.com/ahmetselmanerdogan/yanimda/.github/workflows/release-image.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 - **Sağlık**: kimliksiz `GET /v1/health` (canlılık, bağımlılığa bakmaz) ve `GET /v1/ready` (veritabanı yoksa 503;
@@ -93,18 +101,84 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
   kirasıyla (tek aktif işçi). `API_OUTBOX_WORKER=on` ile kopyalar sıcak yedek olur (işçi ölürse ≤ 30 sn'de devralır).
   `signal_to_screen_seconds` vb. geçiş metrikleri yalnız kirayı tutan süreçte ölçülür (Prometheus `api` ve `worker`'ı
   kazır).
-- **İmajlar**: API ve konsol imajları `release-image.yml`'de kurulur, Trivy'den geçer, GHCR'ye itilir, cosign ile
-  anahtarsız imzalanır (SBOM tasdikli); `API_IMAGE`/`CONSOLE_IMAGE` digest'e sabitlenir. Konsol **tek imaj**: ortam
-  bilgisi derlemeye gömülmez, kap ortamından (`CONSOLE_OIDC_AUTHORITY`, `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_API_BASE`)
-  Caddy `/config.json` üretir, konsol açılmadan okur (`apps/console/src/lib/config.ts`).
-- **Migration**: her süreç açılışta çalıştırır; advisory lock sıraya sokar.
-- **Sırlar**: `.env.prod` tek dosya; api/worker kapları `env_file` ile alır. Sentetik ve yedek kapları yalnız kendi
-  değişkenlerini alır. Prod'da `.env.prod` sır yöneticisinden (Huawei CSMS / Vault) üretilmeli.
+- **İmajlar**: API ve konsol imajları `release-image.yml`'de **bir kez** kurulur ve etiketsiz digest olarak itilir;
+  Trivy o digest'i tarar, geçerse cosign ile anahtarsız imzalanır (SBOM tasdikli) ve ancak sonra etiketlenir.
+  `API_IMAGE`/`CONSOLE_IMAGE` digest'e sabitlenir (ön kontrol değilse uyarır). Konsol **tek imaj**: ortam bilgisi
+  derlemeye gömülmez, kap ortamından (`CONSOLE_OIDC_AUTHORITY`, `CONSOLE_OIDC_CLIENT_ID`, `CONSOLE_API_BASE`) Caddy
+  `/config.json` üretir, konsol açılmadan okur (`apps/console/src/lib/config.ts`). `console/entrypoint.sh` değerleri
+  doğrular (boş/geçersiz `CONSOLE_OIDC_AUTHORITY`, tırnak/ters bölü/satır sonu → kap açılmaz) ve CSP kökenlerini aynı
+  değerlerden türetir; güvenlik başlıkları (CSP, `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` — mikrofon yalnız aynı köken, softphone) imajdadır, compose ve Helm aynıdır.
+  Dış Caddy `caddy/Dockerfile` ile yerelde kurulur (konsolla aynı Caddy sürümü, `golang.org/x/net` yamalı).
+- **Migration**: tek seferlik `migrate` servisi (`node dist/db/cli.js migrate`, API ile aynı imaj), `api`/`worker`
+  ondan sonra açılır (`service_completed_successfully`); api/worker'da `DB_MIGRATE_ON_START=false`. Ayrıntı ve geri
+  dönüş: aşağıda "Migration ve geri dönüş".
+- **Sırlar** (en az yetki): her servis yalnız kendi dosyasını görür. `.env.prod` dağıtım değişkenleridir (alan adı,
+  imajlar, CIDR, CA yolu; **sır yok**, hiçbir kaba `env_file` değil). `.env.prod.api` → api/worker/migrate;
+  `.env.prod.keycloak` → keycloak (DB, yönetici, SMTP, hizmet hesabı istemci sırları); `.env.prod.synthetic` →
+  sonda; `.env.prod.backup` → yedek (S3 + yedek DB kullanıcısı); `.env.prod.monitoring` → izleme compose'unun ikinci
+  `--env-file`'ı (Grafana parolası ve dışa aktarıcı hesapları; her değer yalnız onu anan kaba). Paylaşılan iki sır
+  aynı değeri iki dosyada taşır: `KEYCLOAK_SIGNUP_CLIENT_SECRET` (api) = `YANIMDA_SIGNUP_CLIENT_SECRET` (keycloak),
+  `SYNTHETIC_CLIENT_SECRET` (sonda) = `YANIMDA_SYNTHETIC_CLIENT_SECRET` (keycloak); ön kontrol eşliği denetler.
+  Dosyalar sır yöneticisinden (Huawei CSMS / Vault) üretilmeli; değerlerde `$` kullanılmaz (compose `env_file`
+  değerlerini de çözer).
 - **Keycloak**: aynı RDS'te `keycloak` veritabanı + kullanıcı. Ayrıntı aşağıda "Keycloak (T-081)". Yönetim konsolu
   Caddy'de `KC_ADMIN_ALLOW_CIDRS` dışına 403.
 - **İç TLS** (T-081): `INTERNAL_CA_FILE` (RDS + DCS sunucu CA'ları, PEM) tüm Postgres/Redis istemcilerine bağlanır;
   `DATABASE_URL`/`KC_DB_URL`/`BACKUP_DATABASE_URL`/`PG_EXPORTER_DSN` `sslmode=verify-full`, `REDIS_URL` `rediss://` +
   DCS ACL hesabı. API kaplarında ayrıca `PGSSLMODE=verify-full` (URL'de sslmode unutulsa da TLS).
+
+## Migration ve geri dönüş
+
+Şema değişikliği **uygulama kopyalarından ayrı**, tek seferlik bir adımda ve uygulamayla aynı imajla çalışır:
+compose'da `migrate` servisi, Helm'de `templates/migrate-job.yaml` (pre-install/pre-upgrade kancası; Argo CD'de Sync
+kancası, dalga -1 — ExternalSecret'lar dalga -2). Başarısız migration yeni sürümü durdurur; eski kopyalar çalışmayı
+sürdürür. API pod'larında `DB_MIGRATE_ON_START=false` (staging/production değerleri; production'da Job zorunlu,
+`validate.yaml`).
+
+**Genişlet / daralt kuralı** (geri dönüşü mümkün kılan tek şey): her sürümün migration'ı **bir önceki uygulama
+sürümüyle de çalışmalıdır**.
+
+1. Genişlet (sürüm N): yalnız ekle — yeni tablo/sütun (NULL'a izinli veya varsayılanlı), yeni dizin (`CONCURRENTLY`
+   değil: migration'lar işlem içinde), yeni enum değeri. Eski kod yeni şemayla çalışır.
+2. Geçiş (N, N+1): kod iki şekli de okur/yazar; gerekiyorsa veri taşıma ayrı, yeniden çalıştırılabilir bir adım.
+3. Daralt (en erken N+2, N'in geri alınma ihtimali kalmayınca): eski sütun/tablo silme, `NOT NULL`, yeniden adlandırma.
+
+Aynı sürümde "ekle + sil" veya yeniden adlandırma yapılmaz. PR incelemesinde migration'ın önceki sürümle uyumu sorulur.
+
+**Uygulama geri dönüşü** (migration'a dokunmadan, önce bu): önceki **digest**'e dön.
+
+```sh
+# compose: .env.prod'da API_IMAGE / CONSOLE_IMAGE'ı önceki digest'e çevir (release-image.yml özeti / GHCR)
+scripts/prod-preflight.sh && docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d
+#   migrate yine çalışır: eski imajın bilmediği migration'lar zaten uygulanmış → "uygulandı: (yok)"; eski kod
+#   genişletilmiş şemayla çalışır (kural 1).
+# Helm: önceki sürüme dön (migration kancası pre-install/pre-upgrade'dir, rollback'te koşmaz; gerekmez de) veya
+# digest'i açıkça ver (upgrade → kanca koşar, no-op)
+helm history yanimda -n yanimda-staging
+helm rollback yanimda <REVISION> -n yanimda-staging
+helm upgrade yanimda infra/helm/yanimda -n yanimda-staging -f infra/helm/yanimda/values-staging.yaml \
+  --set api.image.digest=sha256:<önceki> --set console.image.digest=sha256:<önceki>
+# Argo CD: git'te değerleri önceki digest'e çeviren commit (selfHeal elle rollback'i geri alır)
+```
+
+**Şema geri alma** son çaredir. Her migration'ın `down.sql`'i vardır (`apps/api/drizzle/migrations/*/down.sql`,
+`pnpm --filter @yanimda/api db:rollback [adım]` / imajda `node dist/db/cli.js rollback <adım>`), ama `down.sql`
+genişletmede eklenen sütunu/tabloyu **siler** (o aradaki veri kaybolur) ve kanca/Job bunu ASLA otomatik çalıştırmaz.
+Yalnız: (a) uygulama önceki digest'e alınmış, (b) yeni şemaya yazılmış veri gözden geçirilmiş ve yedeklenmiş
+(`pg_dump` veya RDS anlık görüntüsü), (c) bakım penceresi açılmışsa elle çalıştırılır. Veri bozan bir migration'da
+tercih edilen yol ileri düzeltme (yeni migration) veya RDS PITR ile zamana dönüştür (RPO ≤ 15 dk; aşağıda "Yedek").
+
+**Helm ilk kurulum**: sırlar sürümün kendi ExternalSecret'larından geliyorsa düz `helm install` anında API Secret'ı
+henüz yoktur ve pre-install kancası bekler. İlk kurulumda kanca atlanır ve migration açılışta bir kez çalışır:
+
+```sh
+helm install yanimda infra/helm/yanimda -n yanimda-staging -f infra/helm/yanimda/values-staging.yaml \
+  --no-hooks --set api.env.DB_MIGRATE_ON_START=true
+# sonraki her sürüm: helm upgrade … (kanca Job'u migration'ı koşturur)
+```
+
+Argo CD'de buna gerek yoktur (dalga sırası Secret'ı Job'dan önce hazırlar).
 
 ## Keycloak (T-081)
 
@@ -115,8 +189,9 @@ docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.mon
 - **Hizmet hesabı sırları**: `yanimda-signup` (API web kaydı) ve `yanimda-synthetic` (sentetik sonda) gizli
   istemcilerinin sırları `${YANIMDA_SIGNUP_CLIENT_SECRET:…}` / `${YANIMDA_SYNTHETIC_CLIENT_SECRET:…}` yer
   tutucularıyla ortamdan gelir (tıklamasız kurulum). Varsayılan `dev-only-*` yalnız geliştirmedir; prod compose
-  (`KEYCLOAK_SIGNUP_CLIENT_SECRET`, `SYNTHETIC_CLIENT_SECRET`, `:?` zorunlu) ve Helm (`secretKeyRef`, koşulsuz) her
-  zaman verir — `keycloak.test.mjs` denetler. API ve sonda aynı değeri kendi değişkenlerinden okur.
+  (`.env.prod.keycloak`, ön kontrol boş/kısa değeri ve API/sonda dosyalarıyla eşleşmeyen değeri reddeder) ve Helm
+  (`secretKeyRef`, koşulsuz) her zaman verir — `keycloak.test.mjs` denetler. API ve sonda aynı değeri kendi
+  dosyalarındaki `KEYCLOAK_SIGNUP_CLIENT_SECRET` / `SYNTHETIC_CLIENT_SECRET`'tan okur.
 - **İçe aktarma yalnız realm yoksa** çalışır (`--import-realm`, var olan realm atlanır). Var olan ortamda politika
   değişikliği (kara liste, oturum süreleri, `revokeRefreshToken`) yönetici API'siyle veya
   `kc.sh import --file … --override true` ile (bakım penceresinde) uygulanır.
@@ -166,8 +241,9 @@ Kurulum (bir kez, ortam başına):
 
 1. Keycloak `consumers` realm'indeki gizli istemci `yanimda-synthetic` realm içe aktarmasıyla gelir
    (`realm-consumers.json`: yalnız _Service accounts_, servis hesabına yalnız `FAMILY`, `aud=yanimda-api` eşleyicisi).
-   Sırrı `openssl rand -hex 32` ile üretip sır yöneticisine `SYNTHETIC_CLIENT_SECRET` olarak yazın; prod compose
-   bunu Keycloak'a `YANIMDA_SYNTHETIC_CLIENT_SECRET` olarak verir (Helm: `synthetic.existingSecret`). Realm zaten varsa
+   Sırrı `openssl rand -hex 32` ile üretip sır yöneticisine yazın; compose'da aynı değer `.env.prod.synthetic`
+   `SYNTHETIC_CLIENT_SECRET` ve `.env.prod.keycloak` `YANIMDA_SYNTHETIC_CLIENT_SECRET` (ön kontrol eşler; Helm:
+   `synthetic.existingSecret`). Realm zaten varsa
    istemci içe aktarılmaz: yönetici API'si `partialImport` (`ifResourceExists: SKIP`) veya bakım penceresinde
    `kc.sh import --override true` ile ekleyin.
 2. Bu istemcinin token'ıyla 3 kişi oluşturun (servis hesabı OWNER olur):
@@ -191,16 +267,33 @@ Görevdeki "simülatör TEST sinyali" yerine `test-sos` kullanıldı: üretimde 
 - `restore-drill.sh` (VPS'te haftalık, ör. systemd timer `OnCalendar=Sun 04:00`): en yeni dökümü indirir, ağsız geçici
   `timescale/timescaledb:2.17.2-pg16` kabına `timescaledb_pre_restore()`/`post_restore()` ile geri yükler,
   `schema_migrations` + `event.event`/`signal.signal`/`event.transition` sayımlarını manifest aralığıyla karşılaştırır,
-  süreyi yazar; **> 3600 sn veya uyuşmazlıkta çıkış 1** ve `restore_drill_*` metrikleri.
+  süreyi yazar; **> 3600 sn veya uyuşmazlıkta çıkış 1** ve `restore_drill_*` metrikleri. Betik içindeki beklenmeyen
+  her hata (indirme, `docker cp`, `pg_restore -l` …) EXIT tuzağıyla `restore_drill_success 0` iter; betik dışındaki
+  hatalar (compose, docker) için systemd birimi `OnFailure=yanimda-restore-drill-failed.service` aynı metriği iter ve
+  journald'a `err` yazar (`terraform/modules/yanimda-env/user_data.sh.tftpl`). Pushgateway da düşmüşse
+  `RestoreDrillStale` (8 gün) ve `PushgatewayDown` yakalar.
 - PITR tatbikatı (RDS'te yeni örneğe zamana geri dönüş) çeyrekte bir elle; RTO hedefi < 1 saat.
 
 ## İzleme
 
 `monitoring/alerts.yml` (promtool ile doğrulandı): kuyruk gecikmesi (`QueueWaitTooLong` gerçek olay > 20 sn,
 `SignalToScreenSlow`, `OperatorClaimSlow`), outbox birikimi (`OutboxBacklog`, `OutboxStalled`, `OutboxDeadLetters`,
-`OutboxWorkerDown`; kritik olmayan abone şeridi `OutboxSideStalled`, `OutboxSideDeadLetters`), CPaaS/bildirim hata oranı, disk (%15/%5, 24 saatte dolma), Postgres/Redis/API/dış uç/TLS, sentetik,
+`OutboxWorkerDown`; kritik olmayan abone şeridi `OutboxSideStalled`, `OutboxSideDeadLetters`), CPaaS/bildirim hata oranı, disk (%15/%5, 24 saatte dolma), Postgres/Redis/API/Keycloak/Pushgateway/dış uç/TLS, sentetik,
 yedek/tatbikat. critical → PagerDuty + Telegram + e-posta, warning → Telegram + e-posta (`monitoring/alertmanager.yml`;
 sırlar `monitoring/secrets/` dosyaları).
+
+- **Ölü adam anahtarı**: `Watchdog` her zaman ateşler; Alertmanager onu yalnız `heartbeat` alıcısına (webhook,
+  `secrets/heartbeat_url`) dakikada bir iletir. Alıcı **VPS dışındaki** bir deadman servisidir (ör. Healthchecks.io
+  "period 5 dk, grace 5 dk", bildirim kanalı PagerDuty + Telegram). Prometheus, Alertmanager, VPS veya ağ düşerse
+  ping kesilir ve dış servis sayfalar — yığının kendi kendini izleyememe açığı kapanır. Kurulum:
+  `monitoring/secrets/README.md`. K8s'te kube-prometheus-stack kendi `Watchdog`'unu da getirir; aynı yönlendirme.
+- **`KeycloakDown`** (critical): `up{job="keycloak"}` (compose: `keycloak:9000`; Helm: ServiceMonitor `management`
+  portu) veya iç hazırlık sondası. **`PushgatewayDown`** (warning): sentetik/yedek/tatbikat metriklerinin bayatlaması
+  sessiz kalmasın.
+- **Blackbox hedefleri depoda**: iç uçlar (`keycloak:9000/health/ready`, `api:3000/v1/ready`,
+  `pushgateway:9091/-/healthy`) `prometheus.yml` `blackbox-internal` işinde sabit; dış uçlar
+  `monitoring/targets/*.yml.tmpl` şablonlarından Prometheus açılışında `.env.prod` `DOMAIN`/`ENVIRONMENT` ile
+  üretilir (elle kopyalanan örnek dosya yok). Ek hedef: `targets/blackbox-http-<ad>.yml`.
 
 Uygulamada outbox/CPaaS metriği olmadığı için bunlar `postgres_exporter` özel sorgularından gelir
 (`monitoring/postgres-exporter-queries.yml`, yalnız sayım). İzleme kullanıcısı:
@@ -231,8 +324,8 @@ INSERT INTO event.outbox (topic, envelope) SELECT topic, envelope FROM m;
 UPDATE event.outbox_side SET dead_at = NULL, attempts = 0, next_attempt_at = now() WHERE id = $1;
 ```
 
-Grafana `127.0.0.1:3001` (SSH tüneli), `infra/grafana/konsol.json` otomatik yüklenir. Dış uç hedefleri:
-`monitoring/targets/*.yml.example` → `.yml`. Uptime Kuma (`status.<domain>`): HTTP izleyiciler (konsol, auth
+Grafana `127.0.0.1:3001` (SSH tüneli), `infra/grafana/konsol.json` otomatik yüklenir. Uptime Kuma
+(`status.<domain>`): HTTP izleyiciler (konsol, auth
 well-known, API `/v1/ready` 200) + sentetik için _Push_ izleyici (URL'i `UPTIME_KUMA_PUSH_URL`), herkese açık
 durum sayfası.
 
@@ -245,24 +338,33 @@ helm upgrade --install yanimda infra/helm/yanimda -n yanimda-staging -f infra/he
 ```
 
 - Sırlar **yalnız** `existingSecret` adlarıyla (`yanimda-api`, `yanimda-keycloak`, `yanimda-synthetic`, küme içi
-  depolar açıksa `yanimda-timescaledb`/`-redis`/`-minio`); anahtar listesi `values.yaml` yorumlarında.
+  depolar açıksa `yanimda-timescaledb`/`-redis`/`-minio`); anahtar listesi `values.yaml` yorumlarında. API pod'ları
+  ve migration Job'u yalnız `yanimda-api`'yi bağlar (Keycloak/yedek/Grafana sırları ayrı Secret'larda;
+  `contract-parity.spec.ts` denetler). Keycloak ise API Secret'ından yalnız tek anahtarı
+  (`KEYCLOAK_SIGNUP_CLIENT_SECRET`, `secretKeyRef`) okur.
+- **Migration**: `migrations.job.enabled` (staging/production) → kanca Job'u, API pod'larında
+  `DB_MIGRATE_ON_START=false`; ilk kurulum ve geri dönüş: "Migration ve geri dönüş". `api.image.digest` verilirse
+  api/worker/migrate aynı digest'i kullanır.
   `externalSecrets.enabled=true` (staging/prod) → her biri için `ExternalSecret` (External Secrets Operator, Vault KV
   v2 `yanimda/<ad alanı>/<secret>`; `vault.create=true` ad alanında Kubernetes kimlik doğrulamalı `SecretStore`).
 - `global.environment=production` (`values-production.yaml`) → `templates/validate.yaml` şunları zorlar: küme içi
   depolar kapalı, NetworkPolicy giriş+çıkış, External Secrets, iç CA, Keycloak `sslRequired=all`, JDBC
-  `verify-full`, Keycloak salt okunur kök, MFA açık, simülatör kapalı, `force-ssl-redirect`.
+  `verify-full`, Keycloak salt okunur kök, MFA açık, simülatör kapalı, `force-ssl-redirect`, migration Job'u açık.
 - Üretimde `timescaledb/redis/minio.enabled=false` → yönetilen hizmetler (`DATABASE_URL`/`REDIS_URL`/`S3_*` Secret'ta).
   `global.internalCa.configMap` bağlıysa API'de `PGSSLMODE=verify-full` + `NODE_EXTRA_CA_CERTS`. Küme içi Redis
   (geliştirme) varsayılan kullanıcısı kapalı, `redis.aclUsername` ACL kullanıcısı.
 - NetworkPolicy: sürümde varsayılan red; HTTP yalnız ingress denetleyici ad alanından; Postgres/Redis/MinIO yalnız
-  `api`/`worker`/`keycloak`'tan; metrik portları yalnız `monitoring` ad alanından. Ingress'te metrik yolu yok.
-  `networkPolicy.egress.enabled` (staging/prod): çıkış yalnız DNS, veri depoları (`datastoreCidrs`), dış HTTPS, SMTP.
-- Giriş denetleyicisi TLS politikası: `helm/ingress-nginx-values.yaml`. Küme düzeyi: `k8s/argocd-yanimda-staging.yaml`
-  (GitOps, selfHeal), `k8s/kyverno-verify-images.yaml` (cosign imzasız imaj reddi).
+  `api`/`worker`/`migrate`/`keycloak`'tan; metrik portları yalnız `monitoring` ad alanından. Ingress'te metrik yolu
+  yok. `networkPolicy.egress.enabled` (staging/prod): çıkış yalnız DNS, veri depoları (`datastoreCidrs`), dış HTTPS,
+  SMTP; migration Job'u yalnız Postgres.
+- Giriş denetleyicisi TLS politikası: `helm/ingress-nginx-values.yaml`. Konsolun CSP/güvenlik başlıkları imajdan
+  gelir (ingress-nginx eklemez). Küme düzeyi: `k8s/argocd-yanimda-staging.yaml` (GitOps, selfHeal),
+  `k8s/kyverno-verify-images.yaml` (cosign imzasız yanimda-* imaj reddi), `k8s/kyverno-allowed-images.yaml` (izin
+  listesi dışı imaj reddi: yanimda-* + chart'ın üçüncü taraf imajları; test `k8s/tests`).
 - Pod'lar: `runAsNonRoot`, seccomp `RuntimeDefault`, `drop: [ALL]`, `allowPrivilegeEscalation: false`; salt okunur kök
   api/worker/konsol/sentetik/redis/Keycloak (Keycloak: initContainer Quarkus çıktısını emptyDir'e kopyalar).
 - `files/` altındaki `probe.mjs`, `alerts.yml`, `konsol.json` tek kaynağa sembolik bağdır (Helm içeriği dahil eder).
-- Prob'lar: API TCP (Nest portu ancak tüm modüller ve migration hazır olunca açar), Keycloak `/health/*` (9000).
+- Prob'lar: API `/v1/health` (başlangıç + canlılık) ve `/v1/ready` (hazırlık), Keycloak `/health/*` (9000).
 
 ## Doğrulama (yerel, yalnız Docker)
 
@@ -283,10 +385,10 @@ docker run --rm -v "$R/infra/monitoring":/m -v "$R/infra/monitoring/alerts.yml":
 docker run --rm -v "$R/infra/monitoring":/m --entrypoint promtool prom/prometheus:v2.55.1 check rules /m/alerts.yml
 docker run --rm -v "$R/infra/monitoring":/m --entrypoint amtool prom/alertmanager:v0.27.0 check-config /m/alertmanager.yml
 docker run --rm -v "$R/infra/monitoring":/m grafana/loki:3.2.1 -config.file=/m/loki-config.yml -verify-config
-cp infra/.env.prod.example infra/.env.prod   # yalnız doğrulama için; git dışı
-docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml config -q
-docker compose --env-file infra/.env.prod -f infra/monitoring/docker-compose.monitoring.yml config -q
-docker run --rm -v "$R/infra":/mnt koalaman/shellcheck:v0.10.0 backup/pg-backup.sh backup/restore-drill.sh backup/schedule.sh
+docker run --rm -v "$R/infra/k8s":/k8s:ro ghcr.io/kyverno/kyverno-cli:v1.12.5 test /k8s/tests
+scripts/test-prod-preflight.sh     # ön kontrol: şablonlar reddedilir, üretilmiş geçerli set geçer + compose config
+scripts/test-console-runtime.sh    # konsol kabı: geçersiz yapılandırma reddi, CSP/başlıklar, /config.json
+docker run --rm -v "$R/infra":/mnt koalaman/shellcheck:v0.10.0 backup/pg-backup.sh backup/restore-drill.sh backup/schedule.sh console/entrypoint.sh
 node --check infra/synthetic/probe.mjs
 ```
 
@@ -297,13 +399,18 @@ gerçek kanallara gönderimi, Uptime Kuma yapılandırması (arayüzden).
 
 ## Takip
 
-- API'de ayrık, kimliksiz **`/health` (canlılık) ve `/ready` (DB + Redis)** uçları; prob'lar ona geçsin.
+Tamamlananlar (önceki listeden): `/v1/health` + `/v1/ready` uçları ve prob'lar; Keycloak `yanimda-synthetic`
+istemcisi realm dosyasında; CI'da imaj imzalama (cosign + SBOM, API ve konsol) ve Trivy; External Secrets şablonları
+(Helm); ayrı migration adımı; servis başına sır dosyaları.
+
+Açık:
+
 - Uygulama metrikleri: **outbox birikimi/yaşı, DLQ, işçi kirası sahibi**, **CPaaS istek/hata sayaçları** (sağlayıcı ve
   durum etiketiyle), bildirim kanal hataları — şimdilik postgres_exporter sorgularıyla.
 - **Sentetik bayrağı + otomatik kapatma** (TEST olayı operatöre gösterilmeden ölçülüp kapatılır) — 7 gün kabulünün ön
-  koşulu.
-- Keycloak `yanimda-synthetic` istemcisi realm dosyasında (yönlendirme adresleri ve `sslRequired` T-081'de yer
-  tutucuya taşındı).
+  koşulu; uygulanmadı.
 - Küme içi mTLS (servis ağı) ve Prometheus→metrik TLS; çıkışta sağlayıcı bazlı (FQDN) izin listesi (Cilium/Calico
   FQDN politikası) — bugün dış HTTPS 443'e CIDR ile açık.
-- `envs/prod`, CI'da imaj imzalama (cosign) ve Trivy taraması; compose → Helm geçişinde External Secrets kurulumu.
+- `terraform/envs/prod` yok; Terraform hiçbir ortamda uygulanmadı. Vault kurulumu ve ESO `SecretSynced` doğrulaması.
+- Ayrı migrator veritabanı rolü (DDL yetkisi yalnız migration Job'unda; `docs/security/sirlar.md` §6.2).
+- Compose dağıtımında `cosign verify` zorunlu adım değil (Helm'de Kyverno zorlar; `docs/security/sdlc.md` D-2).
