@@ -28,7 +28,7 @@ services:
     image: redis:7.4-alpine
     ports: ['6379:6379']
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.8
     # T-020: operations (OTP zorunlu) ve consumers realm'leri açılışta içe aktarılır. Geliştirme kullanıcıları:
     #   KEYCLOAK_DEV_PASSWORD=... node infra/keycloak/dev-users.mjs
     # T-081: realm'lerdeki ${YANIMDA_*:varsayılan} yer tutucuları geliştirmede varsayılanla (localhost) çözülür.

@@ -148,7 +148,7 @@ services:
   # Sırlar (KC_DB_*, KC_BOOTSTRAP_*, SMTP, hizmet hesabı istemci sırları) yalnız bu kaba: .env.prod.keycloak.
   # Kök FS yazılabilir (Quarkus yeniden derleme çıktısı); Helm'de salt okunur (initContainer + emptyDir).
   keycloak:
-    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8}
     command: ['start', '--import-realm']
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
