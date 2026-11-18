@@ -120,7 +120,7 @@ export class CoverageBoardService {
       ORDER BY at DESC LIMIT ${LIST_LIMIT}`);
     const dispatch112 = await this.q<{
       event_id: string;
-      type: string;
+      type: 'INACTIVITY' | 'WELFARE_CHECK'; // WHERE e.type IN (…)
       notified_at: Date | string;
       status: string;
       name: string | null;

@@ -1745,7 +1745,7 @@ paths:
                 partner: { type: string, example: FAKE_PENDANT }
                 model: { type: string, example: FAKE_PENDANT_CELL }
                 vendorDeviceId:
-                  { type: string, pattern: '^[!-~]{1,200}$', description: Yazdırılabilir ASCII, boşluksuz }
+                  { type: string, pattern: '^[!-~]{1,200}$', description: 'Yazdırılabilir ASCII, boşluksuz' }
                 vendorAccountId: { type: string, pattern: '^[!-~]{1,200}$' }
                 bodyLocation:
                   oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }]
@@ -3346,7 +3346,7 @@ components:
           properties:
             offered: { type: integer }
             accepted: { type: integer }
-            missed: { type: integer, description: Süresinde açılmayan (olay kuyruğa döndü, operatör molaya) }
+            missed: { type: integer, description: 'Süresinde açılmayan (olay kuyruğa döndü, operatör molaya)' }
             acceptP50Sec: { type: [number, 'null'] }
     OverflowFlag:
       type: object
@@ -3648,7 +3648,7 @@ components:
         silent: { enum: ['true', 'false'] }
         code: { type: string, example: W-CHARGE-DONE }
         notificationId: { type: string }
-        forDeviceId: { type: string, description: Mesaj bu saat içindir; telefon göstermez, saate iletir }
+        forDeviceId: { type: string, description: 'Mesaj bu saat içindir; telefon göstermez, saate iletir' }
     DeviceSummary:
       type: object
       description: T-085 cihaz kartı (docs/07 S7.4)
@@ -3676,7 +3676,7 @@ components:
           type: string
           description: 'Cihaz türü (WEAROS_WATCH, ANDROID_PHONE, IOS_PHONE, SIMULATOR; T-085 OEM: ortak kodu, ör. FAKE_PENDANT)'
         category: { $ref: '#/components/schemas/DeviceCategory' }
-        tier: { enum: [A, B, C], description: A alarm, B canlı izlem, C eğilim (S2.1) }
+        tier: { enum: [A, B, C], description: 'A alarm, B canlı izlem, C eğilim (S2.1)' }
         bodyLocation: { oneOf: [{ $ref: '#/components/schemas/BodyLocation' }, { type: 'null' }] }
         nickname: { type: [string, 'null'] }
         online: { type: boolean }
@@ -3862,7 +3862,7 @@ components:
               level: { $ref: '#/components/schemas/CoverageLevel' }
               hold: { type: boolean }
         daily: { type: array, items: { $ref: '#/components/schemas/CoverageDay' } }
-        summary: { description: Günlerin toplamı (CoverageDay alanları, date hariç), type: object }
+        summary: { description: 'Günlerin toplamı (CoverageDay alanları, date hariç)', type: object }
     LadderStepStat:
       type: object
       required: [step, attempted, reached, unreached, offlineSkipped, unreachableRate, stalledHere]
@@ -4371,7 +4371,7 @@ components:
       required: [eventId, windowMin, bucketMin, series, baseline, quality, alerts, highlight, noteCode]
       properties:
         eventId: { type: string, format: uuid }
-        windowMin: { type: integer, description: Pencere (dk; kural paketi vitals.view.windowMin, 120) }
+        windowMin: { type: integer, description: 'Pencere (dk; kural paketi vitals.view.windowMin, 120)' }
         bucketMin: { type: integer, description: Ortanca dilimi (dk; 5) }
         series:
           type: array

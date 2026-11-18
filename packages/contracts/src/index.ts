@@ -341,7 +341,13 @@ export interface SupervisorCoverageBoard {
   /** 90 sn üstlenilmeyen P1 (O-P1-UNCLAIMED), son 7 gün. */
   unclaimedP1: { eventId: string; eventType: EventType; at: string; acked: boolean }[];
   /** Hareketsizlik / yerinde kontrol olaylarında 112 bildirimi, son 7 gün. */
-  dispatch112: { eventId: string; eventType: string; notifiedAt: string; status: string; name: string | null }[];
+  dispatch112: {
+    eventId: string;
+    eventType: 'INACTIVITY' | 'WELFARE_CHECK';
+    notifiedAt: string;
+    status: string;
+    name: string | null;
+  }[];
 }
 export interface LadderStepStat {
   /** Adım türü (CALL_WATCH, CALL_PHONE, CALL_CONTACT:1 …). */
